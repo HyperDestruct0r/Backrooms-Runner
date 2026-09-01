@@ -2847,168 +2847,243 @@
        ------------------------------------------------------------------ */
     const Level1 = {
       active:false, group:null, colliders:[], triggers:[],
-      chunkSize:48, activeRadius:2, seed:0,
+      macroSize:600, microSize:60, activeRadius:2, seed:0,
       chunks:new Map(), center:new THREE.Vector3(), start:new THREE.Vector3(),
-      baseY:0, lights:[], ambientLights:[],
-      streamTimer:0, lastCX:999999, lastCZ:999999,
-      powerEvent:{elapsed:0,cycleStart:0,cooldown:0,state:'idle',flickerLeft:0,outageLeft:0,nextRoll:60,flashPhase:0,count:0,last:'none'},
-      shared:{},
+      baseY:0, lights:[], ambientLights:[], puddles:[],
+      streamTimer:0, lastMCX:999999, lastMCZ:999999,
+      levelTime:0, blackoutState:'idle', blackoutTimer:0, blackoutNext:60,
+      blackoutCooldown:0, blackoutDuration:0, blackoutCycle:0,
+      blackoutFlickerT:0, blackoutFlickerNext:0, blackoutWindowStart:0,
+      shared:{}, macroCache:new Map(), exitMacro:null,
       resetVisuals(){
         if(this.group && scene) scene.remove(this.group);
-        for(const L of this.lights){ if(scene) scene.remove(L); }
-        for(const L of this.ambientLights){ if(scene) scene.remove(L); }
+        for(const L of this.lights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
+        for(const L of this.ambientLights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
         this.chunks.clear(); this.colliders.length=0; this.triggers.length=0;
-        this.lights.length=0; this.ambientLights.length=0; this.group=null; this.active=false;
-        this.lastCX=999999; this.lastCZ=999999;
-        this.resetPowerEvent();
+        this.lights.length=0; this.ambientLights.length=0; this.puddles.length=0;
+        this.group=null; this.active=false; this.lastMCX=999999; this.lastMCZ=999999;
+        this.levelTime=0; this.blackoutState='idle'; this.blackoutTimer=0; this.blackoutNext=60;
+        this.blackoutCooldown=0; this.blackoutDuration=0; this.blackoutCycle=0;
+        this.blackoutFlickerT=0; this.blackoutFlickerNext=0; this.blackoutWindowStart=0; this.macroCache.clear(); this.exitMacro=null;
+        if(scene){ scene.fog=null; scene.background && scene.background.setHex(0x202321); }
+        if(CameraRig.camera){ CameraRig.camera.far=CONFIG.cameraFar; CameraRig.camera.updateProjectionMatrix(); }
       },
-      rngFor(cx,cz){
-        let h=(this.seed>>>0)^Math.imul(cx|0,0x45d9f3b)^Math.imul(cz|0,0x27d4eb2d);
+      hash2(x,z,salt=0){
+        let h=(this.seed>>>0)^Math.imul((x|0)+salt,0x45d9f3b)^Math.imul((z|0)-salt,0x27d4eb2d);
+        h^=h>>>16; h=Math.imul(h,0x85ebca6b); h^=h>>>13; h=Math.imul(h,0xc2b2ae35); h^=h>>>16;
+        return (h>>>0)/4294967296;
+      },
+      rngFor(cx,cz,salt=0){
+        let h=(this.seed>>>0)^Math.imul((cx|0)+salt,0x45d9f3b)^Math.imul((cz|0)-salt,0x27d4eb2d);
         h^=h>>>16; h=Math.imul(h,0x85ebca6b); h^=h>>>13; h=Math.imul(h,0xc2b2ae35); h^=h>>>16;
         let a=(h>>>0)||1;
         return ()=>{ a^=a<<13; a^=a>>>17; a^=a<<5; return (a>>>0)/4294967296; };
       },
+      macroKey(mx,mz){ return mx+','+mz; },
+      macroRaw(mx,mz){ return this.hash2(mx,mz,17); },
+      macroType(mx,mz){
+        const key=this.macroKey(mx,mz); if(this.macroCache.has(key)) return this.macroCache.get(key);
+        // Parking starts at 60%. Each neighboring macro-region whose own raw roll
+        // lands in the parking band lowers this region by 10 percentage points.
+        let p=0.60;
+        const ns=[[mx-1,mz],[mx+1,mz],[mx,mz-1],[mx,mz+1]];
+        let parkingNeighbors=0;
+        for(const [nx,nz] of ns) if(this.macroRaw(nx,nz)<0.60) parkingNeighbors++;
+        p=Math.max(0.20, p-0.10*parkingNeighbors);
+        // The elevator's macro is always maintenance so the player never starts
+        // in the middle of a 600m parking expanse.
+        if(this.start && Math.floor(this.start.x/this.macroSize)===mx && Math.floor(this.start.z/this.macroSize)===mz) return 'maintenance';
+        const type=this.macroRaw(mx,mz)<p?'parking':'maintenance';
+        this.macroCache.set(key,type); return type;
+      },
+      macroBounds(mx,mz){ return {minx:mx*this.macroSize,minz:mz*this.macroSize,maxx:(mx+1)*this.macroSize,maxz:(mz+1)*this.macroSize}; },
       addBox(g,mat,x,y,z,sx,sy,sz){ const m=new THREE.Mesh(Geometries.box,mat); m.position.set(x,y,z); m.scale.set(sx,sy,sz); g.add(m); return m; },
-      col(minx,miny,minz,maxx,maxy,maxz){ this.colliders.push({min:new THREE.Vector3(minx,miny,minz),max:new THREE.Vector3(maxx,maxy,maxz)}); },
-      chunkCol(rec,minx,minz,maxx,maxz,h=4.8){ rec.colliders.push({min:new THREE.Vector3(minx,this.baseY,minz),max:new THREE.Vector3(maxx,this.baseY+h,maxz)}); },
-      materialSet(){
-        if(this.shared.floor) return;
-        this.shared.floor=new THREE.MeshStandardMaterial({color:0x8b8d89,roughness:0.48,metalness:0.12});
-        this.shared.concrete=new THREE.MeshStandardMaterial({color:0x8f9390,roughness:0.74,metalness:0.04});
-        this.shared.concreteDark=new THREE.MeshStandardMaterial({color:0x656a68,roughness:0.82,metalness:0.02});
-        this.shared.concreteLight=new THREE.MeshStandardMaterial({color:0xb2b5b0,roughness:0.68,metalness:0.03});
-        this.shared.metal=new THREE.MeshStandardMaterial({color:0x6f7471,roughness:0.42,metalness:0.72});
-        this.shared.beam=new THREE.MeshStandardMaterial({color:0x5f6462,roughness:0.7,metalness:0.2});
-        this.shared.light=new THREE.MeshStandardMaterial({color:0xf1eee0,emissive:0xfff1c8,emissiveIntensity:2.0,roughness:0.4});
-        this.shared.pipe=new THREE.MeshStandardMaterial({color:0x777b78,roughness:0.62,metalness:0.5});
-      },
-      fixture(g,rec,x,z,bright,rng){
-        const panel=new THREE.Mesh(Geometries.lightPanel,this.shared.light); panel.scale.set(1.35,1,0.34); panel.position.set(x,this.baseY+4.55,z); g.add(panel);
-        const housing=new THREE.Mesh(Geometries.lightHousing,Materials.lightHousing); housing.scale.set(1.42,1,0.4); housing.position.set(x,this.baseY+4.5,z); g.add(housing);
-        let L=null;
-        // Keep actual dynamic lights sparse. Most illumination comes from emissive fixtures + global fill.
-        if(rng()<0.16 && this.lights.length<10){ L=new THREE.PointLight(0xfff3d4,0.9*bright,18,1.7); L.position.set(x,this.baseY+4.0,z); scene.add(L); this.lights.push(L); }
-        const f={panel,housing,light:L,basePanel:2.0,baseLight:L?L.intensity:0,baseHousing:1};
-        rec.fixtures.push(f);
-        if(this.powerEvent && (this.powerEvent.state==='flicker' || this.powerEvent.state==='outage')) this.setFixturePower(f,false);
-      },
-      setFixturePower(f,on){
-        if(!f) return;
-        if(f.panel && f.panel.material) f.panel.material.emissiveIntensity=on?f.basePanel:0.01;
-        if(f.light) f.light.intensity=on?f.baseLight:0;
-        if(f.housing && f.housing.material && 'emissiveIntensity' in f.housing.material) f.housing.material.emissiveIntensity=on?f.baseHousing:0;
-      },
-      allFixtures(){
-        const out=[];
-        for(const rec of this.chunks.values()) if(rec.fixtures) for(const f of rec.fixtures) out.push(f);
-        return out;
-      },
-      setAllPower(on){ for(const f of this.allFixtures()) this.setFixturePower(f,on); },
-      resetPowerEvent(){ this.powerEvent={elapsed:0,cycleStart:0,cooldown:0,state:'idle',flickerLeft:0,outageLeft:0,nextRoll:60,flashPhase:0,count:0,last:'none'}; },
-      startPowerEvent(){
-        const P=this.powerEvent;
-        P.state='flicker'; P.flickerLeft=2.4; P.flashPhase=0; P.count++; P.last='LEVEL-WIDE BLACKOUT';
-        AudioSystem.playPositional('flicker',Player.position.x,1.6,Player.position.z,{gain:0.045,bus:'electrical',max:70});
-      },
-      updatePowerEvent(dt){
-        const P=this.powerEvent; P.elapsed+=dt;
-        if(P.state==='flicker'){
-          P.flickerLeft-=dt; P.flashPhase+=dt;
-          const pulse=Math.sin(P.flashPhase*38)>-0.15;
-          for(const f of this.allFixtures()) this.setFixturePower(f,pulse);
-          if(Math.random()<dt*0.9) AudioSystem.playPositional('flicker',Player.position.x,1.6,Player.position.z,{gain:0.018,bus:'electrical',max:50});
-          if(P.flickerLeft<=0){
-            P.state='outage'; P.outageLeft=30+Math.random()*30; this.setAllPower(false);
-            AudioSystem.playPositional('pop',Player.position.x,1.4,Player.position.z,{gain:0.05,bus:'electrical',max:55});
-          }
-          return;
-        }
-        if(P.state==='outage'){
-          P.outageLeft-=dt;
-          if(P.outageLeft<=0){ P.state='cooldown'; P.cooldown=60+Math.random()*30; this.setAllPower(true); AudioSystem.playPositional('electrical',Player.position.x,1.4,Player.position.z,{gain:0.035,bus:'electrical',max:60}); }
-          return;
-        }
-        if(P.state==='cooldown'){
-          P.cooldown-=dt;
-          if(P.cooldown<=0){ P.cooldown=0; P.state='idle'; P.cycleStart=P.elapsed; P.nextRoll=P.elapsed+60; }
-          return;
-        }
-        // Each cycle begins after the previous event's cooldown. First roll at 60s,
-        // then every 6s with a 10% chance. Hard guarantee at 90s into the cycle.
-        if(P.elapsed<P.nextRoll) return;
-        const cycleElapsed=P.elapsed-P.cycleStart;
-        if(cycleElapsed>=90 || Math.random()<0.10){ this.startPowerEvent(); return; }
-        P.nextRoll+=6;
+      addWall(g,rec,x,z,sx,sz,h=3.15){
+        this.addBox(g,this.shared.concrete,x,this.baseY+h/2,z,sx,h,sz);
+        rec.colliders.push({min:new THREE.Vector3(x-sx/2,this.baseY,z-sz/2),max:new THREE.Vector3(x+sx/2,this.baseY+h,z+sz/2)});
       },
       pillar(g,rec,x,z){
-        this.addBox(g,this.shared.concreteDark,x,this.baseY+2.4,z,0.85,4.8,0.85);
-        rec.colliders.push({min:new THREE.Vector3(x-.425,this.baseY,z-.425),max:new THREE.Vector3(x+.425,this.baseY+4.8,z+.425)});
-        this.addBox(g,this.shared.concreteLight,x,this.baseY+0.14,z,1.08,0.28,1.08);
+        this.addBox(g,this.shared.concretePillar,x,this.baseY+2.4,z,0.92,4.8,0.92);
+        rec.colliders.push({min:new THREE.Vector3(x-.46,this.baseY,z-.46),max:new THREE.Vector3(x+.46,this.baseY+4.8,z+.46)});
+        this.addBox(g,this.shared.concreteDark,x,this.baseY+0.12,z,1.18,0.24,1.18);
       },
-      divider(g,rec,x,z,sx,sz,h=3.15){
-        this.addBox(g,this.shared.concrete,x,this.baseY+h/2,z,sx,h,sz);
-        this.chunkCol(rec,x-sx/2,z-sz/2,x+sx/2,z+sz/2,h);
+      fixture(g,x,z,bright,rng,rec){
+        const panel=new THREE.Mesh(Geometries.lightPanel,this.shared.light);
+        panel.scale.set(1.35,1,0.34); panel.position.set(x,this.baseY+4.55,z); g.add(panel);
+        const housing=new THREE.Mesh(Geometries.lightHousing,Materials.lightHousing);
+        housing.scale.set(1.42,1,0.4); housing.position.set(x,this.baseY+4.5,z); g.add(housing);
+        const blackout=this.blackoutState==='flicker'||this.blackoutState==='outage';
+        panel.material.emissiveIntensity=blackout?0:2.0*bright;
+        rec.fixtures.push({panel,housing,base:bright});
+        if(rng()<0.10 && this.lights.length<12){
+          const L=new THREE.PointLight(0xfff3d4,blackout?0:0.72*bright,20,1.8);
+          L.position.set(x,this.baseY+4.0,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
+        }
+      },
+      pipeRun(g,x,z,lenX,lenZ,rng){
+        if(lenX>0) this.addBox(g,this.shared.pipe,x,this.baseY+4.28,z,lenX,0.16,0.16);
+        else this.addBox(g,this.shared.pipe,x,this.baseY+4.28,z,0.16,0.16,lenZ);
+        if(rng()<0.35){
+          const px=x+(lenX>0?lenX*.22:0), pz=z+(lenZ>0?lenZ*.22:0);
+          this.addBox(g,this.shared.pipe,px,this.baseY+3.95,pz,0.12,0.52,0.12);
+        }
+      },
+      concreteTexture(repeatX,repeatY){
+        const t=TextureFactory.concrete(); t.repeat.set(repeatX,repeatY); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.needsUpdate=true; return t;
+      },
+      waterTexture(){
+        const c=document.createElement('canvas'); c.width=256; c.height=256;
+        const ctx=c.getContext('2d'); ctx.fillStyle='#273b3c'; ctx.fillRect(0,0,256,256);
+        for(let i=0;i<900;i++){
+          const x=Math.random()*256,y=Math.random()*256,r=Math.random()*1.8;
+          ctx.fillStyle='rgba(180,205,205,'+(0.03+Math.random()*0.10)+')'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+        }
+        for(let r=22;r<128;r+=22){ ctx.strokeStyle='rgba(210,225,225,0.10)'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.arc(128,128,r,0,Math.PI*2); ctx.stroke(); }
+        const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=4; return t;
+      },
+      materialSet(){
+        if(this.shared.floor) return;
+        const floorMap=this.concreteTexture(6,6);
+        const pillarMap=this.concreteTexture(2.2,7.0);
+        const ceilMap=this.concreteTexture(5,5);
+        this.shared.floor=new THREE.MeshStandardMaterial({map:floorMap,color:0xb0b0aa,roughness:0.62,metalness:0.06});
+        this.shared.concrete=new THREE.MeshStandardMaterial({map:floorMap.clone(),color:0xa3a6a1,roughness:0.78,metalness:0.02});
+        this.shared.concretePillar=new THREE.MeshStandardMaterial({map:pillarMap,color:0x9da09b,roughness:0.82,metalness:0.02});
+        this.shared.concreteDark=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x747874,roughness:0.88,metalness:0.01});
+        this.shared.concreteLight=new THREE.MeshStandardMaterial({map:ceilMap,color:0xb7b9b4,roughness:0.74,metalness:0.02});
+        this.shared.beam=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x686d69,roughness:0.82,metalness:0.04});
+        this.shared.metal=new THREE.MeshStandardMaterial({color:0x6f7471,roughness:0.42,metalness:0.72});
+        this.shared.light=new THREE.MeshStandardMaterial({color:0xf1eee0,emissive:0xfff1c8,emissiveIntensity:2.0,roughness:0.4});
+        this.shared.pipe=new THREE.MeshStandardMaterial({color:0x777b78,roughness:0.62,metalness:0.5});
+        this.shared.water=new THREE.MeshPhysicalMaterial({map:this.waterTexture(),color:0x496668,transparent:true,opacity:0.78,roughness:0.08,metalness:0.12,clearcoat:0.75,clearcoatRoughness:0.08,side:THREE.DoubleSide});
+        this.shared.water.needsUpdate=true;
+      },
+      addPuddle(g,wx,wz,rng){
+        const r=0.42+rng()*0.16;
+        const geo=new THREE.CircleGeometry(r,24);
+        const mesh=new THREE.Mesh(geo,this.shared.water);
+        mesh.rotation.x=-Math.PI/2; mesh.position.set(wx,this.baseY+0.012,wz); g.add(mesh);
+        this.puddles.push({x:wx,z:wz,r:r*0.92});
+      },
+      generatePuddles(g,rec,bx,bz,S,rng,openMask){
+        let made=0;
+        const cells=S/15;
+        for(let tx=0;tx<cells && made<8;tx++) for(let tz=0;tz<cells && made<8;tz++){
+          if(rng()>0.03) continue;
+          const x=bx+tx*15+7.5, z=bz+tz*15+7.5;
+          if(openMask && !openMask(x,z)) continue;
+          if(this.puddles.some(p=>(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z)<1.4)) continue;
+          this.addPuddle(g,x+(rng()-.5)*5,z+(rng()-.5)*5,rng); made++;
+        }
+      },
+      getMaintenanceWalls(mx,mz){
+        const key=this.macroKey(mx,mz)+':walls';
+        if(this.macroCache.has(key)) return this.macroCache.get(key);
+        const rng=this.rngFor(mx,mz,707), mb=this.macroBounds(mx,mz), sector=150, walls=[];
+        const push=(x,z,sx,sz,h=3.15)=>walls.push({x,z,sx,sz,h});
+        for(let sz=0;sz<4;sz++) for(let sx=0;sx<4;sx++){
+          const x0=mb.minx+sx*sector, z0=mb.minz+sz*sector;
+          const cx=x0+sector/2, cz=z0+sector/2, vertical=rng()<0.5;
+          const offset=48+rng()*26;
+          if(vertical){
+            push(x0+offset,cz,0.34,84+rng()*28);
+            if(rng()<0.70) push(x0+96+rng()*18,z0+96,0.34,52+rng()*28);
+            if(rng()<0.58) push(x0+44,z0+112+rng()*18,54+rng()*26,0.34);
+          }else{
+            push(cx,z0+offset,84+rng()*28,0.34);
+            if(rng()<0.70) push(x0+96,z0+96+rng()*18,52+rng()*28,0.34);
+            if(rng()<0.58) push(x0+112+rng()*18,z0+44,0.34,54+rng()*26);
+          }
+          if(rng()<0.32){
+            const rw=26+rng()*22, rd=22+rng()*20;
+            push(cx-rw/2,z0+18,rw,0.34); push(cx+rw/2,z0+18,rw,0.34);
+            push(cx-rw/2,z0+18+rd,0.34,rd); push(cx+rw/2,z0+18+rd,0.34,rd);
+          }
+        }
+        // Broad openings between 150m sectors keep the maintenance area interconnected.
+        for(let sx=1;sx<4;sx++){
+          const x=mb.minx+sx*sector;
+          for(let sz=0;sz<4;sz++) if(rng()<0.72) push(x,mb.minz+sz*sector+42+rng()*66,0.26,12,4.52);
+        }
+        for(let sz=1;sz<4;sz++){
+          const z=mb.minz+sz*sector;
+          for(let sx=0;sx<4;sx++) if(rng()<0.72) push(mb.minx+sx*sector+42+rng()*66,z,12,0.26,4.52);
+        }
+        this.macroCache.set(key,walls); return walls;
+      },
+      addClippedWall(g,rec,wall,bx,bz,S){
+        const minX=Math.max(wall.x-wall.sx/2,bx), maxX=Math.min(wall.x+wall.sx/2,bx+S);
+        const minZ=Math.max(wall.z-wall.sz/2,bz), maxZ=Math.min(wall.z+wall.sz/2,bz+S);
+        if(maxX-minX<0.02 || maxZ-minZ<0.02) return;
+        // Keep the elevator landing comfortably clear of maintenance geometry.
+        if(this.start && Math.abs((minX+maxX)*0.5-this.start.x)<10 && Math.abs((minZ+maxZ)*0.5-this.start.z)<10) return;
+        this.addBox(g,this.shared.concrete,(minX+maxX)/2,this.baseY+wall.h/2,(minZ+maxZ)/2,maxX-minX,wall.h,maxZ-minZ);
+        rec.colliders.push({min:new THREE.Vector3(minX,this.baseY,minZ),max:new THREE.Vector3(maxX,this.baseY+wall.h,maxZ)});
+      },
+      buildMaintenanceMacroParts(g,rec,mx,mz,bx,bz,S,rng){
+        const walls=this.getMaintenanceWalls(mx,mz);
+        for(const wall of walls) this.addClippedWall(g,rec,wall,bx,bz,S);
+      },
+      macroGeometry(mx,mz){
+        const key=this.macroKey(mx,mz), type=this.macroType(mx,mz);
+        if(this.macroCache.has(key+':geometry')) return this.macroCache.get(key+':geometry');
+        const data={type,exitEdge:null};
+        this.macroCache.set(key+':geometry',data); return data;
       },
       buildChunk(cx,cz){
         const key=cx+','+cz; if(this.chunks.has(key)) return;
-        const rng=this.rngFor(cx,cz), g=new THREE.Group(); g.name='L1_chunk_'+key;
-        const rec={cx,cz,group:g,colliders:[],fixtures:[]};
-        const ox=cx*this.chunkSize, oz=cz*this.chunkSize, S=this.chunkSize;
-        const open=rng()<0.42; rec.open=open;
-        // Continuous floor: adjacent chunks meet exactly, producing an effectively infinite plane.
-        const floor=new THREE.Mesh(new THREE.PlaneGeometry(S,S),this.shared.floor); floor.rotation.x=-Math.PI/2; floor.position.set(ox+S/2,this.baseY,oz+S/2); g.add(floor);
-        // One large, thin floor collider per chunk keeps the player grounded without
-        // creating a collider for every square meter.
+        const rng=this.rngFor(cx,cz,101), g=new THREE.Group(); g.name='L1_chunk_'+key;
+        const rec={cx,cz,group:g,colliders:[],fixtures:[],pointLights:[]};
+        const ox=cx*this.microSize, oz=cz*this.microSize, S=this.microSize;
+        const centerX=ox+S/2, centerZ=oz+S/2;
+        const mx=Math.floor(centerX/this.macroSize), mz=Math.floor(centerZ/this.macroSize);
+        const type=this.macroType(mx,mz); rec.type=type; rec.mx=mx; rec.mz=mz;
+        // Continuous concrete floor and ceiling. Texture repetition makes the
+        // huge world read as actual concrete rather than a flat gray plane.
+        const floorMap=this.shared.floor.map.clone(); floorMap.repeat.set(S/12,S/12); floorMap.needsUpdate=true;
+        const floorMat=this.shared.floor.clone(); floorMat.map=floorMap;
+        const floor=new THREE.Mesh(new THREE.PlaneGeometry(S,S),floorMat); floor.rotation.x=-Math.PI/2; floor.position.set(centerX,this.baseY,centerZ); g.add(floor);
         rec.colliders.push({min:new THREE.Vector3(ox,this.baseY-0.18,oz),max:new THREE.Vector3(ox+S,this.baseY,oz+S)});
-        // Ceiling panels and major structural beams.
-        this.addBox(g,this.shared.concreteDark,ox+S/2,this.baseY+4.82,oz+S/2,S,0.22,S);
-        this.addBox(g,this.shared.beam,ox+S/2,this.baseY+4.55,oz+S/2,S,0.18,0.28);
-        this.addBox(g,this.shared.beam,ox+S/2,this.baseY+4.55,oz+S/2,0.28,0.18,S);
-        // Repeating columns. Slight jitter keeps it from looking like a perfect grid.
+        const ceilMap=this.shared.concreteLight.map.clone(); ceilMap.repeat.set(S/14,S/14); ceilMap.needsUpdate=true;
+        const ceilMat=this.shared.concreteLight.clone(); ceilMat.map=ceilMap;
+        this.addBox(g,ceilMat,centerX,this.baseY+4.82,centerZ,S,0.22,S);
+        // Structural grid is present in both spaces, but parking lots are more open.
         for(let ix=8;ix<S;ix+=16) for(let iz=8;iz<S;iz+=16){
-          if(rng()<0.13) continue;
+          if(rng()<0.10) continue;
           this.pillar(g,rec,ox+ix,oz+iz);
         }
-        // Open garage sections are mostly unobstructed; sectioned chunks get branching concrete partitions.
-        if(!open){
-          const variant=Math.floor(rng()*4);
-          if(variant===0 || variant===2){
-            const z=oz+S*(0.38+0.08*rng());
-            this.divider(g,rec,ox+S*.27,z,S*.44,0.34,3.0);
-            this.divider(g,rec,ox+S*.76,z,S*.30,0.34,3.0);
-            const x=ox+S*(0.55+0.08*rng());
-            this.divider(g,rec,x,oz+S*.73,0.34,S*.34,3.0);
+        if(type==='maintenance'){
+          this.buildMaintenanceMacroParts(g,rec,mx,mz,ox,oz,S,rng);
+        } else {
+          // Parking lots get a few sparse dividers, never enough to destroy the
+          // enormous sightlines.
+          if(rng()<0.35){
+            const z=oz+S*(0.35+0.3*rng()); this.addWall(g,rec,ox+S*.5,z,S*.58,0.34,1.4);
           }
-          if(variant===1 || variant===3){
-            const x=ox+S*(0.42+0.08*rng());
-            this.divider(g,rec,x,oz+S*.26,0.34,S*.42,3.0);
-            this.divider(g,rec,x,oz+S*.77,0.34,S*.28,3.0);
-            const z=oz+S*(0.52+0.08*rng());
-            this.divider(g,rec,ox+S*.73,z,S*.30,0.34,3.0);
+          if(rng()<0.25){
+            const x=ox+S*(0.25+0.5*rng()); this.addWall(g,rec,x,oz+S*.55,0.34,S*.38,1.4);
           }
-        } else if(rng()<0.38){
-          // Sparse low barrier in a large room.
-          const z=oz+S*(0.50+0.12*(rng()-.5));
-          this.divider(g,rec,ox+S*.50,z,S*.34,0.5,1.15);
         }
-        // Overhead pipes: deliberately sparse, like a real service/parking structure.
-        if(rng()<0.72){
-          const px=ox+8+rng()*20;
-          this.addBox(g,this.shared.pipe,px,this.baseY+4.35,oz+S/2,0.16,0.16,S*.88);
-          if(rng()<0.45) this.addBox(g,this.shared.pipe,ox+S/2,this.baseY+4.18,oz+11+rng()*18,S*.82,0.16,0.16);
-        }
-        // Lighting pattern: some huge bright pools, some genuinely dark bays.
-        const lightMode=rng(); rec.dark=lightMode<0.20; rec.bright=lightMode>0.76;
+        // Ceiling beams/pipes continue across both generation types.
+        if(rng()<0.85) this.pipeRun(g,centerX,oz+S*.35,S*.72,0,rng);
+        if(rng()<0.65) this.pipeRun(g,ox+S*.68,centerZ,0,S*.70,rng);
+        const lightMode=rng(); rec.dark=lightMode<0.18; rec.bright=lightMode>0.78;
+        const spacing=type==='parking' ? (rec.bright?12:18) : (rec.bright?10:14);
         if(!rec.dark){
-          const spacing=rec.bright?8:12;
           for(let x=spacing/2;x<S;x+=spacing) for(let z=spacing/2;z<S;z+=spacing){
-            if(rng()<(rec.bright?0.06:0.28)) continue;
-            this.fixture(g,rec,ox+x,oz+z,rec.bright?1.35:0.82,rng);
+            if(rng()<(rec.bright?0.08:0.32)) continue;
+            this.fixture(g,ox+x,oz+z,rec.bright?1.3:0.86,rng,rec);
           }
         }
-        // Chunk edge signage/paint strips add scale without adding colliders.
-        if(rng()<0.28){
-          const stripe=new THREE.Mesh(Geometries.box, this.shared.concreteLight); stripe.scale.set(0.06,0.04,S*0.7); stripe.position.set(ox+0.18,this.baseY+0.02,oz+S/2); g.add(stripe);
+        // Puddles are preferentially placed in parking/open floor; a smaller number
+        // can appear in unusually wide maintenance sections.
+        if(type==='parking' || rng()<0.20){
+          const openMask=(x,z)=>{
+            if(type==='parking') return true;
+            // Avoid candidates too close to maintenance walls.
+            return !rec.colliders.some(c=>x>=c.min.x-1 && x<=c.max.x+1 && z>=c.min.z-1 && z<=c.max.z+1);
+          };
+          this.generatePuddles(g,rec,ox,oz,S,rng,openMask);
         }
         this.group.add(g); this.chunks.set(key,rec);
       },
@@ -3023,39 +3098,123 @@
             this.chunks.delete(key);
           }
         }
+        // Remove puddles belonging to unloaded chunks from the proximity list.
+        this.puddles=this.puddles.filter(p=>Math.max(Math.abs(Math.floor(p.x/this.microSize)-cx),Math.abs(Math.floor(p.z/this.microSize)-cz))<=this.activeRadius);
       },
       stream(force=false){
         if(!this.active) return;
-        const source = (typeof Player!=='undefined' && Player.position) ? Player.position : this.center;
-        const cx=Math.floor(source.x/this.chunkSize), cz=Math.floor(source.z/this.chunkSize);
-        if(!force && cx===this.lastCX && cz===this.lastCZ) return;
-        this.lastCX=cx; this.lastCZ=cz;
-        // Build nearest chunks first so the player never outruns generation.
+        const source=(typeof Player!=='undefined'&&Player.position)?Player.position:this.center;
+        const mcx=Math.floor(source.x/this.microSize), mcz=Math.floor(source.z/this.microSize);
+        if(!force&&mcx===this.lastMCX&&mcz===this.lastMCZ) return;
+        this.lastMCX=mcx; this.lastMCZ=mcz;
         const wanted=[];
         for(let dz=-this.activeRadius;dz<=this.activeRadius;dz++) for(let dx=-this.activeRadius;dx<=this.activeRadius;dx++) wanted.push([dx*dx+dz*dz,dx,dz]);
         wanted.sort((a,b)=>a[0]-b[0]);
-        for(const [,dx,dz] of wanted) this.buildChunk(cx+dx,cz+dz);
-        this.unloadFar(cx,cz);
-        this.rebuildColliders();
-        this.center.copy(Player.position); this.center.y=this.baseY;
+        for(const [,dx,dz] of wanted) this.buildChunk(mcx+dx,mcz+dz);
+        this.unloadFar(mcx,mcz); this.rebuildColliders();
+        this.center.copy(source); this.center.y=this.baseY;
       },
-      update(dt){
-        if(!this.active) return;
-        this.streamTimer+=dt;
-        if(this.streamTimer>0.18){ this.streamTimer=0; this.stream(false); }
-        this.updatePowerEvent(dt);
-        // Keep global Level bounds effectively infinite; collision is provided by streamed chunks.
-        Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
+      setFixtureState(on,dim=1){
+        for(const rec of this.chunks.values()){
+          for(const f of rec.fixtures){
+            const e=on ? 2.0*f.base*dim : 0.0;
+            f.panel.material.emissiveIntensity=e;
+            f.panel.visible=true; f.housing.visible=true;
+          }
+          for(const L of rec.pointLights) L.intensity=on ? 0.72*dim : 0;
+        }
+      },
+      startBlackout(){
+        if(this.blackoutState!=='idle') return;
+        this.blackoutState='flicker'; this.blackoutFlickerT=0; this.blackoutFlickerNext=0.10;
+        this.blackoutDuration=30+this.rngFor(this.blackoutCycle,0,333)()*30;
+        this.setFixtureState(false);
+        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,12,64); }
+      },
+      beginOutage(){
+        this.blackoutState='outage'; this.blackoutTimer=0;
+        this.setFixtureState(false);
+        if(scene){ scene.background && scene.background.setHex(0x000000); if(!scene.fog) scene.fog=new THREE.Fog(0x000000,10,64); scene.fog.near=10; scene.fog.far=64; scene.fog.color.setHex(0x000000); }
+      },
+      endBlackout(){
+        this.blackoutState='cooldown'; this.blackoutCooldown=60+this.rngFor(this.blackoutCycle,7,334)()*30;
+        this.setFixtureState(true,1);
+        if(scene){ scene.fog=null; scene.background && scene.background.setHex(0x202321); }
+      },
+      updateBlackout(dt){
+        this.levelTime+=dt;
+        if(this.blackoutState==='idle' && this.levelTime>=this.blackoutNext){
+          const atGuarantee=this.levelTime >= this.blackoutWindowStart+90;
+          if(atGuarantee || Math.random()<0.10){
+            this.startBlackout();
+          } else {
+            // Missed the 60s roll: try again every 6s until the hard 90s guarantee.
+            this.blackoutNext=Math.min(this.blackoutWindowStart+90,this.levelTime+6);
+          }
+        }
+        if(this.blackoutState==='flicker'){
+          this.blackoutFlickerT+=dt;
+          if(this.blackoutFlickerT>=2.4){ this.beginOutage(); return; }
+          if(this.blackoutFlickerT>=this.blackoutFlickerNext){
+            this.blackoutFlickerNext=this.blackoutFlickerT+(0.07+Math.random()*0.22);
+            const on=Math.random()>0.38; this.setFixtureState(on,on?1:0.08);
+          }
+        } else if(this.blackoutState==='outage'){
+          this.blackoutTimer+=dt;
+          this.setFixtureState(false);
+          if(scene&&scene.fog){ scene.fog.near=10; scene.fog.far=64; scene.fog.color.setHex(0x000000); }
+          if(this.blackoutTimer>=this.blackoutDuration) this.endBlackout();
+        } else if(this.blackoutState==='cooldown'){
+          this.blackoutCooldown-=dt;
+          if(this.blackoutCooldown<=0){
+            this.blackoutState='idle'; this.blackoutCycle++;
+            // New blackout cycle begins 60s after the cooldown ends.
+            this.blackoutWindowStart=this.levelTime+60;
+            this.blackoutNext=this.blackoutWindowStart+60;
+          }
+        }
+      },
+      updatePuddleVisibility(){
+        if(!CameraRig.camera) return;
+        let inside=false;
+        for(const p of this.puddles){ const dx=Player.position.x-p.x,dz=Player.position.z-p.z; if(dx*dx+dz*dz<=p.r*p.r){inside=true;break;} }
+        const target=inside ? CONFIG.cameraFar*0.85 : CONFIG.cameraFar;
+        if(Math.abs(CameraRig.camera.far-target)>0.5){ CameraRig.camera.far+=(target-CameraRig.camera.far)*0.35; CameraRig.camera.updateProjectionMatrix(); }
+      },
+      placeExit(){
+        // Pick the nearest maintenance/parking boundary from the forced spawn macro.
+        // The exit is never placed in the middle of a parking lot.
+        const smx=Math.floor(this.start.x/this.macroSize), smz=Math.floor(this.start.z/this.macroSize);
+        let best=null;
+        for(let dz=-2;dz<=2;dz++) for(let dx=-2;dx<=2;dx++){
+          const mx=smx+dx,mz=smz+dz,type=this.macroType(mx,mz); const dist=Math.hypot(dx,dz);
+          if(type==='maintenance' || Math.abs(dx)+Math.abs(dz)<=1){ if(!best||dist<best.dist) best={mx,mz,type,dist}; }
+        }
+        if(!best) best={mx:smx,mz:smz,type:'maintenance',dist:0};
+        this.exitMacro=best;
+        const mb=this.macroBounds(best.mx,best.mz);
+        const side=Math.floor(this.hash2(best.mx,best.mz,99)*4), inset=12, x0=mb.minx+inset, x1=mb.maxx-inset, z0=mb.minz+inset, z1=mb.maxz-inset;
+        let x=(x0+x1)/2,z=(z0+z1)/2;
+        if(side===0) z=z0+3; if(side===1) x=x1-3; if(side===2) z=z1-3; if(side===3) x=x0+3;
+        const trigger={type:'level1exit',minx:x-2.2,maxx:x+2.2,minz:z-2.2,maxz:z+2.2};
+        this.triggers.push(trigger);
+        const g=new THREE.Group(); g.name='Level1_Exit';
+        const back=this.addBox(g,this.shared.concreteLight,x,this.baseY+1.55,z,4.8,3.1,0.32);
+        const door=this.addBox(g,this.shared.metal,x,this.baseY+1.45,z+0.19,2.2,2.9,0.12); door.material=this.shared.metal;
+        const signMat=new THREE.MeshStandardMaterial({color:0xb8c0bb,emissive:0x24352d,emissiveIntensity:0.7});
+        this.addBox(g,signMat,x,this.baseY+3.15,z+0.18,1.5,0.28,0.08);
+        this.addBox(g,this.shared.light,x,this.baseY+3.55,z,2.0,0.08,0.38);
+        g.position.y=0; this.group.add(g);
       },
       build(seed,origin){
         this.resetVisuals(); this.materialSet(); this.active=true; this.seed=seed>>>0;
-        this.resetPowerEvent();
         this.center.set(origin.x,this.baseY,origin.z); this.start.set(origin.x,this.baseY,origin.z);
         this.group=new THREE.Group(); this.group.name='Level1_InfiniteWorld'; scene.add(this.group);
-        const hemi=new THREE.HemisphereLight(0xe4ebe9,0x363b3a,0.86);
-        const amb=new THREE.AmbientLight(0xaeb5b2,0.34); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
-        if(scene.fog){scene.fog.near=35;scene.fog.far=145;scene.fog.color.setHex(0x555b59);} if(scene.background)scene.background.setHex(0x555b59);
-        this.lastCX=999999; this.lastCZ=999999; this.stream(true);
+        const hemi=new THREE.HemisphereLight(0xe4ebe9,0x202323,0.78);
+        const amb=new THREE.AmbientLight(0x9fa6a2,0.28); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
+        scene.fog=null; if(scene.background) scene.background.setHex(0x202321);
+        if(CameraRig.camera){ CameraRig.camera.far=320; CameraRig.camera.updateProjectionMatrix(); }
+        this.lastMCX=999999; this.lastMCZ=999999; this.stream(true); this.placeExit();
       },
       enter(seed,elevatorState){
         if(Level.group&&scene)scene.remove(Level.group); LightingSystem.clear(scene);
@@ -3063,6 +3222,7 @@
         const origin=elevatorState?{x:elevatorState.origin.x,z:elevatorState.origin.z}:{x:0,z:0};
         this.build(seed,origin);
         Level.cols=Infinity; Level.rows=Infinity; Level.tiles=[]; Level.colliders=this.colliders; Level.triggers=this.triggers; Level.group=this.group;
+        Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
         Level.startPos.set(origin.x,0,origin.z); GameState.level=1;
         const obj=document.getElementById('hud-obj');if(obj)obj.textContent='Objective: explore Level 1';
         const lvl=document.getElementById('hud-level-label');if(lvl)lvl.textContent='LEVEL 1';
@@ -3071,6 +3231,12 @@
         Checkpoints.reset(); Checkpoints.register('level1-start',new THREE.Vector3(origin.x,0,origin.z),0); Checkpoints.activate('level1-start');
         Player.position.set(origin.x,0,origin.z); Player.velocity.set(0,0,0); Player.onGround=true;
         EntitySystem.despawn(); EncounterManager.reset(); DebugPath.hide(); DarknessSystem.reset(); AtmosphereSystem.reset(); EnvEventSystem.reset(); Flashlight.reset();
+      },
+      update(dt){
+        if(!this.active) return;
+        this.streamTimer+=dt; if(this.streamTimer>0.18){this.streamTimer=0;this.stream(false);}
+        this.updateBlackout(dt); this.updatePuddleVisibility();
+        Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
       }
     };
 
@@ -3499,6 +3665,12 @@
               Stairwell.reached = true;
               HUD.toast("ELEVATOR_ENTERED");
               Stairwell.startSequence(t.exitIndex || 0);
+            }
+          } else if (t.type === "level1exit") {
+            if (!GameState.exitReached && GameState.level === 1) {
+              GameState.exitReached = true;
+              HUD.toast("EXIT_REACHED");
+              Game.complete();
             }
           }
         });
@@ -5206,11 +5378,6 @@
           if (GameState.level === 1) {
             ChaseFx.update(dt);
             AudioSystem.setListener(Player.position, Player.yaw);
-            // Level 1 uses fixed industrial lighting rather than Level 0 module lighting.
-            if(scene && scene.fog){
-              scene.fog.near += (22-scene.fog.near)*Math.min(1,dt*2);
-              scene.fog.far += (105-scene.fog.far)*Math.min(1,dt*2);
-            }
             CameraRig.update(dt);
           } else {
             EncounterManager.update(dt);
