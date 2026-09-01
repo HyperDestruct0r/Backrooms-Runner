@@ -2978,7 +2978,7 @@
         panel.material.emissiveIntensity=blackout?0:2.0*bright;
         rec.fixtures.push({panel,housing,base:bright});
         if(rng()<0.10 && this.lights.length<12){
-          const L=new THREE.PointLight(0xfff3d4,blackout?0:0.72*bright,20,1.8);
+          const L=new THREE.PointLight(0xf2f6ff,blackout?0:0.68*bright,20,1.8);
           L.position.set(x,this.baseY+4.0,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
         }
       },
@@ -3015,7 +3015,7 @@
         this.shared.concreteLight=new THREE.MeshStandardMaterial({map:ceilMap,color:0xb7b9b4,roughness:0.74,metalness:0.02});
         this.shared.beam=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x686d69,roughness:0.82,metalness:0.04});
         this.shared.metal=new THREE.MeshStandardMaterial({color:0x6f7471,roughness:0.42,metalness:0.72});
-        this.shared.light=new THREE.MeshStandardMaterial({color:0xf1eee0,emissive:0xfff1c8,emissiveIntensity:2.0,roughness:0.4});
+        this.shared.light=new THREE.MeshStandardMaterial({color:0xf7f8f4,emissive:0xeaf3ff,emissiveIntensity:2.0,roughness:0.4});
         this.shared.pipe=new THREE.MeshStandardMaterial({color:0x777b78,roughness:0.62,metalness:0.5});
         this.shared.water=new THREE.MeshPhysicalMaterial({map:this.waterTexture(),color:0x496668,transparent:true,opacity:0.78,roughness:0.08,metalness:0.12,clearcoat:0.75,clearcoatRoughness:0.08,side:THREE.DoubleSide});
         this.shared.water.needsUpdate=true;
@@ -3044,9 +3044,9 @@
       getMaintenanceWalls(mx,mz){
         const key=this.macroKey(mx,mz)+':walls';
         if(this.macroCache.has(key)) return this.macroCache.get(key);
-        const mb=this.macroBounds(mx,mz), sector=150, cell=7.5, n=20, walls=[];
+        const mb=this.macroBounds(mx,mz), sector=150, cell=6.5, n=23, walls=[];
         const rng=this.rngFor(mx,mz,707);
-        const push=(x,z,sx,sz,h=3.65)=>walls.push({x,z,sx,sz,h});
+        const push=(x,z,sx,sz,h=4.70)=>walls.push({x,z,sx,sz,h});
 
         // Maintenance areas use a Level-0-like cellular maze, but at a larger
         // scale: 7.5m cells make the corridors roomier while substantial
@@ -3074,18 +3074,18 @@
           }
           // Add loops, but less aggressively than the previous version.
           // The result has more wall mass while still producing intersections.
-          for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x] && rng()<0.20) openH[z][x]=1;
-          for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x] && rng()<0.20) openV[z][x]=1;
+          for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x] && rng()<0.08) openH[z][x]=1;
+          for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x] && rng()<0.08) openV[z][x]=1;
 
           // Deliberately create several wider 15–22m openings/rooms by removing
           // selected walls. These become the characteristic Level-1 intersections.
-          for(let k=0;k<7;k++){
+          for(let k=0;k<4;k++){
             const cx=1+Math.floor(rng()*(n-2)), cz=1+Math.floor(rng()*(n-2));
             if(rng()<0.5){ if(cx<n-1) openH[cz][cx]=1; if(cx>0) openH[cz][cx-1]=1; }
             else { if(cz<n-1) openV[cz][cx]=1; if(cz>0) openV[cz-1][cx]=1; }
           }
 
-          const WT=0.78;
+          const WT=0.92;
           for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x])
             push(x0+(x+1)*cell,z0+(z+.5)*cell,WT,cell+0.18);
           for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x])
@@ -3097,7 +3097,7 @@
         // visible in the reference rather than looking like thin partitions.
         for(let i=0;i<18;i++){
           const x=mb.minx+18+rng()*564, z=mb.minz+18+rng()*564;
-          const long=18+rng()*42, WT=0.78;
+          const long=18+rng()*42, WT=0.92;
           if(rng()<0.5) push(x,z,WT,long,3.8);
           else push(x,z,long,WT,3.8);
         }
@@ -3109,8 +3109,9 @@
         if(maxX-minX<0.02 || maxZ-minZ<0.02) return;
         // Keep the elevator landing comfortably clear of maintenance geometry.
         if(this.start && Math.abs((minX+maxX)*0.5-this.start.x)<10 && Math.abs((minZ+maxZ)*0.5-this.start.z)<10) return;
-        this.addBox(g,this.shared.concrete,(minX+maxX)/2,this.baseY+wall.h/2,(minZ+maxZ)/2,maxX-minX,wall.h,maxZ-minZ);
-        rec.colliders.push({min:new THREE.Vector3(minX,this.baseY,minZ),max:new THREE.Vector3(maxX,this.baseY+wall.h,maxZ)});
+        const wallH=Math.min(4.70,Math.max(4.68,wall.h||4.70));
+        this.addBox(g,this.shared.concrete,(minX+maxX)/2,this.baseY+wallH/2,(minZ+maxZ)/2,maxX-minX,wallH,maxZ-minZ);
+        rec.colliders.push({min:new THREE.Vector3(minX,this.baseY,minZ),max:new THREE.Vector3(maxX,this.baseY+wallH,maxZ)});
       },
       buildMaintenanceMacroParts(g,rec,mx,mz,bx,bz,S,rng){
         const walls=this.getMaintenanceWalls(mx,mz);
@@ -3229,12 +3230,12 @@
         this.blackoutState='flicker'; this.blackoutFlickerT=0; this.blackoutFlickerNext=0.10;
         this.blackoutDuration=30+this.rngFor(this.blackoutCycle,0,333)()*30;
         this.setFixtureState(false);
-        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,18,64); }
+        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,8,56); }
       },
       beginOutage(){
         this.blackoutState='outage'; this.blackoutTimer=0;
         this.setFixtureState(false);
-        if(scene){ scene.background && scene.background.setHex(0x000000); if(!scene.fog) scene.fog=new THREE.Fog(0x000000,10,64); scene.fog.near=10; scene.fog.far=64; scene.fog.color.setHex(0x000000); }
+        if(scene){ scene.background && scene.background.setHex(0x000000); if(!scene.fog) scene.fog=new THREE.Fog(0x000000,10,64); scene.fog.near=8; scene.fog.far=56; scene.fog.color.setHex(0x000000); }
       },
       endBlackout(){
         this.blackoutState='cooldown'; this.blackoutCooldown=60+this.rngFor(this.blackoutCycle,7,334)()*30;
@@ -3262,7 +3263,7 @@
         } else if(this.blackoutState==='outage'){
           this.blackoutTimer+=dt;
           this.setFixtureState(false);
-          if(scene&&scene.fog){ scene.fog.near=10; scene.fog.far=64; scene.fog.color.setHex(0x000000); }
+          if(scene&&scene.fog){ scene.fog.near=8; scene.fog.far=56; scene.fog.color.setHex(0x000000); }
           if(this.blackoutTimer>=this.blackoutDuration) this.endBlackout();
         } else if(this.blackoutState==='cooldown'){
           this.blackoutCooldown-=dt;
@@ -3315,8 +3316,8 @@
         // level does not leave stale pickups behind.
         if(PickupSystem.group && scene) scene.remove(PickupSystem.group);
         PickupSystem.group=new THREE.Group(); PickupSystem.group.name='Level1_Pickups'; scene.add(PickupSystem.group);
-        const hemi=new THREE.HemisphereLight(0xe4ebe9,0x202323,0.78);
-        const amb=new THREE.AmbientLight(0x9fa6a2,0.28); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
+        const hemi=new THREE.HemisphereLight(0xe8f0f5,0x202326,0.72);
+        const amb=new THREE.AmbientLight(0xb8c2c8,0.25); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
         scene.fog=null; if(scene.background) scene.background.setHex(0x202321);
         if(CameraRig.camera){ CameraRig.camera.far=320; CameraRig.camera.updateProjectionMatrix(); }
         this.lastMCX=999999; this.lastMCZ=999999; this.stream(true); this.placeExit();
