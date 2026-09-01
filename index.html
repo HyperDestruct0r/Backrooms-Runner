@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Backrooms Runner — Level 0 + Infinite Level 1</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+</head>
+<body>
+
+  <div id="boot-loading">
+    <div class="loading-card">
+      <div class="loading-title">BACKROOMS</div>
+      <div class="loading-subtitle">LEVEL 0 · INITIALIZING ENVIRONMENT</div>
+      <div id="boot-status" class="loading-status pulse">INITIALIZING...</div>
+      <div class="loading-track"><div id="boot-fill" class="loading-fill"></div></div>
+      <div id="boot-percent" class="loading-percent">0%</div>
+    </div>
+  </div>
+  <div id="game-loading">
+    <div class="loading-card">
+      <div class="loading-title">ENTERING LEVEL 0</div>
+      <div class="loading-subtitle">PLEASE WAIT</div>
+      <div id="game-load-status" class="loading-status pulse">PREPARING...</div>
+      <div class="loading-track"><div id="game-load-fill" class="loading-fill"></div></div>
+      <div id="game-load-percent" class="loading-percent">0%</div>
+      <div class="loading-tip">The layout is generated for this run. Some corridors may look familiar. They are not.</div>
+    </div>
+  </div>
+  <div id="elevator-sequence">
+    <div id="elevator-card">
+      <h2>CONCRETE ELEVATOR</h2>
+      <div id="elevator-status">DOORS CLOSING</div>
+      <div id="elevator-track"><div id="elevator-fill"></div></div>
+      <div id="elevator-floor">DEPTH  −0.0 m</div>
+    </div>
+  </div>
+  <div id="hud">
+    <div id="hud-top">
+      <div>TIME <span id="hud-time">00:00.0</span></div>
+    </div>
+    <div id="res-panel">
+      <div class="res-row">
+        <div class="res-label"><span>HP</span><span id="hud-hp">100 / 100</span></div>
+        <div class="res-track"><div id="hp-fill" class="res-fill"></div></div>
+      </div>
+      <div class="res-row">
+        <div class="res-label"><span>STAMINA</span><span id="hud-stam">100 / 100</span></div>
+        <div class="res-track"><div id="stam-fill" class="res-fill"></div></div>
+      </div>
+      <div class="res-row">
+        <div class="res-label"><span>SANITY</span><span id="hud-san">100 / 100</span></div>
+        <div class="res-track"><div id="san-fill" class="res-fill"></div></div>
+      </div>
+    </div>
+    <div id="hud-obj">Objective: find the exit</div>
+    <div id="hud-seed"><span id="hud-level-label">LEVEL 0</span> · SEED <span id="hud-seed-val">—</span></div>
+    <div id="debug-panel"></div>
+    <div id="toast-note"></div>
+    <div id="crosshair"></div>
+    <div id="dark-fog"></div>
+    <div id="chase-vignette"></div>
+    <div id="dmg-flash"></div>
+    <div id="run-flash">RUN!</div>
+  </div>
+  <div id="inv-overlay">
+    <div id="inv-panel">
+      <h2>INVENTORY</h2>
+      <div id="inv-list"></div>
+      <div id="inv-hint">Q drink Almond Water · I close</div>
+    </div>
+  </div>
+  <div id="pause-note">Click to resume — I inventory — Q drink — E pick up — R checkpoint — G new layout</div>
+  <div id="pause-overlay">
+    <div id="pause-panel">
+      <h1>Paused</h1>
+      <p>The Backrooms are waiting.</p>
+      <p class="pause-hint">Press ESC again or click below to resume.</p>
+      <button id="pause-resume" type="button">Resume</button>
+    </div>
+  </div>
+
+  <div id="start-overlay" class="overlay">
+    <div class="panel">
+      <h1>Backrooms</h1>
+      <p>You are inside a yellow maze of rooms and corridors. Find the exit.</p>
+      <p id="start-seed" class="hint">LEVEL 0 · SEED —</p>
+      <p class="hint">
+        WASD move · Mouse look · Shift sprint · Space jump<br />
+        C/Ctrl crouch · F flashlight · I inventory · Q drink · E pick up · G new layout
+      </p>
+      <button id="btn-start" type="button">Enter</button>
+    </div>
+  </div>
+
+  <div id="gameover-overlay" class="overlay" style="display:none">
+    <div class="panel">
+      <h1>GAME OVER</h1>
+      <p>The entity reached you.</p>
+      <div class="stats">
+        <div>Time: <span id="go-time">—</span></div>
+        <div>Distance: <span id="go-dist">—</span></div>
+      </div>
+      <button id="btn-gameover" type="button">Restart</button>
+    </div>
+  </div>
+  <div id="complete-overlay" class="overlay">
+    <div class="panel">
+      <h1>Exit reached</h1>
+      <div class="stats">
+        <div>Time: <span id="stat-time">—</span></div>
+        <div>Distance: <span id="stat-dist">—</span></div>
+      </div>
+      <button id="btn-restart" type="button">Restart</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
