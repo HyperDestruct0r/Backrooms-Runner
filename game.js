@@ -2865,6 +2865,13 @@
         GameState.seed = result.seed;
         Checkpoints.reset();
         this.clear(sceneRef);
+        // Level 1 deliberately removes scene.fog. Recreate the Level 0 fog
+        // before loading meshes so DARK/NORMAL/BRIGHT modules work again after
+        // returning from Level 1 or pressing G to regenerate.
+        if (sceneRef) {
+          sceneRef.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
+          sceneRef.background = new THREE.Color(CONFIG.fogColor);
+        }
         this.loadGenerated(result);
         Stairwell.planFrom(result);
         this.buildColliders();
@@ -2915,6 +2922,7 @@
         for(const L of this.ambientLights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
         this.chunks.clear(); this.colliders.length=0; this.triggers.length=0;
         this.lights.length=0; this.ambientLights.length=0; this.puddles.length=0;
+        if(typeof PickupSystem!=='undefined' && PickupSystem.group){ PickupSystem.reset(); }
         this.group=null; this.active=false; this.lastMCX=999999; this.lastMCZ=999999; this.resourceRegions=Object.create(null);
         this.levelTime=0; this.blackoutState='idle'; this.blackoutTimer=0; this.blackoutNext=60;
         this.blackoutCooldown=0; this.blackoutDuration=0; this.blackoutCycle=0;
@@ -3000,9 +3008,9 @@
         const floorMap=this.concreteTexture(6,6);
         const pillarMap=this.concreteTexture(2.2,7.0);
         const ceilMap=this.concreteTexture(5,5);
-        this.shared.floor=new THREE.MeshStandardMaterial({map:floorMap,color:0xb0b0aa,roughness:0.62,metalness:0.06});
-        this.shared.concrete=new THREE.MeshStandardMaterial({map:floorMap.clone(),color:0xa3a6a1,roughness:0.78,metalness:0.02});
-        this.shared.concretePillar=new THREE.MeshStandardMaterial({map:pillarMap,color:0x9da09b,roughness:0.82,metalness:0.02});
+        this.shared.floor=new THREE.MeshStandardMaterial({map:floorMap,color:0xb0b0aa,roughness:0.48,metalness:0.08});
+        this.shared.concrete=new THREE.MeshStandardMaterial({map:floorMap.clone(),color:0x979a96,roughness:0.74,metalness:0.02});
+        this.shared.concretePillar=new THREE.MeshStandardMaterial({map:pillarMap,color:0x9b9e99,roughness:0.80,metalness:0.02});
         this.shared.concreteDark=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x747874,roughness:0.88,metalness:0.01});
         this.shared.concreteLight=new THREE.MeshStandardMaterial({map:ceilMap,color:0xb7b9b4,roughness:0.74,metalness:0.02});
         this.shared.beam=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x686d69,roughness:0.82,metalness:0.04});
@@ -3020,35 +3028,40 @@
         this.puddles.push({x:wx,z:wz,r:r*0.92});
       },
       generatePuddles(g,rec,bx,bz,S,rng,openMask){
-        let made=0;
-        const cells=S/15;
-        for(let tx=0;tx<cells && made<8;tx++) for(let tz=0;tz<cells && made<8;tz++){
-          if(rng()>0.03) continue;
+        // Eight independent 15m x 15m tile attempts per streamed section.
+        // Each attempt has a 3% chance, and a successful puddle must land on
+        // genuinely open floor. This keeps puddles sparse even in huge lots.
+        for(let attempt=0;attempt<8;attempt++){
+          if(rng()>=0.03) continue;
+          const cells=S/15;
+          const tx=Math.floor(rng()*cells), tz=Math.floor(rng()*cells);
           const x=bx+tx*15+7.5, z=bz+tz*15+7.5;
           if(openMask && !openMask(x,z)) continue;
           if(this.puddles.some(p=>(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z)<1.4)) continue;
-          this.addPuddle(g,x+(rng()-.5)*5,z+(rng()-.5)*5,rng); made++;
+          this.addPuddle(g,x+(rng()-.5)*5,z+(rng()-.5)*5,rng);
         }
       },
       getMaintenanceWalls(mx,mz){
         const key=this.macroKey(mx,mz)+':walls';
         if(this.macroCache.has(key)) return this.macroCache.get(key);
-        const mb=this.macroBounds(mx,mz), sector=150, cell=5, n=30, walls=[];
+        const mb=this.macroBounds(mx,mz), sector=150, cell=7.5, n=20, walls=[];
         const rng=this.rngFor(mx,mz,707);
-        const push=(x,z,sx,sz,h=3.45)=>walls.push({x,z,sx,sz,h});
-        // Each 150x150 maintenance sector is a Level-0-inspired maze: actual
-        // concrete walls define corridors, but a high loop-removal rate creates
-        // many intersections and wider junctions instead of constant dead ends.
+        const push=(x,z,sx,sz,h=3.65)=>walls.push({x,z,sx,sz,h});
+
+        // Maintenance areas use a Level-0-like cellular maze, but at a larger
+        // scale: 7.5m cells make the corridors roomier while substantial
+        // concrete walls keep the space visually enclosed. Each 150m sector
+        // is its own network, then openings between sectors create larger
+        // intersections and loops.
         for(let sy=0;sy<4;sy++) for(let sx=0;sx<4;sx++){
-          const x0=mb.minx+sx*sector,z0=mb.minz+sy*sector;
+          const x0=mb.minx+sx*sector, z0=mb.minz+sy*sector;
           const visited=Array.from({length:n},()=>new Uint8Array(n));
           const openH=Array.from({length:n},()=>new Uint8Array(n-1));
           const openV=Array.from({length:n-1},()=>new Uint8Array(n));
           const stack=[[Math.floor(rng()*n),Math.floor(rng()*n)]];
           visited[stack[0][1]][stack[0][0]]=1;
           while(stack.length){
-            const [cx,cz]=stack[stack.length-1];
-            const dirs=[];
+            const [cx,cz]=stack[stack.length-1], dirs=[];
             for(const d of [0,1,2,3]){
               const nx=cx+DIR4[d].x,nz=cz+DIR4[d].z;
               if(nx>=0&&nz>=0&&nx<n&&nz<n&&!visited[nz][nx]) dirs.push(d);
@@ -3059,26 +3072,34 @@
             if(d===2)openV[cz][cx]=1; if(d===0)openV[nz][cx]=1;
             visited[nz][nx]=1; stack.push([nx,nz]);
           }
-          // Add many loops. Around 28% of remaining walls disappear, making
-          // intersections common while retaining the visual maze language.
-          for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x] && rng()<0.28) openH[z][x]=1;
-          for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x] && rng()<0.28) openV[z][x]=1;
-          // Emit only closed boundaries as concrete wall strips.
-          for(let z=0;z<n;z++){
-            for(let x=0;x<n-1;x++) if(!openH[z][x]) push(x0+(x+1)*cell,z0+(z+.5)*cell,0.38,cell+0.12);
+          // Add loops, but less aggressively than the previous version.
+          // The result has more wall mass while still producing intersections.
+          for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x] && rng()<0.20) openH[z][x]=1;
+          for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x] && rng()<0.20) openV[z][x]=1;
+
+          // Deliberately create several wider 15–22m openings/rooms by removing
+          // selected walls. These become the characteristic Level-1 intersections.
+          for(let k=0;k<7;k++){
+            const cx=1+Math.floor(rng()*(n-2)), cz=1+Math.floor(rng()*(n-2));
+            if(rng()<0.5){ if(cx<n-1) openH[cz][cx]=1; if(cx>0) openH[cz][cx-1]=1; }
+            else { if(cz<n-1) openV[cz][cx]=1; if(cz>0) openV[cz-1][cx]=1; }
           }
-          for(let z=0;z<n-1;z++){
-            for(let x=0;x<n;x++) if(!openV[z][x]) push(x0+(x+.5)*cell,z0+(z+1)*cell,cell+0.12,0.38);
-          }
-          // Do not wall off the internal 150m sectors. Their maze networks
-          // deliberately bleed into one another, creating the larger, open
-          // intersections that distinguish Level 1 maintenance areas from Level 0.
-          // The outer 600m boundary remains visually open to neighboring macro areas.
+
+          const WT=0.78;
+          for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x])
+            push(x0+(x+1)*cell,z0+(z+.5)*cell,WT,cell+0.18);
+          for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x])
+            push(x0+(x+.5)*cell,z0+(z+1)*cell,cell+0.18,WT);
         }
-        // Add a handful of larger concrete partitions/open bays.
-        for(let i=0;i<10;i++){
-          const x=mb.minx+30+rng()*540,z=mb.minz+30+rng()*540;
-          if(rng()<0.5) push(x,z,0.38,18+rng()*30); else push(x,z,18+rng()*30,0.38);
+
+        // Add thicker architectural divider walls/backs of service rooms.
+        // These give the maintenance network the heavy-concrete appearance
+        // visible in the reference rather than looking like thin partitions.
+        for(let i=0;i<18;i++){
+          const x=mb.minx+18+rng()*564, z=mb.minz+18+rng()*564;
+          const long=18+rng()*42, WT=0.78;
+          if(rng()<0.5) push(x,z,WT,long,3.8);
+          else push(x,z,long,WT,3.8);
         }
         this.macroCache.set(key,walls); return walls;
       },
@@ -3150,8 +3171,13 @@
         // can appear in unusually wide maintenance sections.
         if(type==='parking' || rng()<0.20){
           const openMask=(x,z)=>{
-            if(type==='parking') return true;
-            return !rec.colliders.some(c=>x>=c.min.x-1 && x<=c.max.x+1 && z>=c.min.z-1 && z<=c.max.z+1);
+            // Only place puddles on actual open floor. The first collider in a
+            // chunk is the floor slab; ignore it and test structural obstacles.
+            for(const c of rec.colliders){
+              if(c.max.y <= this.baseY + 0.5) continue;
+              if(x>=c.min.x-0.9 && x<=c.max.x+0.9 && z>=c.min.z-0.9 && z<=c.max.z+0.9) return false;
+            }
+            return true;
           };
           this.generatePuddles(g,rec,ox,oz,S,rng,openMask);
         }
@@ -3285,6 +3311,10 @@
         this.resetVisuals(); this.materialSet(); this.active=true; this.seed=seed>>>0;
         this.center.set(origin.x,this.baseY,origin.z); this.start.set(origin.x,this.baseY,origin.z);
         this.group=new THREE.Group(); this.group.name='Level1_InfiniteWorld'; scene.add(this.group);
+        // Level 1 resources live in their own group so streaming/resetting the
+        // level does not leave stale pickups behind.
+        if(PickupSystem.group && scene) scene.remove(PickupSystem.group);
+        PickupSystem.group=new THREE.Group(); PickupSystem.group.name='Level1_Pickups'; scene.add(PickupSystem.group);
         const hemi=new THREE.HemisphereLight(0xe4ebe9,0x202323,0.78);
         const amb=new THREE.AmbientLight(0x9fa6a2,0.28); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
         scene.fog=null; if(scene.background) scene.background.setHex(0x202321);
@@ -4262,7 +4292,9 @@
       profile: "NORMAL",
       targetOpacity: 0,
       update(dt) {
-        if (!scene || !scene.fog || !Player || GameState.phase !== "playing") return;
+        if (!scene || !Player || GameState.phase !== "playing" || GameState.level !== 0) return;
+        if (!scene.fog) scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
+        if (!scene.background) scene.background = new THREE.Color(CONFIG.fogColor);
         const T = CONFIG.tile;
         const C = LevelGenerator.CELL;
         const tx = Math.floor(Player.position.x / T);
@@ -4275,7 +4307,8 @@
         // the player actually crosses into the next hallway/room.
         let previewProfile = profile, previewWeight = 0;
         for (let r = 1; r <= 22; r++) {
-          const samples = [[tx+r,tz],[tx-r,tz],[tx,tz+r],[tx,tz-r]];
+          const samples = [[tx+r,tz],[tx-r,tz],[tx,tz+r],[tx,tz-r],
+            [tx+r,tz+r],[tx-r,tz+r],[tx+r,tz-r],[tx-r,tz-r]];
           for (const q of samples) {
             const nm = MapGraph.nodeAt(Math.floor(q[0]/C),Math.floor(q[1]/C));
             if (!nm || !nm.lightProfile || nm === mod) continue;
@@ -4320,13 +4353,18 @@
           if (!u.light || u.state === "BROKEN") continue;
           const d = Math.hypot(u.x - Player.position.x, u.z - Player.position.z);
           const home = u.homeState === "NORMAL" || u.homeState === "DIM" || u.homeState === "FLICKERING";
-          if (dark && home) {
-            let mult = d < 5 ? 0.35 : d < 8 ? 0.10 : 0.015;
-            if (flashlightOn) mult *= 1.45;
-            u.light.intensity = u.baseIntensity * mult;
-          } else if (home && u.light) {
+          if (home && u.light) {
             const stateMult = u.state === "DIM" ? 0.42 : u.state === "BROKEN" ? 0 : 1;
-            u.light.intensity = u.baseIntensity * stateMult;
+            // Fade nearby illumination continuously as the player approaches a
+            // dark module. This makes the hallway visibly transition from a
+            // distance instead of changing only after the player crosses the seam.
+            const fade = darkBlend > 0 ? (d < 5 ? 0.35 : d < 8 ? 0.10 : 0.015) : 1;
+            const transitionMult = darkBlend > 0 ? (1-darkBlend) + darkBlend*fade : 1;
+            u.light.intensity = u.baseIntensity * stateMult * transitionMult;
+            if (u.panelMat) {
+              const emBase = stateMult === 0 ? 0.04 : (u.state === "DIM" ? 0.45 : 1.35);
+              u.panelMat.emissiveIntensity = emBase * (darkBlend > 0 ? (1-darkBlend*0.92) : 1);
+            }
           }
         }
         const fogEl = document.getElementById("dark-fog");
@@ -4342,7 +4380,8 @@
         this.targetOpacity = 0;
         const el = document.getElementById("dark-fog");
         if (el) el.style.opacity = "0";
-        if (scene && scene.fog) {
+        if (scene) {
+          if (!scene.fog) scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
           scene.fog.near = CONFIG.fogNear;
           scene.fog.far = CONFIG.fogFar;
           scene.fog.color.setHex(CONFIG.fogColor);
