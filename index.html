@@ -1,193 +1,121 @@
-* { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1810; font-family: "Segoe UI", Consolas, monospace; }
-    canvas { display: block; width: 100%; height: 100%; }
-    #hud {
-      position: fixed; inset: 0; pointer-events: none; color: #efe6b0;
-      text-shadow: 0 1px 2px #000, 0 0 8px rgba(0,0,0,0.6);
-      z-index: 5;
-    }
-    #hud-top {
-      position: absolute; top: 16px; left: 18px; font-size: 14px; letter-spacing: 0.08em;
-      line-height: 1.6; opacity: 0.92;
-    }
-    #hud-obj {
-      position: absolute; top: 16px; right: 18px; font-size: 13px; letter-spacing: 0.12em;
-      text-transform: uppercase; opacity: 0.8;
-    }
-    #res-panel {
-      position: absolute; top: 42px; left: 18px; width: 196px;
-    }
-    .res-row { margin: 7px 0 10px; }
-    .res-label {
-      display: flex; justify-content: space-between; font-size: 10px;
-      letter-spacing: 0.14em; opacity: 0.78; margin-bottom: 3px;
-    }
-    .res-track {
-      height: 7px; background: rgba(0,0,0,0.42);
-      border: 1px solid rgba(239,230,176,0.22); overflow: hidden;
-    }
-    .res-fill { height: 100%; width: 100%; transform-origin: left center; background: #3dba5c; }
-    #inv-overlay {
-      display: none; position: fixed; inset: 0; z-index: 25;
-      background: rgba(14,12,8,0.62); align-items: center; justify-content: center;
-    }
-    #inv-panel {
-      width: min(340px, 86vw); background: #2a2618; border: 1px solid #8a7a3a;
-      color: #efe6b0; padding: 22px 24px; pointer-events: auto;
-    }
-    #inv-panel h2 { font-size: 15px; letter-spacing: 0.2em; text-align: center; margin-bottom: 16px; }
-    #inv-list { font-size: 14px; line-height: 1.8; min-height: 48px; }
-    #inv-list button {
-      display: block; width: 100%; text-align: left; background: transparent;
-      border: 1px solid #6a5a30; color: #efe6b0; padding: 6px 10px; margin: 6px 0;
-      letter-spacing: 0.06em; cursor: pointer;
-    }
-    #inv-list button:hover { background: #3a341c; }
-    #inv-hint { margin-top: 12px; font-size: 11px; opacity: 0.65; text-align: center; }
-    #toast-note {
-      position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%);
-      font-size: 13px; letter-spacing: 0.08em; opacity: 0; color: #efe6b0;
-    }
-    #crosshair {
-      position: absolute; top: 50%; left: 50%; width: 8px; height: 8px;
-      margin: -4px 0 0 -4px; border: 1px solid rgba(239,230,176,0.45); border-radius: 50%;
-    }
-    .overlay {
-      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-      background: rgba(18,16,10,0.78); z-index: 20; color: #efe6b0;
-    }
-    .panel {
-      width: min(520px, 90vw); padding: 36px 40px; background: #2a2618;
-      border: 1px solid #8a7a3a; text-align: center;
-    }
-    .panel h1 { font-weight: 600; font-size: 28px; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 12px; }
-    .panel p { font-size: 14px; line-height: 1.55; color: #d8cfa0; margin: 8px 0; }
-    .panel .hint { margin-top: 18px; font-size: 12px; opacity: 0.75; letter-spacing: 0.06em; }
-    .panel button {
-      margin-top: 22px; pointer-events: auto; cursor: pointer;
-      background: #cbb85a; color: #1c190e; border: none; padding: 10px 22px;
-      font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-    }
-    .panel button:hover { background: #e4d47a; }
-    .stats { margin-top: 16px; font-size: 15px; line-height: 1.7; }
-    #complete-overlay, #pause-note { display: none; }
-    #pause-note {
-      position: fixed; bottom: 18px; left: 18px; z-index: 6; color: #efe6b0;
-      font-size: 12px; opacity: 0.7; display: none;
-    }
-    #pause-overlay {
-      display: none; position: fixed; inset: 0; z-index: 40;
-      align-items: center; justify-content: center;
-      background: rgba(8,7,5,0.58);
-      backdrop-filter: blur(2px);
-      color: #efe6b0;
-      pointer-events: auto;
-    }
-    #pause-panel {
-      width: min(460px, 88vw); padding: 32px 36px;
-      background: rgba(24,21,13,0.88);
-      border: 1px solid rgba(203,184,90,0.5);
-      box-shadow: 0 12px 50px rgba(0,0,0,0.45);
-      text-align: center;
-    }
-    #pause-panel h1 {
-      font-size: 28px; font-weight: 600; letter-spacing: 0.22em;
-      text-transform: uppercase; margin-bottom: 12px;
-    }
-    #pause-panel p {
-      color: #d8cfa0; font-size: 13px; line-height: 1.55;
-      margin: 8px 0;
-    }
-    #pause-panel .pause-hint {
-      margin-top: 18px; opacity: 0.7; font-size: 11px;
-      letter-spacing: 0.08em;
-    }
-    #pause-resume {
-      margin-top: 20px; padding: 10px 24px; border: none;
-      background: #cbb85a; color: #1c190e; cursor: pointer;
-      font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-    }
-    #pause-resume:hover { background: #e4d47a; }
-    #hud-seed {
-      position: absolute; bottom: 18px; right: 18px; font-size: 11px;
-      letter-spacing: 0.1em; opacity: 0.55;
-    }
-    #debug-panel {
-      display: none; position: absolute; left: 18px; top: 72px;
-      font-size: 12px; line-height: 1.55; letter-spacing: 0.04em;
-      background: rgba(20,18,10,0.55); padding: 10px 12px; white-space: pre;
-    }
-    #chase-vignette {
-      position: absolute; inset: 0; pointer-events: none; opacity: 0;
-      background: radial-gradient(circle at center, rgba(80,0,0,0) 42%, rgba(140,8,8,0.55) 100%);
-      transition: none;
-    }
-    #run-flash {
-      position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
-      font-size: 64px; font-weight: 800; letter-spacing: 0.28em; color: #ff3a3a;
-      text-shadow: 0 0 18px #800, 0 2px 0 #400; opacity: 0; pointer-events: none;
-    }
-    #dmg-flash {
-      position: absolute; inset: 0; pointer-events: none; opacity: 0;
-      background: rgba(120, 12, 12, 0.28);
-    }
-    #dark-fog {
-      position: absolute; inset: -6%; pointer-events: none; opacity: 0;
-      background: radial-gradient(circle at 50% 50%, rgba(10,14,18,0) 13%, rgba(10,14,18,0.12) 32%, rgba(7,10,14,0.58) 70%, rgba(3,5,8,0.88) 100%);
-      mix-blend-mode: multiply;
-      transition: opacity 0.45s ease;
-    }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Backrooms Runner — Infinite Level 1</title>
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
 
-    #elevator-sequence {
-      display:none; position:fixed; inset:0; z-index:90; align-items:center; justify-content:center;
-      background:rgba(3,4,5,.05); color:#e8e7df; font-family:Consolas,"Segoe UI",monospace;
-      pointer-events:none; backdrop-filter:none;
-    }
-    #elevator-card { position:absolute; bottom:7vh; width:min(430px,82vw); padding:18px 22px; background:rgba(16,17,17,.84);
-      border:1px solid rgba(205,207,201,.28); box-shadow:0 12px 40px rgba(0,0,0,.38); }
-    #elevator-card h2 { margin:0 0 8px; font-size:18px; letter-spacing:.2em; font-weight:600; }
-    #elevator-status { font-size:11px; letter-spacing:.12em; opacity:.72; }
-    #elevator-track { height:3px; margin-top:15px; background:rgba(255,255,255,.12); overflow:hidden; }
-    #elevator-fill { height:100%; width:0%; background:#d8d9d4; transition:width .12s linear; }
-    #elevator-floor { margin-top:9px; font-size:10px; letter-spacing:.12em; opacity:.42; text-align:right; }
+  <div id="boot-loading">
+    <div class="loading-card">
+      <div class="loading-title">BACKROOMS</div>
+      <div class="loading-subtitle">LEVEL 0 · INITIALIZING ENVIRONMENT</div>
+      <div id="boot-status" class="loading-status pulse">INITIALIZING...</div>
+      <div class="loading-track"><div id="boot-fill" class="loading-fill"></div></div>
+      <div id="boot-percent" class="loading-percent">0%</div>
+    </div>
+  </div>
+  <div id="game-loading">
+    <div class="loading-card">
+      <div class="loading-title">ENTERING LEVEL 0</div>
+      <div class="loading-subtitle">PLEASE WAIT</div>
+      <div id="game-load-status" class="loading-status pulse">PREPARING...</div>
+      <div class="loading-track"><div id="game-load-fill" class="loading-fill"></div></div>
+      <div id="game-load-percent" class="loading-percent">0%</div>
+      <div class="loading-tip">The layout is generated for this run. Some corridors may look familiar. They are not.</div>
+    </div>
+  </div>
+  <div id="elevator-sequence">
+    <div id="elevator-card">
+      <h2>CONCRETE ELEVATOR</h2>
+      <div id="elevator-status">DOORS CLOSING</div>
+      <div id="elevator-track"><div id="elevator-fill"></div></div>
+      <div id="elevator-floor">DEPTH  −0.0 m</div>
+    </div>
+  </div>
+  <div id="hud">
+    <div id="hud-top">
+      <div>TIME <span id="hud-time">00:00.0</span></div>
+    </div>
+    <div id="res-panel">
+      <div class="res-row">
+        <div class="res-label"><span>HP</span><span id="hud-hp">100 / 100</span></div>
+        <div class="res-track"><div id="hp-fill" class="res-fill"></div></div>
+      </div>
+      <div class="res-row">
+        <div class="res-label"><span>STAMINA</span><span id="hud-stam">100 / 100</span></div>
+        <div class="res-track"><div id="stam-fill" class="res-fill"></div></div>
+      </div>
+      <div class="res-row">
+        <div class="res-label"><span>SANITY</span><span id="hud-san">100 / 100</span></div>
+        <div class="res-track"><div id="san-fill" class="res-fill"></div></div>
+      </div>
+    </div>
+    <div id="hud-obj">Objective: find the exit</div>
+    <div id="hud-seed"><span id="hud-level-label">LEVEL 0</span> · SEED <span id="hud-seed-val">—</span></div>
+    <div id="debug-panel"></div>
+    <div id="toast-note"></div>
+    <div id="crosshair"></div>
+    <div id="dark-fog"></div>
+    <div id="chase-vignette"></div>
+    <div id="dmg-flash"></div>
+    <div id="run-flash">RUN!</div>
+  </div>
+  <div id="inv-overlay">
+    <div id="inv-panel">
+      <h2>INVENTORY</h2>
+      <div id="inv-list"></div>
+      <div id="inv-hint">Q drink Almond Water · I close</div>
+    </div>
+  </div>
+  <div id="pause-note">Click to resume — I inventory — Q drink — E pick up — R checkpoint — G new layout</div>
+  <div id="pause-overlay">
+    <div id="pause-panel">
+      <h1>Paused</h1>
+      <p>The Backrooms are waiting.</p>
+      <p class="pause-hint">Press ESC again or click below to resume.</p>
+      <button id="pause-resume" type="button">Resume</button>
+    </div>
+  </div>
 
-    /* Loading / transition screens */
-    #boot-loading, #game-loading {
-      position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
-      overflow: hidden; background: #090805; color: #efe6b0;
-      font-family: Consolas, "Segoe UI", monospace;
-    }
-    #boot-loading::before, #game-loading::before {
-      content: ""; position: absolute; inset: -10%;
-      background:
-        linear-gradient(90deg, rgba(0,0,0,.72), transparent 32%, transparent 68%, rgba(0,0,0,.76)),
-        linear-gradient(180deg, rgba(0,0,0,.58), transparent 42%, rgba(0,0,0,.82)),
-        repeating-linear-gradient(90deg, rgba(198,181,91,.045) 0 1px, transparent 1px 76px),
-        linear-gradient(180deg, #47421f 0%, #262414 42%, #11100b 100%);
-      transform: perspective(700px) rotateX(1deg) scale(1.08);
-      filter: blur(.3px);
-    }
-    #boot-loading::after, #game-loading::after {
-      content: ""; position: absolute; inset: 0;
-      background:
-        radial-gradient(ellipse at 50% 45%, rgba(235,223,142,.16) 0 7%, rgba(235,223,142,.05) 24%, transparent 48%),
-        radial-gradient(ellipse at center, transparent 25%, rgba(0,0,0,.82) 100%);
-      pointer-events: none;
-    }
-    .loading-card {
-      position: relative; z-index: 2; width: min(520px, 88vw); padding: 28px 30px 25px;
-      border: 1px solid rgba(203,184,90,.34); background: rgba(20,18,10,.68);
-      box-shadow: 0 18px 70px rgba(0,0,0,.55), inset 0 0 35px rgba(255,235,140,.025);
-      backdrop-filter: blur(3px);
-    }
-    .loading-title { font-size: 25px; letter-spacing: .24em; text-transform: uppercase; margin-bottom: 7px; }
-    .loading-subtitle { font-size: 10px; letter-spacing: .18em; opacity: .55; margin-bottom: 22px; }
-    .loading-status { min-height: 18px; font-size: 11px; letter-spacing: .08em; opacity: .78; }
-    .loading-track { height: 4px; margin-top: 11px; background: rgba(0,0,0,.58); border: 1px solid rgba(239,230,176,.13); overflow: hidden; }
-    .loading-fill { height: 100%; width: 0%; background: #cbb85a; box-shadow: 0 0 14px rgba(203,184,90,.38); transition: width .18s ease; }
-    .loading-percent { margin-top: 8px; font-size: 10px; letter-spacing: .12em; opacity: .48; text-align: right; }
-    #game-loading { display: none; background: #080704; }
-    #game-loading .loading-card { width: min(430px, 84vw); }
-    .loading-tip { margin-top: 18px; font-size: 10px; line-height: 1.55; letter-spacing: .05em; opacity: .45; }
-    @keyframes loadingPulse { 0%,100% { opacity:.45 } 50% { opacity:1 } }
-    .loading-status.pulse { animation: loadingPulse 1.2s ease-in-out infinite; }
+  <div id="start-overlay" class="overlay">
+    <div class="panel">
+      <h1>Backrooms</h1>
+      <p>You are inside a yellow maze of rooms and corridors. Find the exit.</p>
+      <p id="start-seed" class="hint">LEVEL 0 · SEED —</p>
+      <p class="hint">
+        WASD move · Mouse look · Shift sprint · Space jump<br />
+        C/Ctrl crouch · F flashlight · I inventory · Q drink · E pick up · G new layout
+      </p>
+      <button id="btn-start" type="button">Enter</button>
+    </div>
+  </div>
+
+  <div id="gameover-overlay" class="overlay" style="display:none">
+    <div class="panel">
+      <h1>GAME OVER</h1>
+      <p>The entity reached you.</p>
+      <div class="stats">
+        <div>Time: <span id="go-time">—</span></div>
+        <div>Distance: <span id="go-dist">—</span></div>
+      </div>
+      <button id="btn-gameover" type="button">Restart</button>
+    </div>
+  </div>
+  <div id="complete-overlay" class="overlay">
+    <div class="panel">
+      <h1>Exit reached</h1>
+      <div class="stats">
+        <div>Time: <span id="stat-time">—</span></div>
+        <div>Distance: <span id="stat-dist">—</span></div>
+      </div>
+      <button id="btn-restart" type="button">Restart</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
