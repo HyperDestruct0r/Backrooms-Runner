@@ -2965,29 +2965,29 @@
         rec.colliders.push({min:new THREE.Vector3(x-sx/2,this.baseY,z-sz/2),max:new THREE.Vector3(x+sx/2,this.baseY+h,z+sz/2)});
       },
       pillar(g,rec,x,z){
-        this.addBox(g,this.shared.concretePillar,x,this.baseY+2.4,z,0.92,4.8,0.92);
-        rec.colliders.push({min:new THREE.Vector3(x-.46,this.baseY,z-.46),max:new THREE.Vector3(x+.46,this.baseY+4.8,z+.46)});
-        this.addBox(g,this.shared.concreteDark,x,this.baseY+0.12,z,1.18,0.24,1.18);
+        this.addBox(g,this.shared.concretePillar,x,this.baseY+3.6,z,1.12,7.2,1.12);
+        rec.colliders.push({min:new THREE.Vector3(x-.56,this.baseY,z-.56),max:new THREE.Vector3(x+.56,this.baseY+7.2,z+.56)});
+        this.addBox(g,this.shared.concreteDark,x,this.baseY+0.12,z,1.38,0.24,1.38);
       },
       fixture(g,x,z,bright,rng,rec){
         const panel=new THREE.Mesh(Geometries.lightPanel,this.shared.light);
-        panel.scale.set(1.35,1,0.34); panel.position.set(x,this.baseY+4.55,z); g.add(panel);
+        panel.scale.set(1.35,1,0.34); panel.position.set(x,this.baseY+6.85,z); g.add(panel);
         const housing=new THREE.Mesh(Geometries.lightHousing,Materials.lightHousing);
-        housing.scale.set(1.42,1,0.4); housing.position.set(x,this.baseY+4.5,z); g.add(housing);
+        housing.scale.set(1.42,1,0.4); housing.position.set(x,this.baseY+6.80,z); g.add(housing);
         const blackout=this.blackoutState==='flicker'||this.blackoutState==='outage';
         panel.material.emissiveIntensity=blackout?0:2.0*bright;
         rec.fixtures.push({panel,housing,base:bright});
         if(rng()<0.10 && this.lights.length<12){
           const L=new THREE.PointLight(0xf2f6ff,blackout?0:0.68*bright,20,1.8);
-          L.position.set(x,this.baseY+4.0,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
+          L.position.set(x,this.baseY+6.25,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
         }
       },
       pipeRun(g,x,z,lenX,lenZ,rng){
-        if(lenX>0) this.addBox(g,this.shared.pipe,x,this.baseY+4.28,z,lenX,0.16,0.16);
-        else this.addBox(g,this.shared.pipe,x,this.baseY+4.28,z,0.16,0.16,lenZ);
+        if(lenX>0) this.addBox(g,this.shared.pipe,x,this.baseY+6.45,z,lenX,0.18,0.18);
+        else this.addBox(g,this.shared.pipe,x,this.baseY+6.45,z,0.18,0.18,lenZ);
         if(rng()<0.35){
           const px=x+(lenX>0?lenX*.22:0), pz=z+(lenZ>0?lenZ*.22:0);
-          this.addBox(g,this.shared.pipe,px,this.baseY+3.95,pz,0.12,0.52,0.12);
+          this.addBox(g,this.shared.pipe,px,this.baseY+6.05,pz,0.14,0.70,0.14);
         }
       },
       concreteTexture(repeatX,repeatY){
@@ -3044,15 +3044,14 @@
       getMaintenanceWalls(mx,mz){
         const key=this.macroKey(mx,mz)+':walls';
         if(this.macroCache.has(key)) return this.macroCache.get(key);
-        const mb=this.macroBounds(mx,mz), sector=150, cell=6.5, n=23, walls=[];
+        const mb=this.macroBounds(mx,mz), sector=150, cell=5.5, n=27, walls=[];
         const rng=this.rngFor(mx,mz,707);
         const push=(x,z,sx,sz,h=4.70)=>walls.push({x,z,sx,sz,h});
 
-        // Maintenance areas use a Level-0-like cellular maze, but at a larger
-        // scale: 7.5m cells make the corridors roomier while substantial
-        // concrete walls keep the space visually enclosed. Each 150m sector
-        // is its own network, then openings between sectors create larger
-        // intersections and loops.
+        // Maintenance areas are deliberately tight: a dense Level-0-like cellular maze
+        // with 5.5m cells, very heavy concrete walls, few loops, and almost no
+        // deliberately widened/open sections. The result should feel like a
+        // massive enclosed service maze rather than an open parking garage.
         for(let sy=0;sy<4;sy++) for(let sx=0;sx<4;sx++){
           const x0=mb.minx+sx*sector, z0=mb.minz+sy*sector;
           const visited=Array.from({length:n},()=>new Uint8Array(n));
@@ -3072,35 +3071,24 @@
             if(d===2)openV[cz][cx]=1; if(d===0)openV[nz][cx]=1;
             visited[nz][nx]=1; stack.push([nx,nz]);
           }
-          // Add loops, but less aggressively than the previous version.
-          // The result has more wall mass while still producing intersections.
-          for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x] && rng()<0.08) openH[z][x]=1;
-          for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x] && rng()<0.08) openV[z][x]=1;
+          // Very few loops: keep the maintenance maze tight and directional.
+          // The spanning-tree pass above guarantees connectivity without making
+          // the area feel like an open grid.
+          for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x] && rng()<0.025) openH[z][x]=1;
+          for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x] && rng()<0.025) openV[z][x]=1;
 
-          // Deliberately create several wider 15–22m openings/rooms by removing
-          // selected walls. These become the characteristic Level-1 intersections.
-          for(let k=0;k<4;k++){
-            const cx=1+Math.floor(rng()*(n-2)), cz=1+Math.floor(rng()*(n-2));
-            if(rng()<0.5){ if(cx<n-1) openH[cz][cx]=1; if(cx>0) openH[cz][cx-1]=1; }
-            else { if(cz<n-1) openV[cz][cx]=1; if(cz>0) openV[cz-1][cx]=1; }
-          }
-
-          const WT=0.92;
+          // Do not add the previous large open-room cuts. A handful of natural
+          // three/four-way junctions from the maze are enough.
+          const WT=2.40;
           for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x])
             push(x0+(x+1)*cell,z0+(z+.5)*cell,WT,cell+0.18);
           for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x])
             push(x0+(x+.5)*cell,z0+(z+1)*cell,cell+0.18,WT);
         }
 
-        // Add thicker architectural divider walls/backs of service rooms.
-        // These give the maintenance network the heavy-concrete appearance
-        // visible in the reference rather than looking like thin partitions.
-        for(let i=0;i<18;i++){
-          const x=mb.minx+18+rng()*564, z=mb.minz+18+rng()*564;
-          const long=18+rng()*42, WT=0.92;
-          if(rng()<0.5) push(x,z,WT,long,3.8);
-          else push(x,z,long,WT,3.8);
-        }
+        // The maze walls themselves provide the architecture. Avoid random thin
+        // divider walls because they would create stray open pockets and visual
+        // clutter unrelated to the main maintenance network.
         this.macroCache.set(key,walls); return walls;
       },
       addClippedWall(g,rec,wall,bx,bz,S){
@@ -3109,7 +3097,7 @@
         if(maxX-minX<0.02 || maxZ-minZ<0.02) return;
         // Keep the elevator landing comfortably clear of maintenance geometry.
         if(this.start && Math.abs((minX+maxX)*0.5-this.start.x)<10 && Math.abs((minZ+maxZ)*0.5-this.start.z)<10) return;
-        const wallH=Math.min(4.70,Math.max(4.68,wall.h||4.70));
+        const wallH=Math.max(6.98,wall.h||7.0);
         this.addBox(g,this.shared.concrete,(minX+maxX)/2,this.baseY+wallH/2,(minZ+maxZ)/2,maxX-minX,wallH,maxZ-minZ);
         rec.colliders.push({min:new THREE.Vector3(minX,this.baseY,minZ),max:new THREE.Vector3(maxX,this.baseY+wallH,maxZ)});
       },
@@ -3139,7 +3127,7 @@
         rec.colliders.push({min:new THREE.Vector3(ox,this.baseY-0.18,oz),max:new THREE.Vector3(ox+S,this.baseY,oz+S)});
         const ceilMap=this.shared.concreteLight.map.clone(); ceilMap.repeat.set(S/14,S/14); ceilMap.needsUpdate=true;
         const ceilMat=this.shared.concreteLight.clone(); ceilMat.map=ceilMap;
-        this.addBox(g,ceilMat,centerX,this.baseY+4.82,centerZ,S,0.22,S);
+        this.addBox(g,ceilMat,centerX,this.baseY+7.12,centerZ,S,0.24,S);
         // Structural grid is present in both spaces, but parking lots are more open.
         for(let ix=8;ix<S;ix+=16) for(let iz=8;iz<S;iz+=16){
           if(rng()<0.10) continue;
@@ -3161,7 +3149,7 @@
         if(rng()<0.85) this.pipeRun(g,centerX,oz+S*.35,S*.72,0,rng);
         if(rng()<0.65) this.pipeRun(g,ox+S*.68,centerZ,0,S*.70,rng);
         const lightMode=rng(); rec.dark=lightMode<0.18; rec.bright=lightMode>0.78;
-        const spacing=type==='parking' ? (rec.bright?12:18) : (rec.bright?10:14);
+        const spacing=type==='parking' ? (rec.bright?12:18) : (rec.bright?8.5:11);
         if(!rec.dark){
           for(let x=spacing/2;x<S;x+=spacing) for(let z=spacing/2;z<S;z+=spacing){
             if(rng()<(rec.bright?0.08:0.32)) continue;
