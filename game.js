@@ -126,10 +126,13 @@
         hpRegenRate: 0.2
       },
       items: {
-        almondChance: 0.005,
-        almondBlock: 10,
-        regionSize: 500,
-        maxPerRegion: 10,
+        regionSize: 150,
+        almondChance: 0.01,
+        almondAttempts: 15,
+        almondMaxPerRegion: 5,
+        energyChance: 0.003,
+        energyAttempts: 20,
+        energyMaxPerRegion: 5,
         maxCarry: 5,
         interactDist: 1.85
       },
@@ -186,7 +189,8 @@
       exitReached: false,
       elevatorShake: 0,
       level: 0,
-      cinematicCamera: false
+      cinematicCamera: false,
+      regenerating: false
     };
 
     /* ------------------------------------------------------------------
@@ -231,6 +235,7 @@
         Checkpoints.respawn();
       }
       if (e.code === "KeyG" && GameState.ready && (GameState.phase === "playing" || GameState.phase === "complete" || GameState.phase === "start")) {
+        if (e.repeat || GameState.regenerating) return;
         e.preventDefault();
         Game.regenerate();
       }
@@ -1040,8 +1045,8 @@
 
     const LevelGenerator = {
       CELL: 6,
-      GRID_W: 48,
-      GRID_H: 40,
+      GRID_W: 64,
+      GRID_H: 56,
       last: null,
 
       generate(seed) {
@@ -1384,6 +1389,44 @@
           pushSockets(node, out);
         }
 
+        // Deliberately add many cross-connections between nearby occupied modules.
+        // This keeps the Level 0 layout maze-like but makes intersections and loops
+        // much more common than the old mostly-tree generation.
+        const seenLinks = new Set();
+        for (let gz = 0; gz < H; gz++) {
+          for (let gx = 0; gx < W; gx++) {
+            if (!occupied[gz][gx]) continue;
+            const a = MapGraph.cellOwner[gz][gx];
+            if (a == null) continue;
+            for (const d of [1, 2]) {
+              const nx = gx + DIR4[d].x, nz = gz + DIR4[d].z;
+              if (!inGrid(nx, nz) || !occupied[nz][nx]) continue;
+              const b = MapGraph.cellOwner[nz][nx];
+              if (b == null || a === b) continue;
+              const key = a < b ? a + ':' + b : b + ':' + a;
+              if (seenLinks.has(key)) continue;
+              seenLinks.add(key);
+              if (MapGraph.nodes[a].connections.indexOf(b) >= 0) continue;
+              // Higher chance at true junction candidates; still deterministic.
+              const chance = (MapGraph.nodes[a].type === 'junction' || MapGraph.nodes[b].type === 'junction') ? 0.82 : 0.48;
+              if (rng() < chance && linkDoor(gx, gz, d)) addEdge(MapGraph.nodes[a], MapGraph.nodes[b], d);
+            }
+          }
+        }
+
+        // A few extra branch sockets are opened from existing modules so the
+        // network grows sideways rather than terminating as often as before.
+        for (let i = 0; i < MapGraph.nodes.length; i++) {
+          const n = MapGraph.nodes[i];
+          if (!n || n.type === 'start') continue;
+          const free = [];
+          for (let d = 0; d < 4; d++) {
+            const nx = n.gx + DIR4[d].x, nz = n.gz + DIR4[d].z;
+            if (inGrid(nx, nz) && !occupied[nz][nx]) free.push(d);
+          }
+          if (free.length && rng() < 0.62) pushSockets(n, [free[Math.floor(rng() * free.length)]]);
+        }
+
         // Graph distance from start
         const dist = new Array(MapGraph.nodes.length).fill(9999);
         dist[startNode.id] = 0;
@@ -1400,8 +1443,19 @@
           }
         }
 
+        // The exit is selected by actual shortest walking distance, not by the
+        // length of the original generation spine. This is important now that
+        // Level 0 contains many loops: a 500m-looking route is not enough if a
+        // shortcut makes the true shortest path shorter than 500m.
         let exitNode = spine[spine.length - 1];
         if (!exitNode || exitNode.id === startNode.id || dist[exitNode.id] < 12) return null;
+        let farCandidates = spine.slice().reverse().filter(n => n && n.id !== startNode.id && dist[n.id] < 9000);
+        for (const candidate of farCandidates) {
+          if (dist[candidate.id] * C >= CONFIG.gen.minPath && dist[candidate.id] * C <= CONFIG.gen.maxPath) {
+            exitNode = candidate;
+            break;
+          }
+        }
 
         // Checkpoint about halfway along the primary route.
         let cpNode = null;
@@ -2849,7 +2903,7 @@
       active:false, group:null, colliders:[], triggers:[],
       macroSize:600, microSize:60, activeRadius:2, seed:0,
       chunks:new Map(), center:new THREE.Vector3(), start:new THREE.Vector3(),
-      baseY:0, lights:[], ambientLights:[], puddles:[],
+      baseY:0, lights:[], ambientLights:[], puddles:[], resourceRegions:Object.create(null),
       streamTimer:0, lastMCX:999999, lastMCZ:999999,
       levelTime:0, blackoutState:'idle', blackoutTimer:0, blackoutNext:60,
       blackoutCooldown:0, blackoutDuration:0, blackoutCycle:0,
@@ -2861,7 +2915,7 @@
         for(const L of this.ambientLights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
         this.chunks.clear(); this.colliders.length=0; this.triggers.length=0;
         this.lights.length=0; this.ambientLights.length=0; this.puddles.length=0;
-        this.group=null; this.active=false; this.lastMCX=999999; this.lastMCZ=999999;
+        this.group=null; this.active=false; this.lastMCX=999999; this.lastMCZ=999999; this.resourceRegions=Object.create(null);
         this.levelTime=0; this.blackoutState='idle'; this.blackoutTimer=0; this.blackoutNext=60;
         this.blackoutCooldown=0; this.blackoutDuration=0; this.blackoutCycle=0;
         this.blackoutFlickerT=0; this.blackoutFlickerNext=0; this.blackoutWindowStart=0; this.macroCache.clear(); this.exitMacro=null;
@@ -2959,7 +3013,7 @@
         this.shared.water.needsUpdate=true;
       },
       addPuddle(g,wx,wz,rng){
-        const r=0.42+rng()*0.16;
+        const r=0.46+rng()*0.08;
         const geo=new THREE.CircleGeometry(r,24);
         const mesh=new THREE.Mesh(geo,this.shared.water);
         mesh.rotation.x=-Math.PI/2; mesh.position.set(wx,this.baseY+0.012,wz); g.add(mesh);
@@ -2979,35 +3033,52 @@
       getMaintenanceWalls(mx,mz){
         const key=this.macroKey(mx,mz)+':walls';
         if(this.macroCache.has(key)) return this.macroCache.get(key);
-        const rng=this.rngFor(mx,mz,707), mb=this.macroBounds(mx,mz), sector=150, walls=[];
-        const push=(x,z,sx,sz,h=3.15)=>walls.push({x,z,sx,sz,h});
-        for(let sz=0;sz<4;sz++) for(let sx=0;sx<4;sx++){
-          const x0=mb.minx+sx*sector, z0=mb.minz+sz*sector;
-          const cx=x0+sector/2, cz=z0+sector/2, vertical=rng()<0.5;
-          const offset=48+rng()*26;
-          if(vertical){
-            push(x0+offset,cz,0.34,84+rng()*28);
-            if(rng()<0.70) push(x0+96+rng()*18,z0+96,0.34,52+rng()*28);
-            if(rng()<0.58) push(x0+44,z0+112+rng()*18,54+rng()*26,0.34);
-          }else{
-            push(cx,z0+offset,84+rng()*28,0.34);
-            if(rng()<0.70) push(x0+96,z0+96+rng()*18,52+rng()*28,0.34);
-            if(rng()<0.58) push(x0+112+rng()*18,z0+44,0.34,54+rng()*26);
+        const mb=this.macroBounds(mx,mz), sector=150, cell=5, n=30, walls=[];
+        const rng=this.rngFor(mx,mz,707);
+        const push=(x,z,sx,sz,h=3.45)=>walls.push({x,z,sx,sz,h});
+        // Each 150x150 maintenance sector is a Level-0-inspired maze: actual
+        // concrete walls define corridors, but a high loop-removal rate creates
+        // many intersections and wider junctions instead of constant dead ends.
+        for(let sy=0;sy<4;sy++) for(let sx=0;sx<4;sx++){
+          const x0=mb.minx+sx*sector,z0=mb.minz+sy*sector;
+          const visited=Array.from({length:n},()=>new Uint8Array(n));
+          const openH=Array.from({length:n},()=>new Uint8Array(n-1));
+          const openV=Array.from({length:n-1},()=>new Uint8Array(n));
+          const stack=[[Math.floor(rng()*n),Math.floor(rng()*n)]];
+          visited[stack[0][1]][stack[0][0]]=1;
+          while(stack.length){
+            const [cx,cz]=stack[stack.length-1];
+            const dirs=[];
+            for(const d of [0,1,2,3]){
+              const nx=cx+DIR4[d].x,nz=cz+DIR4[d].z;
+              if(nx>=0&&nz>=0&&nx<n&&nz<n&&!visited[nz][nx]) dirs.push(d);
+            }
+            if(!dirs.length){stack.pop();continue;}
+            const d=dirs[Math.floor(rng()*dirs.length)],nx=cx+DIR4[d].x,nz=cz+DIR4[d].z;
+            if(d===1)openH[cz][cx]=1; if(d===3)openH[cz][nx]=1;
+            if(d===2)openV[cz][cx]=1; if(d===0)openV[nz][cx]=1;
+            visited[nz][nx]=1; stack.push([nx,nz]);
           }
-          if(rng()<0.32){
-            const rw=26+rng()*22, rd=22+rng()*20;
-            push(cx-rw/2,z0+18,rw,0.34); push(cx+rw/2,z0+18,rw,0.34);
-            push(cx-rw/2,z0+18+rd,0.34,rd); push(cx+rw/2,z0+18+rd,0.34,rd);
+          // Add many loops. Around 28% of remaining walls disappear, making
+          // intersections common while retaining the visual maze language.
+          for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x] && rng()<0.28) openH[z][x]=1;
+          for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x] && rng()<0.28) openV[z][x]=1;
+          // Emit only closed boundaries as concrete wall strips.
+          for(let z=0;z<n;z++){
+            for(let x=0;x<n-1;x++) if(!openH[z][x]) push(x0+(x+1)*cell,z0+(z+.5)*cell,0.38,cell+0.12);
           }
+          for(let z=0;z<n-1;z++){
+            for(let x=0;x<n;x++) if(!openV[z][x]) push(x0+(x+.5)*cell,z0+(z+1)*cell,cell+0.12,0.38);
+          }
+          // Do not wall off the internal 150m sectors. Their maze networks
+          // deliberately bleed into one another, creating the larger, open
+          // intersections that distinguish Level 1 maintenance areas from Level 0.
+          // The outer 600m boundary remains visually open to neighboring macro areas.
         }
-        // Broad openings between 150m sectors keep the maintenance area interconnected.
-        for(let sx=1;sx<4;sx++){
-          const x=mb.minx+sx*sector;
-          for(let sz=0;sz<4;sz++) if(rng()<0.72) push(x,mb.minz+sz*sector+42+rng()*66,0.26,12,4.52);
-        }
-        for(let sz=1;sz<4;sz++){
-          const z=mb.minz+sz*sector;
-          for(let sx=0;sx<4;sx++) if(rng()<0.72) push(mb.minx+sx*sector+42+rng()*66,z,12,0.26,4.52);
+        // Add a handful of larger concrete partitions/open bays.
+        for(let i=0;i<10;i++){
+          const x=mb.minx+30+rng()*540,z=mb.minz+30+rng()*540;
+          if(rng()<0.5) push(x,z,0.38,18+rng()*30); else push(x,z,18+rng()*30,0.38);
         }
         this.macroCache.set(key,walls); return walls;
       },
@@ -3080,11 +3151,14 @@
         if(type==='parking' || rng()<0.20){
           const openMask=(x,z)=>{
             if(type==='parking') return true;
-            // Avoid candidates too close to maintenance walls.
             return !rec.colliders.some(c=>x>=c.min.x-1 && x<=c.max.x+1 && z>=c.min.z-1 && z<=c.max.z+1);
           };
           this.generatePuddles(g,rec,ox,oz,S,rng,openMask);
         }
+        // Resource density is defined on 150x150m regions, not streaming chunks.
+        // Generate a region once as soon as one of its chunks becomes active.
+        const rx=Math.floor(centerX/CONFIG.items.regionSize), rz=Math.floor(centerZ/CONFIG.items.regionSize);
+        PickupSystem.generateLevel1Region(rx,rz,this.seed);
         this.group.add(g); this.chunks.set(key,rec);
       },
       rebuildColliders(){
@@ -3129,7 +3203,7 @@
         this.blackoutState='flicker'; this.blackoutFlickerT=0; this.blackoutFlickerNext=0.10;
         this.blackoutDuration=30+this.rngFor(this.blackoutCycle,0,333)()*30;
         this.setFixtureState(false);
-        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,12,64); }
+        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,18,64); }
       },
       beginOutage(){
         this.blackoutState='outage'; this.blackoutTimer=0;
@@ -3178,7 +3252,8 @@
         if(!CameraRig.camera) return;
         let inside=false;
         for(const p of this.puddles){ const dx=Player.position.x-p.x,dz=Player.position.z-p.z; if(dx*dx+dz*dz<=p.r*p.r){inside=true;break;} }
-        const target=inside ? CONFIG.cameraFar*0.85 : CONFIG.cameraFar;
+        const base=(this.blackoutState==='flicker'||this.blackoutState==='outage')?64:320;
+        const target=inside ? base*0.85 : base;
         if(Math.abs(CameraRig.camera.far-target)>0.5){ CameraRig.camera.far+=(target-CameraRig.camera.far)*0.35; CameraRig.camera.updateProjectionMatrix(); }
       },
       placeExit(){
@@ -3220,6 +3295,7 @@
         if(Level.group&&scene)scene.remove(Level.group); LightingSystem.clear(scene);
         if(Stairwell&&Stairwell.exits)Stairwell.reset();
         const origin=elevatorState?{x:elevatorState.origin.x,z:elevatorState.origin.z}:{x:0,z:0};
+        PickupSystem.reset();
         this.build(seed,origin);
         Level.cols=Infinity; Level.rows=Infinity; Level.tiles=[]; Level.colliders=this.colliders; Level.triggers=this.triggers; Level.group=this.group;
         Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
@@ -3872,6 +3948,10 @@
         btn.textContent = "Almond Water   ×" + n + " / " + CONFIG.items.maxCarry;
         btn.addEventListener("click", () => this.use("almondWater"));
         list.appendChild(btn);
+        const energyNote = document.createElement("div");
+        energyNote.style.opacity = "0.65";
+        energyNote.textContent = "Energy Bars: E pickup restores +25 stamina";
+        list.appendChild(energyNote);
         if (n === 0) {
           const empty = document.createElement("div");
           empty.style.opacity = "0.55";
@@ -3885,85 +3965,145 @@
       list: [],
       regions: Object.create(null),
       used: Object.create(null),
+      level1Regions: Object.create(null),
       group: null,
       reset() {
         if (this.group && scene) scene.remove(this.group);
         this.list = [];
         this.regions = Object.create(null);
         this.used = Object.create(null);
+        this.level1Regions = Object.create(null);
         this.group = null;
       },
       regionKey(x, z) {
         const s = CONFIG.items.regionSize;
-        return Math.floor(x / s) + ":" + Math.floor(z / s);
+        return Math.floor(x / s) + ':' + Math.floor(z / s);
       },
-      regionCount(x, z) {
-        return this.regions[this.regionKey(x, z)] | 0;
+      regionCount(x, z, kind) {
+        const k = this.regionKey(x, z);
+        const r = this.regions[k];
+        if (!r) return 0;
+        return kind === 'energy' ? (r.energy | 0) : (r.almond | 0);
+      },
+      _regionRec(k) {
+        return this.regions[k] || (this.regions[k] = {almond:0, energy:0});
+      },
+      _isOpenLevel0(tx, tz) {
+        if (!Level.inBounds(tx, tz)) return false;
+        const t = Level.getTile(tx, tz);
+        return t !== TILE.WALL && t !== TILE.COLUMN && t !== TILE.START && t !== TILE.EXIT && t !== TILE.CHECK;
+      },
+      _addMesh(kind, x, z) {
+        const mat = kind === 'energy'
+          ? new THREE.MeshStandardMaterial({color:0xc7c7c7,roughness:0.48,metalness:0.18,emissive:0x2a312f,emissiveIntensity:0.18})
+          : new THREE.MeshStandardMaterial({color:0xe8d8b0,roughness:0.35,metalness:0.08,emissive:0x332818,emissiveIntensity:0.15});
+        const mesh = new THREE.Mesh(Geometries.box, mat);
+        if (kind === 'energy') { mesh.scale.set(0.42,0.18,0.14); mesh.position.set(x,0.18,z); }
+        else { mesh.scale.set(0.12,0.28,0.12); mesh.position.set(x,0.22,z); }
+        this.group.add(mesh);
+        const id = kind + ':' + x.toFixed(3) + ',' + z.toFixed(3);
+        this.list.push({id:id,kind:kind,x:x,z:z,mesh:mesh,taken:false});
       },
       generate(seed) {
         this.reset();
         this.group = new THREE.Group();
         const rng = mulberry32((seed ^ 0xA11D5) >>> 0);
-        const T = CONFIG.tile;
-        const block = CONFIG.items.almondBlock;
-        const step = Math.max(1, Math.round(block / T));
-        const mat = new THREE.MeshStandardMaterial({
-          color: 0xe8d8b0, roughness: 0.35, metalness: 0.08, emissive: 0x332818, emissiveIntensity: 0.15
-        });
-        for (let tz = 1; tz < Level.rows - 1; tz += step) {
-          for (let tx = 1; tx < Level.cols - 1; tx += step) {
-            if (rng() > CONFIG.items.almondChance) continue;
-            let fx = -1, fz = -1;
-            for (let oz = 0; oz < step && fx < 0; oz++) {
-              for (let ox = 0; ox < step && fx < 0; ox++) {
-                const x = tx + ox, z = tz + oz;
-                if (!Level.inBounds(x, z)) continue;
-                const t = Level.getTile(x, z);
-                if (t === TILE.WALL || t === TILE.COLUMN || t === TILE.START || t === TILE.EXIT || t === TILE.CHECK) continue;
-                fx = x; fz = z;
+        const T = CONFIG.tile, R = CONFIG.items.regionSize;
+        const minX = 0, minZ = 0, maxX = Level.cols * T, maxZ = Level.rows * T;
+        for (let rz = 0; rz * R < maxZ; rz++) {
+          for (let rx = 0; rx * R < maxX; rx++) {
+            const k = rx + ':' + rz, rec = this._regionRec(k);
+            const baseX = rx * R, baseZ = rz * R;
+            for (let a = 0; a < CONFIG.items.almondAttempts && rec.almond < CONFIG.items.almondMaxPerRegion; a++) {
+              if (rng() >= CONFIG.items.almondChance) continue;
+              let placed = false;
+              for (let tries = 0; tries < 8 && !placed; tries++) {
+                const x = baseX + 3 + rng() * Math.max(1,R-6), z = baseZ + 3 + rng() * Math.max(1,R-6);
+                const tx = Math.floor(x / T), tz = Math.floor(z / T);
+                if (!this._isOpenLevel0(tx,tz)) continue;
+                const w = Level.tileToWorld(tx,tz);
+                const uid = 'almond:' + tx + ',' + tz;
+                if (this.used[uid]) continue;
+                this.used[uid] = true; rec.almond++; this._addMesh('almond',w.x,w.z); placed=true;
               }
             }
-            if (fx < 0) continue;
-            const w = Level.tileToWorld(fx, fz);
-            const uid = fx + "," + fz;
-            if (this.used[uid]) continue;
-            if (this.regionCount(w.x, w.z) >= CONFIG.items.maxPerRegion) continue;
-            this.used[uid] = true;
-            this.regions[this.regionKey(w.x, w.z)] = this.regionCount(w.x, w.z) + 1;
-            const mesh = new THREE.Mesh(Geometries.box, mat);
-            mesh.scale.set(0.12, 0.28, 0.12);
-            mesh.position.set(w.x, 0.22, w.z);
-            this.group.add(mesh);
-            this.list.push({ id: uid, x: w.x, z: w.z, mesh: mesh, taken: false });
+            for (let a = 0; a < CONFIG.items.energyAttempts && rec.energy < CONFIG.items.energyMaxPerRegion; a++) {
+              if (rng() >= CONFIG.items.energyChance) continue;
+              let placed = false;
+              for (let tries = 0; tries < 8 && !placed; tries++) {
+                const x = baseX + 3 + rng() * Math.max(1,R-6), z = baseZ + 3 + rng() * Math.max(1,R-6);
+                const tx = Math.floor(x / T), tz = Math.floor(z / T);
+                if (!this._isOpenLevel0(tx,tz)) continue;
+                const w = Level.tileToWorld(tx,tz);
+                const uid = 'energy:' + tx + ',' + tz;
+                if (this.used[uid]) continue;
+                this.used[uid] = true; rec.energy++; this._addMesh('energy',w.x,w.z); placed=true;
+              }
+            }
           }
         }
         if (scene) scene.add(this.group);
       },
+      isOpenLevel1(x,z) {
+        if (!Level1 || !Level1.active) return false;
+        const type = Level1.macroType(Math.floor(x/Level1.macroSize),Math.floor(z/Level1.macroSize));
+        // Keep resources off structural pillars.
+        const localX = ((x % 16) + 16) % 16, localZ = ((z % 16) + 16) % 16;
+        if (localX > 7.2 && localX < 8.8 && localZ > 7.2 && localZ < 8.8) return false;
+        if (type === 'maintenance') {
+          const walls = Level1.getMaintenanceWalls(Math.floor(x/Level1.macroSize),Math.floor(z/Level1.macroSize));
+          for (const w of walls) if (x >= w.x-w.sx/2-0.8 && x <= w.x+w.sx/2+0.8 && z >= w.z-w.sz/2-0.8 && z <= w.z+w.sz/2+0.8) return false;
+        }
+        return true;
+      },
+      generateLevel1Region(rx,rz,seed) {
+        const key = rx + ':' + rz;
+        if (this.level1Regions[key] || !this.group) return;
+        this.level1Regions[key] = true;
+        const R = CONFIG.items.regionSize, baseX = rx*R, baseZ = rz*R;
+        const rng = mulberry32((seed ^ Math.imul(rx,0x45d9f3b) ^ Math.imul(rz,0x27d4eb2d) ^ 0xE11E5) >>> 0);
+        const rec = this._regionRec('L1:'+key);
+        const tryPlace = (kind, attempts, chance, cap) => {
+          for(let a=0;a<attempts && rec[kind] < cap;a++) {
+            if(rng() >= chance) continue;
+            let placed=false;
+            for(let t=0;t<10 && !placed;t++) {
+              const x=baseX+4+rng()*(R-8), z=baseZ+4+rng()*(R-8);
+              if(!this.isOpenLevel1(x,z)) continue;
+              const uid='L1:'+kind+':'+Math.round(x*10)+','+Math.round(z*10);
+              if(this.used[uid]) continue;
+              this.used[uid]=true; rec[kind]++; this._addMesh(kind,x,z); placed=true;
+            }
+          }
+        };
+        tryPlace('almond',CONFIG.items.almondAttempts,CONFIG.items.almondChance,CONFIG.items.almondMaxPerRegion);
+        tryPlace('energy',CONFIG.items.energyAttempts,CONFIG.items.energyChance,CONFIG.items.energyMaxPerRegion);
+      },
       nearest() {
-        let best = null, bestD = CONFIG.items.interactDist;
-        for (let i = 0; i < this.list.length; i++) {
-          const p = this.list[i];
-          if (p.taken) continue;
-          const d = Math.hypot(p.x - Player.position.x, p.z - Player.position.z);
-          if (d < bestD) { bestD = d; best = p; }
+        let best=null,bestD=CONFIG.items.interactDist;
+        for(const p of this.list){
+          if(p.taken) continue;
+          const d=Math.hypot(p.x-Player.position.x,p.z-Player.position.z);
+          if(d<bestD){bestD=d;best=p;}
         }
         return best;
       },
       tryPickup() {
-        const p = this.nearest();
-        if (!p) return false;
-        if (Inventory.getItemCount("almondWater") >= CONFIG.items.maxCarry) {
-          HUD.toast("Inventory Full");
-          return false;
+        const p=this.nearest(); if(!p) return false;
+        if(p.kind==='energy'){
+          if(Player.stamina >= CONFIG.stamina.max){ HUD.toast('Energy already full'); return false; }
+          Player.stamina=Math.min(CONFIG.stamina.max,Player.stamina+25);
+          Player.stamAcc=0; Player.stamDelay=0; Player.stamRegenOn=false;
+          p.taken=true; if(p.mesh)p.mesh.visible=false;
+          HUD.toast('+25 stamina');
+          AudioSystem._tone&&AudioSystem._tone(420,'sine',0.10,0.025,'events');
+          return true;
         }
-        if (!Inventory.addItem("almondWater", 1)) {
-          HUD.toast("Inventory Full");
-          return false;
-        }
-        p.taken = true;
-        if (p.mesh) p.mesh.visible = false;
-        HUD.toast("Almond Water ×" + Inventory.getItemCount("almondWater"));
-        AudioSystem._tone && AudioSystem._tone(310, "sine", 0.08, 0.025, "events");
+        if(Inventory.getItemCount('almondWater') >= CONFIG.items.maxCarry){HUD.toast('Inventory Full');return false;}
+        if(!Inventory.addItem('almondWater',1)){HUD.toast('Inventory Full');return false;}
+        p.taken=true; if(p.mesh)p.mesh.visible=false;
+        HUD.toast('Almond Water ×'+Inventory.getItemCount('almondWater'));
+        AudioSystem._tone&&AudioSystem._tone(310,'sine',0.08,0.025,'events');
         return true;
       }
     };
@@ -4031,7 +4171,7 @@
         const near = PickupSystem.nearest && PickupSystem.nearest();
         if (near && !GameState.inventoryOpen && this.toastT <= 0) {
           if (this.toastEl) {
-            this.toastEl.textContent = "E  Almond Water";
+            this.toastEl.textContent = near.kind === "energy" ? "E  Energy Bar (+25 stamina)" : "E  Almond Water";
             this.toastEl.style.opacity = "0.7";
           }
         }
@@ -4087,7 +4227,8 @@
           "SANITY " + Player.getSanity() + " / " + CONFIG.sanity.max + "\n" +
           "INVENTORY AW " + Inventory.getItemCount("almondWater") + " / " + CONFIG.items.maxCarry + "\n" +
           "REGION " + PickupSystem.regionKey(Player.position.x, Player.position.z) +
-          "  AW " + PickupSystem.regionCount(Player.position.x, Player.position.z) + " / " + CONFIG.items.maxPerRegion + "\n" +
+          "  AW " + PickupSystem.regionCount(Player.position.x, Player.position.z, "almond") + " / " + CONFIG.items.almondMaxPerRegion +
+          "  ENERGY " + PickupSystem.regionCount(Player.position.x, Player.position.z, "energy") + " / " + CONFIG.items.energyMaxPerRegion + "\n" +
           "ENV " + (EnvEventSystem.active ? "ACTIVE" : "INACTIVE") +
           "  CD " + (EnvEventSystem.cooldown > 0 ? EnvEventSystem.cooldown.toFixed(0) + "s" : "READY") + "\n" +
           "ENV CHECK " + Math.max(0, EnvEventSystem.startIn > 0 ? EnvEventSystem.startIn : EnvEventSystem.checkIn).toFixed(1) + "s\n" +
@@ -4130,21 +4271,44 @@
         const gz = Math.floor(tz / C);
         const mod = MapGraph.nodeAt(gx, gz);
         let profile = mod && mod.lightProfile ? mod.lightProfile : "NORMAL";
+        // Preview nearby modules so lighting transitions are visible before
+        // the player actually crosses into the next hallway/room.
+        let previewProfile = profile, previewWeight = 0;
+        for (let r = 1; r <= 22; r++) {
+          const samples = [[tx+r,tz],[tx-r,tz],[tx,tz+r],[tx,tz-r]];
+          for (const q of samples) {
+            const nm = MapGraph.nodeAt(Math.floor(q[0]/C),Math.floor(q[1]/C));
+            if (!nm || !nm.lightProfile || nm === mod) continue;
+            const w = Math.max(0, 1 - (r*CONFIG.tile)/66);
+            if (w > previewWeight) { previewWeight=w; previewProfile=nm.lightProfile; }
+          }
+        }
         if (Stairwell.playerInside()) profile = "ELEVATOR";
         this.profile = profile;
-        const dark = profile === "DARK";
+        let darkBlend = profile === "DARK" ? 1 : 0;
+        let brightBlend = profile === "BRIGHT" ? 1 : 0;
+        if (previewProfile === "DARK" && profile !== "DARK") darkBlend = Math.max(darkBlend, previewWeight);
+        if (previewProfile === "BRIGHT" && profile !== "BRIGHT") brightBlend = Math.max(brightBlend, previewWeight);
+        if (profile === "DARK" && previewProfile !== "DARK") darkBlend = Math.max(0, 1-previewWeight);
+        if (profile === "BRIGHT" && previewProfile === "NORMAL") brightBlend = Math.max(0, 1-previewWeight);
+        const dark = darkBlend > 0.5;
         this.active = dark;
         const flashlightOn = !!Flashlight.enabled;
-        const targetNear = dark ? (flashlightOn ? 3.0 : 1.6) : 38;
-        const targetFar = dark ? (flashlightOn ? 18 : 6.2) : (profile === "BRIGHT" ? 165 : 140);
-        const targetColor = dark ? 0x11151a : CONFIG.fogColor;
+        const normalFar = 140 + brightBlend*25;
+        const targetNear = darkBlend > 0 ? (flashlightOn ? 3.0 : 1.6 + 36*(1-darkBlend)) : 38;
+        const targetFar = darkBlend > 0 ? (flashlightOn ? 18 + 120*(1-darkBlend) : 6.2 + 134*(1-darkBlend)) : normalFar;
+        const targetColorObj = new THREE.Color(CONFIG.fogColor).lerp(new THREE.Color(0x11151a), Math.min(1, darkBlend));
         scene.fog.near += (targetNear - scene.fog.near) * Math.min(1, dt * 5);
         scene.fog.far += (targetFar - scene.fog.far) * Math.min(1, dt * 5);
-        scene.fog.color.lerp(new THREE.Color(targetColor), Math.min(1, dt * 4));
-        scene.background.lerp(new THREE.Color(targetColor), Math.min(1, dt * 4));
+        scene.fog.color.lerp(targetColorObj, Math.min(1, dt * 4));
+        scene.background.lerp(targetColorObj, Math.min(1, dt * 4));
         if (LightingSystem.ambient && LightingSystem.hemi) {
-          const amb = dark ? (flashlightOn ? 0.10 : 0.045) : (profile === "BRIGHT" ? 0.34 : 0.30);
-          const hemi = dark ? (flashlightOn ? 0.14 : 0.075) : (profile === "BRIGHT" ? 0.40 : 0.36);
+          const normalAmb = 0.30 + brightBlend * 0.04;
+          const normalHemi = 0.36 + brightBlend * 0.04;
+          const darkAmb = flashlightOn ? 0.10 : 0.045;
+          const darkHemi = flashlightOn ? 0.14 : 0.075;
+          const amb = normalAmb*(1-darkBlend) + darkAmb*darkBlend;
+          const hemi = normalHemi*(1-darkBlend) + darkHemi*darkBlend;
           LightingSystem.ambient.intensity += (amb - LightingSystem.ambient.intensity) * Math.min(1, dt * 4);
           LightingSystem.hemi.intensity += (hemi - LightingSystem.hemi.intensity) * Math.min(1, dt * 4);
         }
@@ -4159,7 +4323,10 @@
           if (dark && home) {
             let mult = d < 5 ? 0.35 : d < 8 ? 0.10 : 0.015;
             if (flashlightOn) mult *= 1.45;
-            u.light.intensity *= mult;
+            u.light.intensity = u.baseIntensity * mult;
+          } else if (home && u.light) {
+            const stateMult = u.state === "DIM" ? 0.42 : u.state === "BROKEN" ? 0 : 1;
+            u.light.intensity = u.baseIntensity * stateMult;
           }
         }
         const fogEl = document.getElementById("dark-fog");
@@ -5310,9 +5477,17 @@
       },
 
       regenerate() {
+        if (GameState.regenerating) return;
+        GameState.regenerating = true;
         const next = (Math.imul((GameState.seed || 1) ^ 0x9E3779B9, 1664525) + 1013904223 + (performance.now() | 0)) >>> 0;
-        GameState.seed = next || 483921;
-        Level.buildProcedural(scene, GameState.seed);
+        const newSeed = next || 483921;
+        const built = Level.buildProcedural(scene, newSeed);
+        if (!built) {
+          GameState.regenerating = false;
+          HUD.toast("Generation failed — keeping current layout");
+          return;
+        }
+        GameState.seed = (LevelGenerator.last && LevelGenerator.last.seed) ? LevelGenerator.last.seed : newSeed;
         document.getElementById("start-overlay").style.display = "none";
         document.getElementById("complete-overlay").style.display = "none";
         const go = document.getElementById("gameover-overlay");
@@ -5334,6 +5509,7 @@
         if (typeof Level1 !== 'undefined') Level1.resetVisuals();
         AudioSystem.resume();
         AudioSystem.ambientHumStart();
+        GameState.regenerating = false;
         if (renderer && renderer.domElement) renderer.domElement.requestPointerLock();
       },
 
