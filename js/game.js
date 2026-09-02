@@ -219,25 +219,56 @@ const Game = {
 
   complete() {
     if (GameState.phase !== "playing") return;
+  
     GameState.phase = "complete";
     setPauseOverlay(false);
     document.exitPointerLock();
-    document.getElementById("stat-time").textContent = HUD.formatTime(GameState.elapsed);
-    document.getElementById("stat-dist").textContent = GameState.distance.toFixed(1) + " m";
+  
+    document.getElementById("stat-time").textContent =
+      HUD.formatTime(GameState.elapsed);
+    document.getElementById("stat-dist").textContent =
+      GameState.distance.toFixed(1) + " m";
+  
     document.getElementById("complete-overlay").style.display = "flex";
+  
+    // Save the completed run for signed-in users.
+    if (typeof AuthSystem !== "undefined") {
+      AuthSystem.recordRun({
+        level: GameState.level,
+        outcome: "complete",
+        time: GameState.elapsed,
+        distance: GameState.distance,
+        seed: GameState.seed
+      });
+    }
   },
-
+  
   gameOver() {
     if (GameState.phase !== "playing") return;
+  
     GameState.phase = "complete";
     setPauseOverlay(false);
     document.exitPointerLock();
+  
     const t = document.getElementById("go-time");
     const d = document.getElementById("go-dist");
+  
     if (t) t.textContent = HUD.formatTime(GameState.elapsed);
     if (d) d.textContent = GameState.distance.toFixed(1) + " m";
+  
     const el = document.getElementById("gameover-overlay");
     if (el) el.style.display = "flex";
+  
+    // Save the failed run for signed-in users.
+    if (typeof AuthSystem !== "undefined") {
+      AuthSystem.recordRun({
+        level: GameState.level,
+        outcome: "game_over",
+        time: GameState.elapsed,
+        distance: GameState.distance,
+        seed: GameState.seed
+      });
+    }
   },
 
   loop() {
