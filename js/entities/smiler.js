@@ -240,7 +240,6 @@ const SmilerSystem = {
         this.outageSpawned=false;
       
         return;
-      }
     }
 
     // Ensure the blackout actually has a Smiler presence: one is attempted
