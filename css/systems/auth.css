@@ -1,0 +1,43 @@
+#account-button {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 1200;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 8px;
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+#auth-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.72);
+}
+#auth-panel {
+  width: min(420px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 12px;
+  background: #111;
+  color: #eee;
+  box-shadow: 0 20px 70px rgba(0,0,0,.55);
+}
+#auth-panel h2 { margin-top: 0; }
+#auth-panel input, #auth-panel select, #auth-panel button {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 9px;
+  padding: 10px;
+  border-radius: 7px;
+  border: 1px solid #444;
+}
+#auth-panel button { cursor: pointer; }
+#auth-close { margin-top: 8px; }
+#auth-status { min-height: 20px; margin-top: 12px; font-size: 13px; opacity: .85; }
