@@ -111,7 +111,7 @@ Backrooms Runner is built using:
 
 The project currently uses a classic multi-file JavaScript architecture rather than ES modules. This keeps the different game systems separated while maintaining compatibility with the existing browser-based codebase.
 
-## ▶️Running the Game
+## Running the Game
 
 The easiest way to play is through GitHub Pages:
 
