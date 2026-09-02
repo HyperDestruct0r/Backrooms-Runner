@@ -152,7 +152,7 @@ const LevelGenerator = {
         // Persistent per-module lighting profile.
         lightProfile: (function () {
           const r = rng();
-          return r < 0.28 ? "DARK" : (r > 0.78 ? "BRIGHT" : "NORMAL");
+          return r < 0.15 ? "DARK" : (r > 0.78 ? "BRIGHT" : "NORMAL");
         })(),
         dark: false,
         skipLights: false,
@@ -1479,6 +1479,7 @@ const Level = {
   triggers: [],
   startPos: new THREE.Vector3(2, 0, 2),
   group: null,
+  darkFogGroup: null,
   worldMin: new THREE.Vector3(),
   worldMax: new THREE.Vector3(),
 
@@ -1527,7 +1528,14 @@ const Level = {
       });
       s.remove(this.group);
     }
+    if (this.darkFogGroup && s) {
+      this.darkFogGroup.traverse((obj) => {
+        if (obj.geometry && obj.geometry.dispose) obj.geometry.dispose();
+      });
+      s.remove(this.darkFogGroup);
+    }
     this.group = null;
+    this.darkFogGroup = null;
     this.colliders.length = 0;
     this.triggers.length = 0;
     Stairwell.reset();
@@ -1848,6 +1856,101 @@ const Level = {
         LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, scale);
       }
     }
+
+    // ------------------------------------------------------------------
+    // DARK FOG VOLUMES
+    // ------------------------------------------------------------------
+    // DARK modules are not just unlit rooms anymore. Each one gets a
+    // translucent fog volume so the darkness reads as a physical pocket
+    // of dense haze when viewed from outside. The material is deliberately
+    // subtle so walls remain visible through it. A weak side tint is added
+    // on connected sides that lead into a lit module, giving the fog a
+    // slight sense of illumination without adding expensive volumetric fog.
+    this.darkFogGroup = new THREE.Group();
+    this.darkFogGroup.name = "Level0DarkFog";
+
+    const darkFogMaterial = new THREE.MeshBasicMaterial({
+      color: 0x17191c,
+      transparent: true,
+      opacity: 0.20,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+
+    const darkFogEdgeMaterial = new THREE.MeshBasicMaterial({
+      color: 0x2a2d30,
+      transparent: true,
+      opacity: 0.075,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+
+    const fogGlowMaterial = new THREE.MeshBasicMaterial({
+      color: 0xb5b0a0,
+      transparent: true,
+      opacity: 0.065,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+
+    for (let ni = 0; ni < MapGraph.nodes.length; ni++) {
+      const mod = MapGraph.nodes[ni];
+      if (!mod || mod.lightProfile !== "DARK") continue;
+
+      const minX = mod.gx * LevelGenerator.CELL * T + 0.35;
+      const minZ = mod.gz * LevelGenerator.CELL * T + 0.35;
+      const width = Math.max(2, mod.w * LevelGenerator.CELL * T - 0.70);
+      const depth = Math.max(2, mod.h * LevelGenerator.CELL * T - 0.70);
+      const fogHeight = Math.max(2.8, H - 0.45);
+
+      // Main volume. Slightly inset from the walls so it feels like haze
+      // occupying the room rather than a black wall pasted over it.
+      const volume = new THREE.Mesh(
+        new THREE.BoxGeometry(width, fogHeight, depth),
+        darkFogMaterial
+      );
+      volume.position.set(minX + width * 0.5, fogHeight * 0.5, minZ + depth * 0.5);
+      this.darkFogGroup.add(volume);
+
+      // A larger, much weaker shell softens the visible boundary from
+      // outside the room.
+      const edge = new THREE.Mesh(
+        new THREE.BoxGeometry(width + 0.8, fogHeight + 0.35, depth + 0.8),
+        darkFogEdgeMaterial
+      );
+      edge.position.copy(volume.position);
+      edge.position.y += 0.12;
+      this.darkFogGroup.add(edge);
+
+      // Connected modules are effectively doorways. Put a very subtle
+      // lighter vertical sheet just inside the dark room on lit sides.
+      // This makes the fog closest to a fluorescent-lit room look a little
+      // less opaque on that side without turning the room bright.
+      for (let ci = 0; ci < mod.connections.length; ci++) {
+        const neighbor = MapGraph.nodes[mod.connections[ci]];
+        if (!neighbor || neighbor.lightProfile === "DARK") continue;
+
+        const dx = neighbor.gx - mod.gx;
+        const dz = neighbor.gz - mod.gz;
+        let glow;
+
+        if (Math.abs(dx) >= Math.abs(dz) && dx !== 0) {
+          const x = dx > 0 ? minX + width - 0.28 : minX + 0.28;
+          glow = new THREE.Mesh(new THREE.PlaneGeometry(depth * 0.72, fogHeight * 0.72), fogGlowMaterial);
+          glow.rotation.y = dx > 0 ? -Math.PI / 2 : Math.PI / 2;
+          glow.position.set(x, fogHeight * 0.52, minZ + depth * 0.5);
+        } else if (dz !== 0) {
+          const z = dz > 0 ? minZ + depth - 0.28 : minZ + 0.28;
+          glow = new THREE.Mesh(new THREE.PlaneGeometry(width * 0.72, fogHeight * 0.72), fogGlowMaterial);
+          glow.rotation.y = dz > 0 ? 0 : Math.PI;
+          glow.position.set(minX + width * 0.5, fogHeight * 0.52, z);
+        }
+
+        if (glow) this.darkFogGroup.add(glow);
+      }
+    }
+
+    scene.add(this.darkFogGroup);
 
     // A small number of structural beams are placed per module instead of
     // per tile. This preserves the industrial ceiling language without
