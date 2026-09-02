@@ -5,8 +5,8 @@
 "use strict";
 
 const SUPABASE_CONFIG = {
-  url: "YOUR_SUPABASE_PROJECT_URL",
-  anonKey: "YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY"
+  url: "hyperdestruct0r.github.io/Backrooms_Runner",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjY2FzdGZwamhqdmNuZGJjd3p5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODM2ODY1MSwiZXhwIjoyMTAzOTQ0NjUxfQ.Rsaqo-7yQixY73d2reh8fNICljrnl96A_gG5RDGiN2w"
 };
 
 const AuthSystem = {
