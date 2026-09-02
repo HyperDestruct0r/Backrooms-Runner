@@ -1461,9 +1461,12 @@
         if (!exitNode || exitNode.id === startNode.id || dist[exitNode.id] < 12) return null;
         let farCandidates = spine.slice().reverse().filter(n => n && n.id !== startNode.id && dist[n.id] < 9000);
         for (const candidate of farCandidates) {
-          if (dist[candidate.id] * C >= CONFIG.gen.minPath && dist[candidate.id] * C <= CONFIG.gen.maxPath) {
+          if (dist[candidate.id] * C >= CONFIG.gen.minPath) {
             exitNode = candidate;
-            break;
+            // Prefer the original 500–1000m target when possible, but do not
+            // reject a valid >500m exit just because the new loop-heavy map
+            // made the shortest path longer.
+            if (dist[candidate.id] * C <= CONFIG.gen.maxPath) break;
           }
         }
 
@@ -1563,7 +1566,7 @@
         const firstExitCell = findSpecialCell(exitNode);
         if (!firstExitCell) return null;
         const firstPathMeters = startDistances[firstExitCell.z][firstExitCell.x] * CONFIG.tile;
-        if (firstPathMeters < CONFIG.gen.minPath || firstPathMeters > CONFIG.gen.maxPath) return null;
+        if (firstPathMeters < CONFIG.gen.minPath) return null;
 
         const exitNodes = [exitNode];
         const exitCandidates = [];
@@ -1590,7 +1593,7 @@
         // the exact validation, but only run it for a small, well-ranked set
         // of candidates. The first candidate selection still uses the exact
         // start-distance map above.
-        const candidateLimit = Math.min(exitCandidates.length, 28);
+        const candidateLimit = Math.min(exitCandidates.length, 12);
         exitCandidates.length = candidateLimit;
 
         function tileDistance(a, b, capTiles) {
@@ -1722,7 +1725,10 @@
 
       generateValid(seed, maxTries) {
         let s = seed >>> 0;
-        const tries = maxTries || 40;
+        // Keep startup bounded. The generator already validates connectivity;
+        // dozens of full-map attempts can make the browser look like it has
+        // frozen on the yellow loading screen.
+        const tries = maxTries || 10;
         for (let i = 0; i < tries; i++) {
           const res = this.generate((s + i * 7919) >>> 0);
           if (res) {
@@ -2895,11 +2901,11 @@
       },
 
       buildProcedural(sceneRef, seed) {
-        const result = LevelGenerator.generateValid(seed, 40);
+        const result = LevelGenerator.generateValid(seed, 10);
         if (!result) {
           console.warn("Procedural generation failed; retrying with a fresh seed");
           const retrySeed = ((seed ^ 0x9e3779b9) >>> 0);
-          const retry = LevelGenerator.generateValid(retrySeed, 40);
+          const retry = LevelGenerator.generateValid(retrySeed, 10);
           if (!retry) {
             const startSeed = document.getElementById("start-seed");
             if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — PRESS R TO RETRY";
@@ -5771,7 +5777,29 @@
         // entering the synchronous procedural-generation step. Generation is
         // CPU-bound, so without this frame the UI can appear frozen at 52%.
         await this._nextFrame();
-        Level.buildProcedural(scene, GameState.seed);
+        let level0Built = false;
+        try {
+          level0Built = !!Level.buildProcedural(scene, GameState.seed);
+        } catch (err) {
+          console.error("Level 0 generation exception:", err);
+          level0Built = false;
+        }
+        if (!level0Built) {
+          // One deterministic fallback attempt. This keeps a transient bad
+          // procedural seed from producing a blank yellow page.
+          const fallbackSeed = 483921;
+          try {
+            level0Built = !!Level.buildProcedural(scene, fallbackSeed);
+          } catch (err) {
+            console.error("Level 0 fallback generation exception:", err);
+            level0Built = false;
+          }
+        }
+        if (!level0Built) {
+          const st = document.getElementById("boot-status");
+          if (st) st.textContent = "LEVEL 0 GENERATION FAILED — PRESS G TO RETRY";
+          throw new Error("Level 0 could not be generated after fallback attempts.");
+        }
         this._setBoot(72, "BUILDING LEVEL 0 GEOMETRY...");
         await this._nextFrame();
         Player.resetToStart();
@@ -5875,7 +5903,13 @@
         GameState.regenerating = true;
         const next = (Math.imul((GameState.seed || 1) ^ 0x9E3779B9, 1664525) + 1013904223 + (performance.now() | 0)) >>> 0;
         const newSeed = next || 483921;
-        const built = Level.buildProcedural(scene, newSeed);
+        let built = false;
+        try {
+          built = !!Level.buildProcedural(scene, newSeed);
+        } catch (err) {
+          console.error("Level 0 regeneration exception:", err);
+          built = false;
+        }
         if (!built) {
           GameState.regenerating = false;
           HUD.toast("Generation failed — keeping current layout");
