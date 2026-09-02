@@ -27,7 +27,8 @@ const SmilerSystem = {
   spawnTimer: 0,
   outageSpawned: false,
   rng: null,
-  maxActive: 10,
+  // Keep blackout encounters threatening without flooding the player.
+  maxActive: 7,
   damageAcc: 0,
   sanityPulseAcc: 0,
 
@@ -62,98 +63,38 @@ const SmilerSystem = {
 
   makeSmiler(pos) {
     this.ensureGroup();
-  
     const g = new THREE.Group();
     g.position.set(pos.x, 0.15, pos.z);
-  
-    // Almost-black face silhouette.
-    const faceMat = new THREE.MeshBasicMaterial({
-      color: 0x010002,
-      transparent: true,
-      opacity: 0.92,
-      toneMapped: false
+
+    const faceMat = new THREE.MeshBasicMaterial({color:0x030006,transparent:true,opacity:1.0,toneMapped:false});
+    const face = new THREE.Mesh(new THREE.SphereGeometry(0.82, 20, 14), faceMat);
+    face.scale.set(1.0,0.72,0.28);
+    face.position.y=1.35;
+
+    const eyeMat = new THREE.MeshBasicMaterial({
+      color:0xffffff, transparent:true, opacity:1.0, toneMapped:false
     });
-  
-    const face = new THREE.Mesh(
-      new THREE.SphereGeometry(0.68, 18, 12),
-      faceMat
-    );
-  
-    face.scale.set(1.0, 0.70, 0.22);
-    face.position.y = 1.28;
-  
-    // Extremely bright white glowing eyes/smile.
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 1.0,
-      toneMapped: false
-    });
-  
-    const eyeL = new THREE.Mesh(
-      new THREE.SphereGeometry(0.105, 12, 8),
-      glowMat
-    );
-  
-    const eyeR = new THREE.Mesh(
-      new THREE.SphereGeometry(0.105, 12, 8),
-      glowMat
-    );
-  
-    eyeL.position.set(-0.23, 1.44, -0.25);
-    eyeR.position.set(0.23, 1.44, -0.25);
-  
-    // The iconic glowing smile.
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.125, 10, 8), eyeMat);
+    const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.125, 10, 8), eyeMat);
+    eyeL.position.set(-0.27,1.52,-0.28);
+    eyeR.position.set(0.27,1.52,-0.28);
+
     const mouthCurve = new THREE.QuadraticBezierCurve3(
-      new THREE.Vector3(-0.34, 1.16, -0.27),
-      new THREE.Vector3(0, 0.88, -0.33),
-      new THREE.Vector3(0.34, 1.16, -0.27)
+      new THREE.Vector3(-0.40,1.20,-0.30),
+      new THREE.Vector3(0,0.91,-0.36),
+      new THREE.Vector3(0.40,1.20,-0.30)
     );
-  
-    const mouthGeo = new THREE.TubeGeometry(
-      mouthCurve,
-      18,
-      0.055,
-      8,
-      false
-    );
-  
-    const mouth = new THREE.Mesh(mouthGeo, glowMat);
-  
-    g.add(face, eyeL, eyeR, mouth);
-  
-    // Small light around the Smiler so the face reads as glowing
-    // even when the environment is completely black.
-    const glow = new THREE.PointLight(
-      0xffffff,
-      1.6,
-      9.0,
-      2.0
-    );
-  
-    glow.position.set(0, 1.2, -0.25);
-  
-    g.add(glow);
-  
+    const mouthGeo = new THREE.TubeGeometry(mouthCurve, 14, 0.045, 6, false);
+    const mouth = new THREE.Mesh(mouthGeo, eyeMat);
+
+    g.add(face,eyeL,eyeR,mouth);
     this.group.add(g);
-  
-    const s = {
-      active: true,
-      mesh: g,
-      x: pos.x,
-      z: pos.z,
-  
-      visibleToPlayer: false,
-      repathT: 0,
-      retreatT: 0,
-  
-      exposureT: 0,
-      speed: 8.8,
-      radius: 0.72
+    const s={
+      active:true, mesh:g, x:pos.x, z:pos.z,
+      visibleToPlayer:false, repathT:0, retreatT:0,
+      exposureT:0, speed:8.8, radius:0.72
     };
-  
     this.list.push(s);
-  
     return s;
   },
 
@@ -300,18 +241,17 @@ const SmilerSystem = {
         this.outageSpawned=false;
       
         return;
-    }
+      }
 
-    // Ensure the blackout actually has a Smiler presence: one is attempted
-    // shortly after the outage starts, then more arrive every 2–4 seconds.
+    // Ensure the blackout has a Smiler presence without flooding the player.
     if(!this.outageSpawned){
       this.outageSpawned=true;
-      this.spawnTimer=0.8;
+      this.spawnTimer=1.5;
     }
     this.spawnTimer-=dt;
     if(this.spawnTimer<=0) {
-      // Smilers arrive frequently during the blackout.
-      this.spawnTimer=1.0+Math.random()*1.25;
+      // Roughly 5–7 spawn attempts per 10 seconds, with a hard cap of 7 active.
+      this.spawnTimer=1.8+Math.random()*0.4;
       this.spawnOne();
     }
 
