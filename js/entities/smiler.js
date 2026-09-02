@@ -134,22 +134,78 @@ const SmilerSystem = {
   },
 
   spawnOne() {
-    if (!Level1.active || Level1.blackoutState!=='outage') return;
-    if (this.list.filter(s=>s.active).length >= this.maxActive) return;
-    const ang=Math.random()*Math.PI*2;
-    const d=12+Math.random()*18;
-    const x=Player.position.x+Math.cos(ang)*d;
-    const z=Player.position.z+Math.sin(ang)*d;
-    // Search nearby points until we find open floor with line-of-sight.
-    for(let k=0;k<18;k++){
-      const a=Math.random()*Math.PI*2, dd=10+Math.random()*20;
-      const px=Player.position.x+Math.cos(a)*dd, pz=Player.position.z+Math.sin(a)*dd;
-      if(this.isOpen(px,pz)){
-        this.makeSmiler({x:px,z:pz});
-        return;
+  if (!Level1.active || Level1.blackoutState !== 'outage') return;
+
+  if (this.list.filter(s => s.active).length >= this.maxActive) return;
+
+  // Search a large number of candidate positions around the player.
+  // The new Level 1 maze has much denser wall coverage, so 18 random
+  // attempts can occasionally miss every open corridor.
+  //
+  // Candidates are biased toward 15–32m away so Smilers appear nearby
+  // enough to be threatening, but not directly on top of the player.
+  for (let k = 0; k < 80; k++) {
+    const a = Math.random() * Math.PI * 2;
+    const dd = 15 + Math.random() * 17;
+
+    const px = Player.position.x + Math.cos(a) * dd;
+    const pz = Player.position.z + Math.sin(a) * dd;
+
+    if (!this.isOpen(px, pz)) continue;
+
+    // Avoid spawning practically on top of another Smiler.
+    let tooClose = false;
+
+    for (const s of this.list) {
+      if (!s.active) continue;
+
+      const dx = s.x - px;
+      const dz = s.z - pz;
+
+      if (Math.hypot(dx, dz) < 7) {
+        tooClose = true;
+        break;
       }
     }
-  },
+
+    if (tooClose) continue;
+
+    this.makeSmiler({ x: px, z: pz });
+    return;
+  }
+
+  // If random sampling failed, search outward in a deterministic grid.
+  // This makes spawning much more reliable in extremely dense sections.
+  for (let radius = 12; radius <= 36; radius += 4) {
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+
+      const px = Player.position.x + Math.cos(a) * radius;
+      const pz = Player.position.z + Math.sin(a) * radius;
+
+      if (!this.isOpen(px, pz)) continue;
+
+      let tooClose = false;
+
+      for (const s of this.list) {
+        if (!s.active) continue;
+
+        const dx = s.x - px;
+        const dz = s.z - pz;
+
+        if (Math.hypot(dx, dz) < 7) {
+          tooClose = true;
+          break;
+        }
+      }
+
+      if (tooClose) continue;
+
+      this.makeSmiler({ x: px, z: pz });
+      return;
+    }
+  }
+},
 
   isOpen(x,z) {
     for(const c of Level1.colliders){
