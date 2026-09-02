@@ -1,3 +1,9 @@
+/* Backrooms Runner — partitioned source.
+ * Extracted from the working Rev. 9 game.js.
+ * This file is intentionally a classic script so the existing shared game state
+ * remains available to the other partitioned files.
+ */
+
 "use strict";
 
 /* ------------------------------------------------------------------
@@ -233,7 +239,12 @@ const Player = {
       this.stamDelay -= dt;
       if (this.stamDelay <= 0) {
         this.stamRegenOn = true;
-        this.stamAcc += S.regen * dt;
+        // Level 1 blackouts give the player a small recovery advantage.
+        // This applies only during the actual outage, not the normal game.
+        const blackoutRegen = (typeof Level1 !== 'undefined' && Level1.active && Level1.blackoutState === 'outage')
+          ? 0.65
+          : S.regen;
+        this.stamAcc += blackoutRegen * dt;
         while (this.stamAcc >= 1 && this.stamina < S.max) {
           this.stamAcc -= 1;
           this.stamina += 1;
@@ -774,7 +785,11 @@ const PickupSystem = {
         }
       }
     };
-    tryPlace('almond',CONFIG.items.almondAttempts,CONFIG.items.almondChance,CONFIG.items.almondMaxPerRegion);
+    const regionType = Level1.macroType(rx, rz);
+    const almondChance = regionType === 'parking'
+      ? CONFIG.items.parkingAlmondChance
+      : CONFIG.items.almondChance;
+    tryPlace('almond',CONFIG.items.almondAttempts,almondChance,CONFIG.items.almondMaxPerRegion);
     tryPlace('energy',CONFIG.items.energyAttempts,CONFIG.items.energyChance,CONFIG.items.energyMaxPerRegion);
   },
   nearest() {
