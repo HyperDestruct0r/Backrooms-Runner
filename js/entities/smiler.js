@@ -217,14 +217,30 @@ const SmilerSystem = {
 
   update(dt) {
     if(!Level1.active) { this.reset(); return; }
-    if(Level1.blackoutState!=='outage') {
-      if(this.list.length) {
-        for(const s of this.list) this.deactivate(s);
-        this.list=[];
+    if(Level1.blackoutState !== 'outage') {
+      
+        // Give Smilers a brief moment to remain in the world after
+        // the lights return instead of making them vanish instantly.
+        if(this.list.length) {
+          for(const s of this.list) {
+            if(!s.active) continue;
+      
+            s.retreatT += dt;
+      
+            // Smilers disappear shortly after the lights return.
+            if(s.retreatT >= 1.5) {
+              this.deactivate(s);
+            }
+          }
+      
+          this.list=this.list.filter(s => s.active);
+        }
+      
+        this.spawnTimer=0;
+        this.outageSpawned=false;
+      
+        return;
       }
-      this.spawnTimer=0;
-      this.outageSpawned=false;
-      return;
     }
 
     // Ensure the blackout actually has a Smiler presence: one is attempted
