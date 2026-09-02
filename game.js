@@ -122,8 +122,10 @@
         drain: 0.12,
         chaseDrain: 0.2,
         restoreDrink: 10,
-        hpRegenNeed: 80,
-        hpRegenRate: 0.2
+        hpRegenSanityNeed: 20,
+        hpRegenStaminaNeed: 10,
+        hpRegenRate: 2,
+        hpRegenDelay: 5
       },
       items: {
         regionSize: 150,
@@ -150,11 +152,11 @@
         flashlight: "KeyF"
       },
       flashlight: {
-        intensity: 1.35,
-        distance: 18,
-        angle: 0.38,
-        penumbra: 0.45,
-        decay: 1.6
+        intensity: 2.85,
+        distance: 28,
+        angle: 0.42,
+        penumbra: 0.38,
+        decay: 1.35
       },
       envEvents: {
         startMin: 60,
@@ -2906,6 +2908,246 @@
        and chunk coordinates, so the world is effectively infinite while only
        a small window around the player is kept in the scene/collision list.
        ------------------------------------------------------------------ */
+
+    /* ------------------------------------------------------------------
+       LEVEL 1 SMILERS
+       Appear only during Level 1 blackouts. They are simple emissive-face
+       entities: if they can see the player, they rapidly approach and try
+       to remain within 5m. A flashlight beam drives them back and suppresses
+       their contact drain. Their presence adds 1 sanity/sec and 2 HP/sec
+       while they remain active and able to see the player.
+       ------------------------------------------------------------------ */
+
+    const SmilerCorruption = {
+      intensity:0,
+      el:null,
+      reset(){
+        this.intensity=0;
+        if(!this.el) this.el=document.getElementById("smiler-corruption");
+        if(this.el){ this.el.style.opacity="0"; this.el.style.filter="none"; }
+      },
+      set(v){
+        if(!this.el) this.el=document.getElementById("smiler-corruption");
+        this.intensity=Math.max(0,Math.min(1,v));
+        if(this.el){
+          const jitter=(Math.random()*2-1)*this.intensity*4;
+          this.el.style.opacity=(this.intensity*0.62).toFixed(3);
+          this.el.style.transform=`translate(${jitter.toFixed(1)}px,${(-jitter*0.4).toFixed(1)}px)`;
+          this.el.style.filter=`contrast(${1+this.intensity*0.8}) saturate(${1+this.intensity*1.6})`;
+          this.el.style.setProperty("--glitch-shift",(this.intensity*6).toFixed(1)+"px");
+        }
+      }
+    };
+
+    const SmilerSystem = {
+      list: [],
+      group: null,
+      spawnTimer: 0,
+      rng: null,
+      maxActive: 4,
+      damageAcc: 0,
+      sanityPulseAcc: 0,
+
+      reset() {
+        if (this.group && scene) scene.remove(this.group);
+        this.group = null;
+        this.list = [];
+        this.spawnTimer = 0;
+        this.damageAcc = 0;
+        this.sanityPulseAcc = 0;
+      },
+
+      activeCount() {
+        let n = 0;
+        for (const s of this.list) if (s.active && s.visibleToPlayer) n++;
+        return n;
+      },
+
+      _rng() {
+        if (!this.rng) this.rng = Level1.rngFor(Math.floor(Level1.levelTime), 0, 911);
+        return this.rng();
+      },
+
+      ensureGroup() {
+        if (!this.group) {
+          this.group = new THREE.Group();
+          this.group.name = "Level1_Smilers";
+          if (scene) scene.add(this.group);
+        }
+      },
+
+      makeSmiler(pos) {
+        this.ensureGroup();
+        const g = new THREE.Group();
+        g.position.set(pos.x, 0.15, pos.z);
+
+        const faceMat = new THREE.MeshBasicMaterial({color:0x050505});
+        const face = new THREE.Mesh(new THREE.SphereGeometry(0.72, 18, 12), faceMat);
+        face.scale.set(1.0,0.72,0.28);
+        face.position.y=1.35;
+
+        const eyeMat = new THREE.MeshBasicMaterial({
+          color:0xffffff, emissive:0xffffff
+        });
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.105, 10, 8), eyeMat);
+        const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.105, 10, 8), eyeMat);
+        eyeL.position.set(-0.27,1.52,-0.28);
+        eyeR.position.set(0.27,1.52,-0.28);
+
+        const mouthCurve = new THREE.QuadraticBezierCurve3(
+          new THREE.Vector3(-0.40,1.20,-0.30),
+          new THREE.Vector3(0,0.91,-0.36),
+          new THREE.Vector3(0.40,1.20,-0.30)
+        );
+        const mouthGeo = new THREE.TubeGeometry(mouthCurve, 14, 0.045, 6, false);
+        const mouth = new THREE.Mesh(mouthGeo, eyeMat);
+
+        g.add(face,eyeL,eyeR,mouth);
+        this.group.add(g);
+        const s={
+          active:true, mesh:g, x:pos.x, z:pos.z,
+          visibleToPlayer:false, repathT:0, retreatT:0,
+          speed:8.8, radius:0.72
+        };
+        this.list.push(s);
+        return s;
+      },
+
+      lineOfSight(s) {
+        if (!s.active) return false;
+        const dx=Player.position.x-s.x, dz=Player.position.z-s.z;
+        const d=Math.hypot(dx,dz);
+        if (d>42) return false;
+        // Horizontal sight check against Level 1 wall/pillar AABBs.
+        for(const c of Level1.colliders){
+          if(c.max.y <= 0.6) continue;
+          const minX=Math.min(s.x,Player.position.x), maxX=Math.max(s.x,Player.position.x);
+          const minZ=Math.min(s.z,Player.position.z), maxZ=Math.max(s.z,Player.position.z);
+          if(c.max.x < minX || c.min.x > maxX || c.max.z < minZ || c.min.z > maxZ) continue;
+          const steps=Math.max(4,Math.ceil(d/1.0));
+          for(let i=1;i<steps;i++){
+            const t=i/steps, x=s.x+dx*t, z=s.z+dz*t;
+            if(x>=c.min.x && x<=c.max.x && z>=c.min.z && z<=c.max.z) return false;
+          }
+        }
+        return true;
+      },
+
+      flashlightHits(s) {
+        if (!Flashlight.enabled) return false;
+        const dx=s.x-Player.position.x, dz=s.z-Player.position.z;
+        const d=Math.hypot(dx,dz);
+        if(d>CONFIG.flashlight.distance+1 || d<0.2) return false;
+        const fx=-Math.sin(Player.yaw), fz=-Math.cos(Player.yaw);
+        const dot=(fx*dx+fz*dz)/d;
+        if(dot < Math.cos(CONFIG.flashlight.angle*0.72)) return false;
+        return this.lineOfSight(s);
+      },
+
+      deactivate(s) {
+        s.active=false;
+        if(s.mesh && this.group) this.group.remove(s.mesh);
+      },
+
+      spawnOne() {
+        if (!Level1.active || Level1.blackoutState!=='outage') return;
+        if (this.list.filter(s=>s.active).length >= this.maxActive) return;
+        const ang=Math.random()*Math.PI*2;
+        const d=18+Math.random()*22;
+        const x=Player.position.x+Math.cos(ang)*d;
+        const z=Player.position.z+Math.sin(ang)*d;
+        // Search nearby points until we find open floor with line-of-sight.
+        for(let k=0;k<18;k++){
+          const a=Math.random()*Math.PI*2, dd=12+Math.random()*28;
+          const px=Player.position.x+Math.cos(a)*dd, pz=Player.position.z+Math.sin(a)*dd;
+          if(this.isOpen(px,pz)){
+            this.makeSmiler({x:px,z:pz});
+            return;
+          }
+        }
+      },
+
+      isOpen(x,z) {
+        for(const c of Level1.colliders){
+          if(c.max.y<=0.6) continue;
+          if(x>=c.min.x-0.9 && x<=c.max.x+0.9 && z>=c.min.z-0.9 && z<=c.max.z+0.9) return false;
+        }
+        return true;
+      },
+
+      update(dt) {
+        if(!Level1.active) { this.reset(); return; }
+        if(Level1.blackoutState!=='outage') {
+          if(this.list.length) {
+            for(const s of this.list) this.deactivate(s);
+            this.list=[];
+          }
+          this.spawnTimer=0;
+          return;
+        }
+
+        this.spawnTimer-=dt;
+        if(this.spawnTimer<=0) {
+          this.spawnTimer=3.5+Math.random()*4.5;
+          this.spawnOne();
+        }
+
+        let visibleCount=0;
+        for(const s of this.list){
+          if(!s.active) continue;
+          const dx=Player.position.x-s.x, dz=Player.position.z-s.z;
+          const d=Math.hypot(dx,dz);
+          s.visibleToPlayer=this.lineOfSight(s);
+
+          const flashlight=this.flashlightHits(s);
+          if(flashlight){
+            const awayX=-dx/(d||1), awayZ=-dz/(d||1);
+            s.x += awayX*10.5*dt;
+            s.z += awayZ*10.5*dt;
+            s.mesh.position.set(s.x,0.15,s.z);
+            s.mesh.visible=true;
+            continue;
+          }
+
+          if(s.visibleToPlayer){
+            visibleCount++;
+            // Quickly close distance, then orbit/hover around the 5m mark.
+            const desired=Math.max(4.2,Math.min(5.0,d));
+            if(d>desired){
+              s.x += dx/(d||1)*s.speed*dt;
+              s.z += dz/(d||1)*s.speed*dt;
+            } else if(d<4.0){
+              s.x -= dx/(d||1)*2.5*dt;
+              s.z -= dz/(d||1)*2.5*dt;
+            }
+            // Keep the smiler on open floor.
+            if(!this.isOpen(s.x,s.z)){
+              s.x-=dx/(d||1)*2.0*dt; s.z-=dz/(d||1)*2.0*dt;
+            }
+            s.mesh.position.set(s.x,0.15,s.z);
+            s.mesh.lookAt(Player.position.x,Player.position.y+1.25,Player.position.z);
+            s.mesh.visible=true;
+          } else {
+            // Remain where it is until visible again; slight drift keeps them eerie.
+            s.mesh.visible=true;
+          }
+        }
+
+        // Screen corruption increases when a smiler is visible and nearby.
+        let nearest=999;
+        for(const s of this.list) if(s.active && s.visibleToPlayer)
+          nearest=Math.min(nearest,Math.hypot(s.x-Player.position.x,s.z-Player.position.z));
+        SmilerCorruption.set(nearest<999 ? Math.max(0,1-nearest/22) : 0);
+
+        this.damageAcc += visibleCount * 2 * dt;
+        while(this.damageAcc>=1){
+          this.damageAcc-=1;
+          if(visibleCount>0) Player.damagePlayer(1);
+        }
+        if(Player.getPlayerHP()<=0) Game.gameOver();
+      }
+    };
+
     const Level1 = {
       active:false, group:null, colliders:[], triggers:[],
       macroSize:600, microSize:60, activeRadius:2, seed:0,
@@ -2927,7 +3169,10 @@
         this.levelTime=0; this.blackoutState='idle'; this.blackoutTimer=0; this.blackoutNext=60;
         this.blackoutCooldown=0; this.blackoutDuration=0; this.blackoutCycle=0;
         this.blackoutFlickerT=0; this.blackoutFlickerNext=0; this.blackoutWindowStart=0; this.macroCache.clear(); this.exitMacro=null;
+        if(typeof SmilerSystem!=="undefined") SmilerSystem.reset();
+        if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
         if(scene){ scene.fog=null; scene.background && scene.background.setHex(0x202321); }
+        if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
         if(CameraRig.camera){ CameraRig.camera.far=CONFIG.cameraFar; CameraRig.camera.updateProjectionMatrix(); }
       },
       hash2(x,z,salt=0){
@@ -2978,7 +3223,7 @@
         panel.material.emissiveIntensity=blackout?0:2.0*bright;
         rec.fixtures.push({panel,housing,base:bright});
         if(rng()<0.10 && this.lights.length<12){
-          const L=new THREE.PointLight(0xf2f6ff,blackout?0:0.68*bright,20,1.8);
+          const L=new THREE.PointLight(0xf4f7ff,blackout?0:0.92*bright,22,1.65);
           L.position.set(x,this.baseY+6.25,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
         }
       },
@@ -3008,14 +3253,14 @@
         const floorMap=this.concreteTexture(6,6);
         const pillarMap=this.concreteTexture(2.2,7.0);
         const ceilMap=this.concreteTexture(5,5);
-        this.shared.floor=new THREE.MeshStandardMaterial({map:floorMap,color:0xb0b0aa,roughness:0.48,metalness:0.08});
-        this.shared.concrete=new THREE.MeshStandardMaterial({map:floorMap.clone(),color:0x979a96,roughness:0.74,metalness:0.02});
-        this.shared.concretePillar=new THREE.MeshStandardMaterial({map:pillarMap,color:0x9b9e99,roughness:0.80,metalness:0.02});
-        this.shared.concreteDark=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x747874,roughness:0.88,metalness:0.01});
-        this.shared.concreteLight=new THREE.MeshStandardMaterial({map:ceilMap,color:0xb7b9b4,roughness:0.74,metalness:0.02});
-        this.shared.beam=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x686d69,roughness:0.82,metalness:0.04});
+        this.shared.floor=new THREE.MeshStandardMaterial({map:floorMap,color:0x9a9c9a,roughness:0.44,metalness:0.10});
+        this.shared.concrete=new THREE.MeshStandardMaterial({map:floorMap.clone(),color:0x858886,roughness:0.78,metalness:0.02});
+        this.shared.concretePillar=new THREE.MeshStandardMaterial({map:pillarMap,color:0x929593,roughness:0.82,metalness:0.02});
+        this.shared.concreteDark=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x676a68,roughness:0.90,metalness:0.01});
+        this.shared.concreteLight=new THREE.MeshStandardMaterial({map:ceilMap,color:0xa5a8a5,roughness:0.76,metalness:0.02});
+        this.shared.beam=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x5e6260,roughness:0.84,metalness:0.04});
         this.shared.metal=new THREE.MeshStandardMaterial({color:0x6f7471,roughness:0.42,metalness:0.72});
-        this.shared.light=new THREE.MeshStandardMaterial({color:0xf7f8f4,emissive:0xeaf3ff,emissiveIntensity:2.0,roughness:0.4});
+        this.shared.light=new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xf5f8ff,emissiveIntensity:2.35,roughness:0.34});
         this.shared.pipe=new THREE.MeshStandardMaterial({color:0x777b78,roughness:0.62,metalness:0.5});
         this.shared.water=new THREE.MeshPhysicalMaterial({map:this.waterTexture(),color:0x496668,transparent:true,opacity:0.78,roughness:0.08,metalness:0.12,clearcoat:0.75,clearcoatRoughness:0.08,side:THREE.DoubleSide});
         this.shared.water.needsUpdate=true;
@@ -3206,11 +3451,15 @@
       setFixtureState(on,dim=1){
         for(const rec of this.chunks.values()){
           for(const f of rec.fixtures){
-            const e=on ? 2.0*f.base*dim : 0.0;
+            const e=on ? 2.35*f.base*dim : 0.0;
             f.panel.material.emissiveIntensity=e;
             f.panel.visible=true; f.housing.visible=true;
           }
-          for(const L of rec.pointLights) L.intensity=on ? 0.72*dim : 0;
+          for(const L of rec.pointLights) L.intensity=on ? 0.96*dim : 0;
+        }
+        for(const L of this.ambientLights){
+          if(L.isHemisphereLight) L.intensity = on ? 0.92*dim : 0.055;
+          else L.intensity = on ? 0.34*dim : 0.018;
         }
       },
       startBlackout(){
@@ -3218,12 +3467,12 @@
         this.blackoutState='flicker'; this.blackoutFlickerT=0; this.blackoutFlickerNext=0.10;
         this.blackoutDuration=30+this.rngFor(this.blackoutCycle,0,333)()*30;
         this.setFixtureState(false);
-        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,8,56); }
+        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,1.2,18); }
       },
       beginOutage(){
         this.blackoutState='outage'; this.blackoutTimer=0;
         this.setFixtureState(false);
-        if(scene){ scene.background && scene.background.setHex(0x000000); if(!scene.fog) scene.fog=new THREE.Fog(0x000000,10,64); scene.fog.near=8; scene.fog.far=56; scene.fog.color.setHex(0x000000); }
+        if(scene){ scene.background && scene.background.setHex(0x000000); if(!scene.fog) scene.fog=new THREE.Fog(0x000000,10,64); scene.fog.near=1.2; scene.fog.far=18; scene.fog.color.setHex(0x000000); }
       },
       endBlackout(){
         this.blackoutState='cooldown'; this.blackoutCooldown=60+this.rngFor(this.blackoutCycle,7,334)()*30;
@@ -3251,7 +3500,7 @@
         } else if(this.blackoutState==='outage'){
           this.blackoutTimer+=dt;
           this.setFixtureState(false);
-          if(scene&&scene.fog){ scene.fog.near=8; scene.fog.far=56; scene.fog.color.setHex(0x000000); }
+          if(scene&&scene.fog){ scene.fog.near=1.2; scene.fog.far=18; scene.fog.color.setHex(0x000000); }
           if(this.blackoutTimer>=this.blackoutDuration) this.endBlackout();
         } else if(this.blackoutState==='cooldown'){
           this.blackoutCooldown-=dt;
@@ -3267,7 +3516,7 @@
         if(!CameraRig.camera) return;
         let inside=false;
         for(const p of this.puddles){ const dx=Player.position.x-p.x,dz=Player.position.z-p.z; if(dx*dx+dz*dz<=p.r*p.r){inside=true;break;} }
-        const base=(this.blackoutState==='flicker'||this.blackoutState==='outage')?64:320;
+        const base=(this.blackoutState==='flicker'||this.blackoutState==='outage')?18:320;
         const target=inside ? base*0.85 : base;
         if(Math.abs(CameraRig.camera.far-target)>0.5){ CameraRig.camera.far+=(target-CameraRig.camera.far)*0.35; CameraRig.camera.updateProjectionMatrix(); }
       },
@@ -3304,8 +3553,8 @@
         // level does not leave stale pickups behind.
         if(PickupSystem.group && scene) scene.remove(PickupSystem.group);
         PickupSystem.group=new THREE.Group(); PickupSystem.group.name='Level1_Pickups'; scene.add(PickupSystem.group);
-        const hemi=new THREE.HemisphereLight(0xe8f0f5,0x202326,0.72);
-        const amb=new THREE.AmbientLight(0xb8c2c8,0.25); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
+        const hemi=new THREE.HemisphereLight(0xe9f1f5,0x2b2e2d,0.92);
+        const amb=new THREE.AmbientLight(0xc2c9cc,0.34); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
         scene.fog=null; if(scene.background) scene.background.setHex(0x202321);
         if(CameraRig.camera){ CameraRig.camera.far=320; CameraRig.camera.updateProjectionMatrix(); }
         this.lastMCX=999999; this.lastMCZ=999999; this.stream(true); this.placeExit();
@@ -3326,11 +3575,13 @@
         Checkpoints.reset(); Checkpoints.register('level1-start',new THREE.Vector3(origin.x,0,origin.z),0); Checkpoints.activate('level1-start');
         Player.position.set(origin.x,0,origin.z); Player.velocity.set(0,0,0); Player.onGround=true;
         EntitySystem.despawn(); EncounterManager.reset(); DebugPath.hide(); DarknessSystem.reset(); AtmosphereSystem.reset(); EnvEventSystem.reset(); Flashlight.reset();
+        if(typeof SmilerSystem!=="undefined") SmilerSystem.reset();
+        if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
       },
       update(dt){
         if(!this.active) return;
         this.streamTimer+=dt; if(this.streamTimer>0.18){this.streamTimer=0;this.stream(false);}
-        this.updateBlackout(dt); this.updatePuddleVisibility();
+        this.updateBlackout(dt); this.updatePuddleVisibility(); if(typeof SmilerSystem!=="undefined") SmilerSystem.update(dt);
         Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
       }
     };
@@ -3470,6 +3721,7 @@
       sanity: 100,
       sanityAcc: 0,
       hpRegenAcc: 0,
+      lastDamageAgo: 999,
       sprintJumping: false,
       lastNoise: 0,
       lastNoisePos: new THREE.Vector3(),
@@ -3497,12 +3749,18 @@
         this.sanity = CONFIG.sanity.max;
         this.sanityAcc = 0;
         this.hpRegenAcc = 0;
+        this.lastDamageAgo = 999;
         this.sprintJumping = false;
         Checkpoints.respawn();
       },
 
       damagePlayer(amount) {
-        this.hp = Math.max(0, Math.min(this.maxHp, this.hp - Math.max(0, amount | 0)));
+        const dmg = Math.max(0, amount | 0);
+        if (dmg > 0) {
+          this.hp = Math.max(0, Math.min(this.maxHp, this.hp - dmg));
+          this.lastDamageAgo = 0;
+          this.hpRegenAcc = 0;
+        }
         return this.hp;
       },
       healPlayer(amount) {
@@ -3518,14 +3776,21 @@
       tickSanity(dt) {
         const C = CONFIG.sanity;
         const chasing = EntitySystem && EntitySystem.spawned && EntitySystem.state === "PURSUING";
-        const rate = C.drain + (chasing ? C.chaseDrain : 0);
+        const smilerDrain = (typeof Level1 !== "undefined" && Level1.active && typeof SmilerSystem !== "undefined")
+          ? SmilerSystem.activeCount()
+          : 0;
+        const rate = C.drain + (chasing ? C.chaseDrain : 0) + smilerDrain;
         this.sanityAcc += rate * dt;
+        this.lastDamageAgo += dt;
         while (this.sanityAcc >= 1 && this.sanity > 0) {
           this.sanityAcc -= 1;
           this.sanity -= 1;
         }
         if (this.sanity <= 0) { this.sanity = 0; this.sanityAcc = 0; }
-        if (this.sanity >= C.hpRegenNeed && this.stamina >= C.hpRegenNeed && this.hp < this.maxHp) {
+        if (this.sanity > C.hpRegenSanityNeed &&
+            this.stamina > C.hpRegenStaminaNeed &&
+            this.lastDamageAgo >= C.hpRegenDelay &&
+            this.hp < this.maxHp) {
           this.hpRegenAcc += C.hpRegenRate * dt;
           while (this.hpRegenAcc >= 1 && this.hp < this.maxHp) {
             this.hpRegenAcc -= 1;
@@ -3872,7 +4137,7 @@
       init() {
         if (this.light || !CameraRig.camera) return;
         const f = CONFIG.flashlight;
-        this.light = new THREE.SpotLight(0xfff2d0, 0, f.distance, f.angle, f.penumbra, f.decay);
+        this.light = new THREE.SpotLight(0xf4f8ff, 0, f.distance, f.angle, f.penumbra, f.decay);
         this.light.position.set(0.12, -0.08, 0.15);
         const target = new THREE.Object3D();
         target.position.set(0, -0.04, -1);
