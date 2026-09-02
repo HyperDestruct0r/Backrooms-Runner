@@ -1,3 +1,9 @@
+/* Backrooms Runner — partitioned source.
+ * Extracted from the working Rev. 9 game.js.
+ * This file is intentionally a classic script so the existing shared game state
+ * remains available to the other partitioned files.
+ */
+
 "use strict";
 
 "use strict";
@@ -124,6 +130,8 @@ const CONFIG = {
   items: {
     regionSize: 150,
     almondChance: 0.01,
+    // Level 1 parking lots are more resource-friendly than maintenance areas.
+    parkingAlmondChance: 0.015,
     almondAttempts: 15,
     almondMaxPerRegion: 5,
     energyChance: 0.003,
