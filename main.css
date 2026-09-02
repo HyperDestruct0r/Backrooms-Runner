@@ -208,3 +208,12 @@
     .loading-tip { margin-top: 18px; font-size: 10px; line-height: 1.55; letter-spacing: .05em; opacity: .45; }
     @keyframes loadingPulse { 0%,100% { opacity:.45 } 50% { opacity:1 } }
     .loading-status.pulse { animation: loadingPulse 1.2s ease-in-out infinite; }
+
+    #exit-waypoint {
+      display:none; position:fixed; z-index:12; transform:translate(-50%,-50%);
+      color:#e7eee9; font-size:12px; letter-spacing:.14em; text-align:center;
+      text-shadow:0 0 8px #000, 0 1px 3px #000; pointer-events:none;
+      padding:6px 9px; background:rgba(0,0,0,.28); border:1px solid rgba(225,235,230,.18);
+    }
+    #exit-waypoint .exit-arrow { display:block; font-size:22px; line-height:18px; transition:transform .08s linear; }
+    #exit-waypoint .exit-distance { display:block; margin-top:3px; font-size:10px; }
