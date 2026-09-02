@@ -2992,6 +2992,7 @@
       list: [],
       group: null,
       spawnTimer: 0,
+      outageSpawned: false,
       rng: null,
       maxActive: 4,
       damageAcc: 0,
@@ -3002,6 +3003,7 @@
         this.group = null;
         this.list = [];
         this.spawnTimer = 0;
+        this.outageSpawned = false;
         this.damageAcc = 0;
         this.sanityPulseAcc = 0;
       },
@@ -3030,16 +3032,16 @@
         const g = new THREE.Group();
         g.position.set(pos.x, 0.15, pos.z);
 
-        const faceMat = new THREE.MeshBasicMaterial({color:0x030006,transparent:true,opacity:0.98,toneMapped:false});
-        const face = new THREE.Mesh(new THREE.SphereGeometry(0.72, 18, 12), faceMat);
+        const faceMat = new THREE.MeshBasicMaterial({color:0x030006,transparent:true,opacity:1.0,toneMapped:false});
+        const face = new THREE.Mesh(new THREE.SphereGeometry(0.82, 20, 14), faceMat);
         face.scale.set(1.0,0.72,0.28);
         face.position.y=1.35;
 
         const eyeMat = new THREE.MeshBasicMaterial({
           color:0xffffff, transparent:true, opacity:1.0, toneMapped:false
         });
-        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.105, 10, 8), eyeMat);
-        const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.105, 10, 8), eyeMat);
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.125, 10, 8), eyeMat);
+        const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.125, 10, 8), eyeMat);
         eyeL.position.set(-0.27,1.52,-0.28);
         eyeR.position.set(0.27,1.52,-0.28);
 
@@ -3102,12 +3104,12 @@
         if (!Level1.active || Level1.blackoutState!=='outage') return;
         if (this.list.filter(s=>s.active).length >= this.maxActive) return;
         const ang=Math.random()*Math.PI*2;
-        const d=18+Math.random()*22;
+        const d=12+Math.random()*18;
         const x=Player.position.x+Math.cos(ang)*d;
         const z=Player.position.z+Math.sin(ang)*d;
         // Search nearby points until we find open floor with line-of-sight.
         for(let k=0;k<18;k++){
-          const a=Math.random()*Math.PI*2, dd=12+Math.random()*28;
+          const a=Math.random()*Math.PI*2, dd=10+Math.random()*20;
           const px=Player.position.x+Math.cos(a)*dd, pz=Player.position.z+Math.sin(a)*dd;
           if(this.isOpen(px,pz)){
             this.makeSmiler({x:px,z:pz});
@@ -3132,12 +3134,19 @@
             this.list=[];
           }
           this.spawnTimer=0;
+          this.outageSpawned=false;
           return;
         }
 
+        // Ensure the blackout actually has a Smiler presence: one is attempted
+        // shortly after the outage starts, then more arrive every 2–4 seconds.
+        if(!this.outageSpawned){
+          this.outageSpawned=true;
+          this.spawnTimer=0.8;
+        }
         this.spawnTimer-=dt;
         if(this.spawnTimer<=0) {
-          this.spawnTimer=3.5+Math.random()*4.5;
+          this.spawnTimer=2.0+Math.random()*2.0;
           this.spawnOne();
         }
 
@@ -3460,7 +3469,7 @@
         if(!rec.dark){
           for(let x=spacing/2;x<S;x+=spacing) for(let z=spacing/2;z<S;z+=spacing){
             if(rng()<(rec.bright?0.08:0.32)) continue;
-            this.fixture(g,ox+x,oz+z,rec.bright?1.3:0.86,rng,rec);
+            this.fixture(g,ox+x,oz+z,rec.bright?1.55:1.08,rng,rec);
           }
         }
         // Puddles are preferentially placed in parking/open floor; a smaller number
@@ -3513,15 +3522,15 @@
       setFixtureState(on,dim=1){
         for(const rec of this.chunks.values()){
           for(const f of rec.fixtures){
-            const e=on ? 2.35*f.base*dim : 0.0;
+            const e=on ? 2.85*f.base*dim : 0.0;
             f.panel.material.emissiveIntensity=e;
             f.panel.visible=true; f.housing.visible=true;
           }
-          for(const L of rec.pointLights) L.intensity=on ? 0.96*dim : 0;
+          for(const L of rec.pointLights) L.intensity=on ? 1.22*dim : 0;
         }
         for(const L of this.ambientLights){
-          if(L.isHemisphereLight) L.intensity = on ? 0.92*dim : 0.055;
-          else L.intensity = on ? 0.34*dim : 0.018;
+          if(L.isHemisphereLight) L.intensity = on ? 1.28*dim : 0.055;
+          else L.intensity = on ? 0.52*dim : 0.018;
         }
       },
       startBlackout(){
@@ -3583,74 +3592,119 @@
         if(Math.abs(CameraRig.camera.far-target)>0.5){ CameraRig.camera.far+=(target-CameraRig.camera.far)*0.35; CameraRig.camera.updateProjectionMatrix(); }
       },
       placeExit(){
-        // Level 1 exit: a concrete staircase recessed into a heavy wall, descending
-        // into darkness as the visual/architectural handoff toward Level 2.
+        // Long-range Level 1 exit placement. The exit is deliberately put in a
+        // maintenance macro-region roughly 600–1000m from the starting point,
+        // preferably with a parking macro-region between the player and the exit.
         const smx=Math.floor(this.start.x/this.macroSize), smz=Math.floor(this.start.z/this.macroSize);
-        let best=null;
+        const sx=this.start.x, sz=this.start.z;
+        let candidates=[];
         for(let dz=-2;dz<=2;dz++) for(let dx=-2;dx<=2;dx++){
-          const mx=smx+dx,mz=smz+dz,type=this.macroType(mx,mz),dist=Math.hypot(dx,dz);
-          if(type==='maintenance' || Math.abs(dx)+Math.abs(dz)<=1){ if(!best||dist<best.dist) best={mx,mz,type,dist}; }
+          if(dx===0&&dz===0) continue;
+          const mx=smx+dx,mz=smz+dz;
+          if(this.macroType(mx,mz)!=='maintenance') continue;
+          const b=this.macroBounds(mx,mz);
+          // Put the staircase on a side/corner of the macro facing the start.
+          const pts=[
+            [b.minx+28,b.minz+28],[b.maxx-28,b.minz+28],
+            [b.minx+28,b.maxz-28],[b.maxx-28,b.maxz-28],
+            [(b.minx+b.maxx)/2,b.minz+28],[(b.minx+b.maxx)/2,b.maxz-28],
+            [b.minx+28,(b.minz+b.maxz)/2],[b.maxx-28,(b.minz+b.maxz)/2]
+          ];
+          for(const pt of pts){
+            const dist=Math.hypot(pt[0]-sx,pt[1]-sz);
+            if(dist<600 || dist>1000) continue;
+            // Prefer candidates with a parking region in the direction from the
+            // player toward the exit. This makes the player more likely to cross
+            // a large parking lot before discovering the staircase.
+            const ux=dx/(Math.hypot(dx,dz)||1), uz=dz/(Math.hypot(dx,dz)||1);
+            const nearMx=mx-Math.sign(Math.round(ux)), nearMz=mz-Math.sign(Math.round(uz));
+            let parkingScore=0;
+            for(const [nx,nz] of [[mx-1,mz],[mx+1,mz],[mx,mz-1],[mx,mz+1]]){
+              if(this.macroType(nx,nz)==='parking'){
+                const vx=nx-smx, vz=nz-smz;
+                if(vx*dx+vz*dz>0) parkingScore+=2;
+                else parkingScore+=0.5;
+              }
+            }
+            candidates.push({mx,mz,x:pt[0],z:pt[1],dist,parkingScore});
+          }
         }
-        if(!best) best={mx:smx,mz:smz,type:'maintenance',dist:0};
+        // If no exact 600–1000m point exists for this deterministic layout,
+        // choose the closest valid maintenance point, still preferring parking.
+        if(!candidates.length){
+          for(let dz=-2;dz<=2;dz++) for(let dx=-2;dx<=2;dx++){
+            if(dx===0&&dz===0) continue;
+            const mx=smx+dx,mz=smz+dz;
+            if(this.macroType(mx,mz)!=='maintenance') continue;
+            const b=this.macroBounds(mx,mz);
+            const pts=[[b.minx+30,b.minz+30],[b.maxx-30,b.maxz-30],[(b.minx+b.maxx)/2,(b.minz+b.maxz)/2]];
+            for(const pt of pts) candidates.push({mx,mz,x:pt[0],z:pt[1],dist:Math.hypot(pt[0]-sx,pt[1]-sz),parkingScore:0});
+          }
+        }
+        candidates.sort((a,b)=>b.parkingScore-a.parkingScore || Math.abs(a.dist-800)-Math.abs(b.dist-800));
+        let best=candidates[0] || {mx:smx+1,mz:smz+1,x:sx+620,z:sz+620,dist:Math.hypot(620,620),parkingScore:0};
         this.exitMacro=best;
-        const mb=this.macroBounds(best.mx,best.mz);
-        const side=Math.floor(this.hash2(best.mx,best.mz,99)*4);
-        const inset=20, x0=mb.minx+inset, x1=mb.maxx-inset, z0=mb.minz+inset, z1=mb.maxz-inset;
-        let x=(x0+x1)/2,z=(z0+z1)/2, dx=0,dz=1;
-        if(side===0){z=z0+inset; dx=0;dz=1;}
-        if(side===1){x=x1-inset; dx=-1;dz=0;}
-        if(side===2){z=z1-inset; dx=0;dz=-1;}
-        if(side===3){x=x0+inset; dx=1;dz=0;}
-        // Force the staircase to sit on a generated maintenance area.
-        if(best.type!=='maintenance'){
-          const candidates=[[smx,smz],[smx+1,smz],[smx-1,smz],[smx,smz+1],[smx,smz-1]];
-          for(const [cmx,cmz] of candidates){ if(this.macroType(cmx,cmz)==='maintenance'){ const b=this.macroBounds(cmx,cmz); x=(b.minx+b.maxx)/2; z=(b.minz+b.maxz)/2; dx=0;dz=1; best={mx:cmx,mz:cmz,type:'maintenance',dist:0}; break; } }
-        }
-        const trigger={type:'level1exit',minx:x-2.5,maxx:x+2.5,minz:z-2.5,maxz:z+2.5};
+
+        const x=best.x,z=best.z;
+        // Face the staircase toward the starting area, so it reads as an opening
+        // embedded in a wall rather than a freestanding object.
+        const fx=sx-x, fz=sz-z;
+        let dx=0,dz=1;
+        if(Math.abs(fx)>=Math.abs(fz)) dx=fx>=0?1:-1;
+        else dz=fz>=0?1:-1;
+        const rightX=-dz, rightZ=dx;
+
+        // Trigger covers the top landing only. Walking onto the first tread starts
+        // the descent/Level 2 handoff.
+        const trigger={type:'level1exit',minx:x+rightX*-2.2+dx*-0.2-2.0,maxx:x+rightX*2.2+dx*-0.2+2.0,minz:z+rightZ*-2.2+dz*-0.2-2.0,maxz:z+rightZ*2.2+dz*-0.2+2.0};
         this.triggers.push(trigger);
         this.exitPosition=new THREE.Vector3(x,this.baseY,z);
 
         const g=new THREE.Group(); g.name='Level1_StairExit'; this.group.add(g);
-        const W=6.4, H=8.45, wallT=2.4, stepW=3.4, steps=16, stepD=0.72, drop=0.24;
-        const rightX=-dz, rightZ=dx;
+        const W=7.0, wallH=8.4, wallT=2.4, openingW=4.2, openingH=7.0;
+        const steps=24, stepD=0.82, drop=0.22;
+        const rot=Math.atan2(dx,dz);
         const wallMat=this.shared.concrete;
-        // Portal frame around a real central opening. The frame is rotated so
-        // it sits flush with the wall regardless of which macro-edge was chosen.
-        const portalRot=Math.atan2(dx,dz);
-        const lintel=this.addBox(g,wallMat,x,this.baseY+H-wallT/2,z,W,H*0.14,wallT);
-        lintel.rotation.y=portalRot;
-        const sideOffset=W/2-0.75;
+
+        // A single heavy wall surrounds a real opening. The central opening is
+        // left empty so the stairs visually disappear into the structure.
+        const sideW=(W-openingW)/2;
         for(const sign of [-1,1]){
-          const px=x+rightX*sign*sideOffset, pz=z+rightZ*sign*sideOffset;
-          const col=this.addBox(g,wallMat,px,this.baseY+H/2,pz,1.5,H,wallT);
-          col.rotation.y=portalRot;
+          const px=x+rightX*sign*(openingW/2+sideW/2), pz=z+rightZ*sign*(openingW/2+sideW/2);
+          const col=this.addBox(g,wallMat,px,this.baseY+wallH/2,pz,sideW,wallH,wallT); col.rotation.y=rot;
         }
-        // Black recessed shaft behind the stair opening.
-        const shaftMat=new THREE.MeshBasicMaterial({color:0x000000});
-        const shaftX=x+dx*3.0, shaftZ=z+dz*3.0;
-        this.addBox(g,shaftMat,shaftX,this.baseY+0.9,shaftZ,stepW,1.8,steps*stepD+1.0);
-        // Descending concrete steps.
+        const lintelH=wallH-openingH;
+        const lintel=this.addBox(g,wallMat,x,this.baseY+openingH+lintelH/2,z,W,lintelH,wallT); lintel.rotation.y=rot;
+
+        // Extend the wall sideways so the portal is unmistakably embedded.
+        // The back remains dark, giving a clear visual transition to Level 2.
+        const backX=x+dx*(steps*stepD+1.0), backZ=z+dz*(steps*stepD+1.0);
+        const shaftMat=new THREE.MeshBasicMaterial({color:0x020303,toneMapped:false});
+        const shaft=this.addBox(g,shaftMat,backX,this.baseY-steps*drop/2+0.1,backZ,openingW,steps*drop+1.2,steps*stepD+2.0); shaft.rotation.y=rot;
+
+        // First tread starts exactly at floor level; every following tread drops.
         for(let i=0;i<steps;i++){
-          const along=1.0+i*stepD;
+          const along=(i+0.5)*stepD;
           const px=x+dx*along, pz=z+dz*along;
-          const yy=this.baseY-(i+1)*drop+0.12;
-          const st=this.addBox(g,wallMat,px,yy,pz,stepW,0.24,stepD+0.08);
-          st.rotation.y=Math.atan2(dx,dz);
+          const yy=this.baseY - i*drop + 0.07;
+          const st=this.addBox(g,wallMat,px,yy,pz,openingW,0.14,stepD+0.04); st.rotation.y=rot;
         }
-        // Heavy side walls follow the staircase downward.
-        const railLen=steps*stepD+1.5;
-        const midAlong=railLen/2;
+
+        // Thick retaining walls run down both sides of the stairwell.
+        const railLen=steps*stepD+1.4;
         for(const sign of [-1,1]){
-          const px=x+dx*midAlong+rightX*sign*(stepW/2+wallT/2), pz=z+dz*midAlong+rightZ*sign*(stepW/2+wallT/2);
-          const wall=this.addBox(g,wallMat,px,this.baseY-steps*drop/2+1.0,pz,wallT,2.1,railLen);
-          wall.rotation.y=Math.atan2(dx,dz);
+          const px=x+dx*(railLen/2)+rightX*sign*(openingW/2+wallT/2);
+          const pz=z+dz*(railLen/2)+rightZ*sign*(openingW/2+wallT/2);
+          const wall=this.addBox(g,wallMat,px,this.baseY-steps*drop/2+0.75,pz,wallT,1.5+steps*drop,railLen); wall.rotation.y=rot;
         }
-        const signMat=new THREE.MeshStandardMaterial({color:0x9ea4a1,emissive:0x18201e,emissiveIntensity:0.35,roughness:0.75});
-        const sign=this.addBox(g,signMat,x,this.baseY+H-0.75,z+dz*0.18,3.4,0.42,0.08);
-        sign.rotation.y=Math.atan2(dx,dz);
-        // Very weak light at the top; the staircase itself descends into black.
-        const lm=new THREE.MeshStandardMaterial({color:0xdfe7e4,emissive:0xe7f0ed,emissiveIntensity:0.9});
-        const light=this.addBox(g,lm,x,this.baseY+H-1.15,z-dz*0.5,2.4,0.08,0.55); light.rotation.y=Math.atan2(dx,dz);
+
+        // Subtle sign at the bottom: this is the Level 2 destination, not a
+        // floating exit object in the middle of Level 1.
+        const signMat=new THREE.MeshBasicMaterial({color:0x9fe8ff,toneMapped:false});
+        const sign=this.addBox(g,signMat,backX,this.baseY-steps*drop+1.15,backZ+rightZ*0.02,2.7,0.34,0.06); sign.rotation.y=rot;
+        // Small light just inside the Level 2 threshold.
+        const bottomLight=new THREE.PointLight(0x8ed8ff,0.75,8,1.7);
+        bottomLight.position.set(backX-dx*0.7,this.baseY-steps*drop+0.7,backZ-dz*0.7); g.add(bottomLight);
       },
       build(seed,origin){
         this.resetVisuals(); this.materialSet(); this.active=true; this.seed=seed>>>0;
@@ -3660,8 +3714,8 @@
         // level does not leave stale pickups behind.
         if(PickupSystem.group && scene) scene.remove(PickupSystem.group);
         PickupSystem.group=new THREE.Group(); PickupSystem.group.name='Level1_Pickups'; scene.add(PickupSystem.group);
-        const hemi=new THREE.HemisphereLight(0xe9f1f5,0x2b2e2d,0.92);
-        const amb=new THREE.AmbientLight(0xc2c9cc,0.34); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
+        const hemi=new THREE.HemisphereLight(0xe9f1f5,0x2b2e2d,1.28);
+        const amb=new THREE.AmbientLight(0xc2c9cc,0.52); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
         scene.fog=null; if(scene.background) scene.background.setHex(0x202321);
         if(CameraRig.camera){ CameraRig.camera.far=320; CameraRig.camera.updateProjectionMatrix(); }
         this.lastMCX=999999; this.lastMCZ=999999; this.stream(true); this.placeExit();
