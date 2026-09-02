@@ -133,9 +133,26 @@
     }
     #dark-fog {
       position: absolute; inset: -6%; pointer-events: none; opacity: 0;
-      background: radial-gradient(circle at 50% 50%, rgba(10,14,18,0) 13%, rgba(10,14,18,0.12) 32%, rgba(7,10,14,0.58) 70%, rgba(3,5,8,0.88) 100%);
+      background: radial-gradient(circle at 50% 50%, rgba(10,14,18,0) 7%, rgba(7,10,14,0.18) 22%, rgba(3,5,8,0.78) 54%, rgba(0,0,0,0.98) 100%);
       mix-blend-mode: multiply;
       transition: opacity 0.45s ease;
+    }
+    #smiler-corruption {
+      --glitch-shift: 0px;
+      position: absolute; inset: -4%; pointer-events: none; opacity: 0;
+      background:
+        repeating-linear-gradient(0deg,
+          rgba(255,0,60,0.08) 0 1px,
+          rgba(0,220,255,0.07) 1px 2px,
+          transparent 2px 6px),
+        linear-gradient(90deg,
+          rgba(255,0,70,0.12),
+          transparent 28%,
+          rgba(0,210,255,0.10) 62%,
+          transparent);
+      mix-blend-mode: screen;
+      filter: contrast(1.2) saturate(1.4);
+      transition: opacity .08s linear;
     }
 
     #elevator-sequence {
