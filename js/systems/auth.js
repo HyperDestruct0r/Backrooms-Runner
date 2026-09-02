@@ -5,7 +5,7 @@
 "use strict";
 
 const SUPABASE_CONFIG = {
-  url: "https://lccastfpjhjvcndbcwzy.supabase.co/rest/v1/",
+  url: "https://lccastfpjhjvcndbcwzy.supabase.co",
   anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjY2FzdGZwamhqdmNuZGJjd3p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNjg2NTEsImV4cCI6MjEwMzk0NDY1MX0.AO6-wVPLLZw_Ztsdg5oYEeJffIOI4RnFbtS4SwNTTbk"
 };
 
