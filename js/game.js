@@ -106,8 +106,33 @@ const Game = {
     });
     window.addEventListener("keydown", (e) => {
       if (e.code !== "Enter" || e.repeat) return;
+    
+      // Never let authentication/UI input start the game.
+      const authModal = document.getElementById("auth-modal");
+      if (authModal && getComputedStyle(authModal).display !== "none") {
+        return;
+      }
+    
+      // Don't let Enter from text fields/forms trigger game start.
+      const target = e.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLButtonElement ||
+        target instanceof HTMLFormElement
+      ) {
+        return;
+      }
+    
       const startOverlay = document.getElementById("start-overlay");
-      if (GameState.ready && GameState.phase === "start" && startOverlay && getComputedStyle(startOverlay).display !== "none") {
+    
+      if (
+        GameState.ready &&
+        GameState.phase === "start" &&
+        startOverlay &&
+        getComputedStyle(startOverlay).display !== "none"
+      ) {
         e.preventDefault();
         this.start();
       }
