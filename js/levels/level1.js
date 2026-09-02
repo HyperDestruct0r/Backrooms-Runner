@@ -140,55 +140,181 @@ const Level1 = {
     }
   },
   getMaintenanceWalls(mx,mz){
-    const key=this.macroKey(mx,mz)+':walls';
-    if(this.macroCache.has(key)) return this.macroCache.get(key);
-    const mb=this.macroBounds(mx,mz), sector=150, cell=5.5, n=27, walls=[];
-    const rng=this.rngFor(mx,mz,707);
-    const push=(x,z,sx,sz,h=4.70)=>walls.push({x,z,sx,sz,h});
+  const key=this.macroKey(mx,mz)+':walls';
+  if(this.macroCache.has(key)) return this.macroCache.get(key);
 
-    // Maintenance areas are deliberately tight: a dense Level-0-like cellular maze
-    // with 5.5m cells, very heavy concrete walls, few loops, and almost no
-    // deliberately widened/open sections. The result should feel like a
-    // massive enclosed service maze rather than an open parking garage.
-    for(let sy=0;sy<4;sy++) for(let sx=0;sx<4;sx++){
-      const x0=mb.minx+sx*sector, z0=mb.minz+sy*sector;
-      const visited=Array.from({length:n},()=>new Uint8Array(n));
-      const openH=Array.from({length:n},()=>new Uint8Array(n-1));
-      const openV=Array.from({length:n-1},()=>new Uint8Array(n));
-      const stack=[[Math.floor(rng()*n),Math.floor(rng()*n)]];
-      visited[stack[0][1]][stack[0][0]]=1;
-      while(stack.length){
-        const [cx,cz]=stack[stack.length-1], dirs=[];
-        for(const d of [0,1,2,3]){
-          const nx=cx+DIR4[d].x,nz=cz+DIR4[d].z;
-          if(nx>=0&&nz>=0&&nx<n&&nz<n&&!visited[nz][nx]) dirs.push(d);
-        }
-        if(!dirs.length){stack.pop();continue;}
-        const d=dirs[Math.floor(rng()*dirs.length)],nx=cx+DIR4[d].x,nz=cz+DIR4[d].z;
-        if(d===1)openH[cz][cx]=1; if(d===3)openH[cz][nx]=1;
-        if(d===2)openV[cz][cx]=1; if(d===0)openV[nz][cx]=1;
-        visited[nz][nx]=1; stack.push([nx,nz]);
+  const mb=this.macroBounds(mx,mz);
+  const n=72;
+  const cell=this.macroSize/n;
+  const walls=[];
+  const rng=this.rngFor(mx,mz,707);
+  const push=(x,z,sx,sz,h=4.70)=>walls.push({x,z,sx,sz,h});
+
+  // One continuous maintenance maze per 600m macro-region.
+  // The old generator used sixteen independent 150m mazes. Their sector
+  // boundaries could create artificial straight seams through the macro.
+  // This generator instead uses one connected 72x72 grid.
+  const visited=Array.from({length:n},()=>new Uint8Array(n));
+  const openH=Array.from({length:n},()=>new Uint8Array(n-1));
+  const openV=Array.from({length:n-1},()=>new Uint8Array(n));
+
+  const carve=(x,z,d)=>{
+    const nx=x+DIR4[d].x, nz=z+DIR4[d].z;
+
+    if(nx<0||nz<0||nx>=n||nz>=n||visited[nz][nx]) return false;
+
+    if(d===1) openH[z][x]=1;
+    else if(d===3) openH[z][nx]=1;
+    else if(d===2) openV[z][x]=1;
+    else if(d===0) openV[nz][x]=1;
+
+    visited[nz][nx]=1;
+    return true;
+  };
+
+  const chooseWeighted=(dirs,dir,run)=>{
+    if(dirs.length===1) return dirs[0];
+
+    const weights=[];
+
+    for(const d of dirs){
+      let w=1;
+
+      if(dir>=0){
+        const delta=(d-dir+4)%4;
+
+        // Prefer straight corridors at first, but strongly favor
+        // turns after a long straight run.
+        if(delta===0)
+          w=run>=10 ? 0.03 : 0.72;
+        else if(delta===1 || delta===3)
+          w=run>=10 ? 1.0 : 0.14;
+        else
+          w=0.01;
       }
-      // Very few loops: keep the maintenance maze tight and directional.
-      // The spanning-tree pass above guarantees connectivity without making
-      // the area feel like an open grid.
-      for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x] && rng()<0.025) openH[z][x]=1;
-      for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x] && rng()<0.025) openV[z][x]=1;
 
-      // Do not add the previous large open-room cuts. A handful of natural
-      // three/four-way junctions from the maze are enough.
-      const WT=2.40;
-      for(let z=0;z<n;z++) for(let x=0;x<n-1;x++) if(!openH[z][x])
-        push(x0+(x+1)*cell,z0+(z+.5)*cell,WT,cell+0.18);
-      for(let z=0;z<n-1;z++) for(let x=0;x<n;x++) if(!openV[z][x])
-        push(x0+(x+.5)*cell,z0+(z+1)*cell,cell+0.18,WT);
+      weights.push(w);
     }
 
-    // The maze walls themselves provide the architecture. Avoid random thin
-    // divider walls because they would create stray open pockets and visual
-    // clutter unrelated to the main maintenance network.
-    this.macroCache.set(key,walls); return walls;
-  },
+    let total=weights.reduce((a,b)=>a+b,0);
+
+    if(total<=0)
+      return dirs[Math.floor(rng()*dirs.length)];
+
+    let r=rng()*total;
+
+    for(let i=0;i<dirs.length;i++){
+      r-=weights[i];
+
+      if(r<=0)
+        return dirs[i];
+    }
+
+    return dirs[dirs.length-1];
+  };
+
+  // Randomized depth-first generation guarantees that every cell
+  // belongs to the same connected maze.
+  const startX=Math.floor(rng()*n);
+  const startZ=Math.floor(rng()*n);
+
+  const stack=[[startX,startZ,-1,0]];
+  visited[startZ][startX]=1;
+
+  while(stack.length){
+    const top=stack[stack.length-1];
+
+    const cx=top[0];
+    const cz=top[1];
+    const dir=top[2];
+    const run=top[3];
+
+    const dirs=[];
+
+    for(let d=0;d<4;d++){
+      const nx=cx+DIR4[d].x;
+      const nz=cz+DIR4[d].z;
+
+      if(
+        nx>=0 &&
+        nz>=0 &&
+        nx<n &&
+        nz<n &&
+        !visited[nz][nx]
+      ){
+        dirs.push(d);
+      }
+    }
+
+    // Dead end — backtrack.
+    if(!dirs.length){
+      stack.pop();
+      continue;
+    }
+
+    const d=chooseWeighted(dirs,dir,run);
+
+    if(!carve(cx,cz,d))
+      continue;
+
+    const nx=cx+DIR4[d].x;
+    const nz=cz+DIR4[d].z;
+
+    const nextRun=(dir===d) ? run+1 : 1;
+
+    stack.push([nx,nz,d,nextRun]);
+  }
+
+  // Extremely rare extra openings create occasional loops,
+  // while keeping intersections uncommon.
+  const loopChance=0.002;
+
+  for(let z=0;z<n;z++){
+    for(let x=0;x<n-1;x++){
+      if(!openH[z][x] && rng()<loopChance)
+        openH[z][x]=1;
+    }
+  }
+
+  for(let z=0;z<n-1;z++){
+    for(let x=0;x<n;x++){
+      if(!openV[z][x] && rng()<loopChance)
+        openV[z][x]=1;
+    }
+  }
+
+  // Heavy concrete maintenance walls.
+  const WT=2.40;
+
+  for(let z=0;z<n;z++){
+    for(let x=0;x<n-1;x++){
+      if(!openH[z][x]){
+        push(
+          mb.minx+(x+1)*cell,
+          mb.minz+(z+.5)*cell,
+          WT,
+          cell+0.18
+        );
+      }
+    }
+  }
+
+  for(let z=0;z<n-1;z++){
+    for(let x=0;x<n;x++){
+      if(!openV[z][x]){
+        push(
+          mb.minx+(x+.5)*cell,
+          mb.minz+(z+1)*cell,
+          cell+0.18,
+          WT
+        );
+      }
+    }
+  }
+
+  this.macroCache.set(key,walls);
+  return walls;
+},
   addClippedWall(g,rec,wall,bx,bz,S){
     const minX=Math.max(wall.x-wall.sx/2,bx), maxX=Math.min(wall.x+wall.sx/2,bx+S);
     const minZ=Math.max(wall.z-wall.sz/2,bz), maxZ=Math.min(wall.z+wall.sz/2,bz+S);
