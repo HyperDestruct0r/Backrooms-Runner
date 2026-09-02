@@ -9,8 +9,34 @@
   <link rel="stylesheet" href="css/levels/level0.css">
   <link rel="stylesheet" href="css/levels/level1.css">
   <link rel="stylesheet" href="css/entities/smiler.css">
+  <link rel="stylesheet" href="css/systems/auth.css">
 </head>
 <body>
+
+</head>
+<body>
+
+  <button id="account-button" type="button"><span id="account-label">Account</span></button>
+
+  <div id="auth-modal">
+    <div id="auth-panel">
+      <h2>Backrooms Runner Account</h2>
+      <p>Accounts are optional. You can keep playing as a guest.</p>
+      <form id="auth-form">
+        <select id="auth-mode">
+          <option value="signin">Sign in</option>
+          <option value="signup">Create account</option>
+        </select>
+        <div id="auth-username-wrap"><input id="auth-username" autocomplete="username" placeholder="Username"></div>
+        <input id="auth-email" type="email" autocomplete="email" placeholder="Email" required>
+        <input id="auth-password" type="password" autocomplete="current-password" placeholder="Password" required>
+        <button id="auth-submit" type="submit">Sign in</button>
+      </form>
+      <div id="auth-status"></div>
+      <button id="auth-signout" type="button" style="display:none">Sign out</button>
+      <button id="auth-close" type="button">Close</button>
+    </div>
+  </div>
 
   <div id="boot-loading">
     <div class="loading-card">
@@ -120,18 +146,15 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/core.js"></script>
 <script src="js/world/assets.js"></script>
-
 <script src="js/levels/level0.js"></script>
-<script src="js/levels/level1.js"></script>
-
 <script src="js/entities/smiler.js"></script>
-
+<script src="js/levels/level1.js"></script>
 <script src="js/systems/player.js"></script>
 <script src="js/systems/atmosphere.js"></script>
-
+<script src="js/systems/auth.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>
