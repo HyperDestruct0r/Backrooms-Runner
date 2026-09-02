@@ -149,14 +149,17 @@
         inventory: "KeyI",
         drink: "KeyQ",
         use: "KeyE",
-        flashlight: "KeyF"
+        flashlight: "KeyF",
+        nearestExit: "KeyN"
       },
       flashlight: {
-        intensity: 2.85,
-        distance: 28,
-        angle: 0.42,
-        penumbra: 0.38,
-        decay: 1.35
+        // Deliberately powerful: Level 1 blackouts are nearly pitch black.
+        intensity: 42.0,
+        distance: 68,
+        angle: 0.50,
+        penumbra: 0.30,
+        decay: 1.0,
+        smilerExposureTime: 1.8
       },
       envEvents: {
         startMin: 60,
@@ -256,6 +259,11 @@
       if (e.code === CONFIG.keys.flashlight && GameState.ready && GameState.phase === "playing" && !e.repeat) {
         e.preventDefault();
         Flashlight.toggle();
+      }
+      if (e.code === CONFIG.keys.nearestExit && GameState.ready && GameState.phase === "playing" && !e.repeat) {
+        e.preventDefault();
+        if (GameState.level === 1 && typeof ExitLocator !== "undefined") ExitLocator.toggle();
+        else HUD.toast("NEAREST EXIT: LEVEL 1 ONLY");
       }
       if (e.code === CONFIG.keys.inventory && GameState.ready && GameState.phase === "playing") {
         e.preventDefault();
@@ -1867,6 +1875,9 @@
 
     const ExitManager = {
       worldPos() {
+        if (GameState.level === 1 && typeof Level1 !== "undefined" && Level1.exitPosition) {
+          return Level1.exitPosition.clone();
+        }
         const list = Stairwell.exits && Stairwell.exits.length
           ? Stairwell.exits
           : [];
@@ -1886,6 +1897,38 @@
         if (!stamp) return null;
         const w = Level.tileToWorld(stamp.x, stamp.z);
         return new THREE.Vector3(w.x, 0, w.z);
+      }
+    };
+
+    const ExitLocator = {
+      active:false, el:null, lastToast:0,
+      init(){
+        if(this.el) return;
+        this.el=document.getElementById("exit-waypoint");
+        if(!this.el) return;
+      },
+      toggle(){
+        this.init();
+        if(GameState.level!==1){ this.active=false; this.el.style.display="none"; return; }
+        this.active=!this.active;
+        this.el.style.display=this.active?"block":"none";
+        HUD.toast(this.active?"NEAREST LEVEL 1 EXIT SHOWN":"EXIT LOCATOR OFF");
+      },
+      hide(){ if(this.el) this.el.style.display="none"; this.active=false; },
+      update(){
+        if(!this.active || GameState.level!==1 || !Level1.exitPosition || !CameraRig.camera || !this.el) return;
+        const dx=Level1.exitPosition.x-Player.position.x, dz=Level1.exitPosition.z-Player.position.z;
+        const dist=Math.hypot(dx,dz);
+        const fx=-Math.sin(Player.yaw), fz=-Math.cos(Player.yaw);
+        const rightX=Math.cos(Player.yaw), rightZ=-Math.sin(Player.yaw);
+        const side=dx*rightX+dz*rightZ;
+        const forward=dx*fx+dz*fz;
+        const angle=Math.atan2(side,forward);
+        const clamped=Math.max(-1.0,Math.min(1.0,angle/1.45));
+        this.el.style.left=(50+clamped*42).toFixed(1)+"%";
+        this.el.style.top=(forward>0?"17%":"83%");
+        this.el.querySelector(".exit-arrow").style.transform=`rotate(${(angle*180/Math.PI).toFixed(1)}deg)`;
+        this.el.querySelector(".exit-distance").textContent="EXIT "+dist.toFixed(0)+"m";
       }
     };
 
@@ -2981,13 +3024,13 @@
         const g = new THREE.Group();
         g.position.set(pos.x, 0.15, pos.z);
 
-        const faceMat = new THREE.MeshBasicMaterial({color:0x050505});
+        const faceMat = new THREE.MeshBasicMaterial({color:0x030006,transparent:true,opacity:0.98,toneMapped:false});
         const face = new THREE.Mesh(new THREE.SphereGeometry(0.72, 18, 12), faceMat);
         face.scale.set(1.0,0.72,0.28);
         face.position.y=1.35;
 
         const eyeMat = new THREE.MeshBasicMaterial({
-          color:0xffffff, emissive:0xffffff
+          color:0xffffff, transparent:true, opacity:1.0, toneMapped:false
         });
         const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.105, 10, 8), eyeMat);
         const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.105, 10, 8), eyeMat);
@@ -3007,7 +3050,7 @@
         const s={
           active:true, mesh:g, x:pos.x, z:pos.z,
           visibleToPlayer:false, repathT:0, retreatT:0,
-          speed:8.8, radius:0.72
+          exposureT:0, speed:8.8, radius:0.72
         };
         this.list.push(s);
         return s;
@@ -3101,13 +3144,23 @@
 
           const flashlight=this.flashlightHits(s);
           if(flashlight){
-            const awayX=-dx/(d||1), awayZ=-dz/(d||1);
-            s.x += awayX*10.5*dt;
-            s.z += awayZ*10.5*dt;
-            s.mesh.position.set(s.x,0.15,s.z);
+            // Continuous exposure is required. The flashlight immediately
+            // suppresses all Smiler effects, drives it backward, and after
+            // ~1.8s of uninterrupted exposure the Smiler fades away.
+            s.exposureT += dt;
+            const fade=Math.max(0,1-s.exposureT/CONFIG.flashlight.smilerExposureTime);
             s.mesh.visible=true;
+            s.mesh.traverse(o=>{ if(o.material && o.material.transparent) o.material.opacity=fade; });
+            const awayX=-dx/(d||1), awayZ=-dz/(d||1);
+            s.x += awayX*12.5*dt;
+            s.z += awayZ*12.5*dt;
+            s.mesh.position.set(s.x,0.15,s.z);
+            s.mesh.lookAt(Player.position.x,Player.position.y+1.25,Player.position.z);
+            if(s.exposureT>=CONFIG.flashlight.smilerExposureTime) this.deactivate(s);
             continue;
           }
+          s.exposureT=0;
+          s.mesh.traverse(o=>{ if(o.material && o.material.transparent) o.material.opacity=1; });
 
           if(s.visibleToPlayer){
             visibleCount++;
@@ -3128,8 +3181,10 @@
             s.mesh.lookAt(Player.position.x,Player.position.y+1.25,Player.position.z);
             s.mesh.visible=true;
           } else {
-            // Remain where it is until visible again; slight drift keeps them eerie.
+            // Keep the entity rendered in the world, but face it toward the player
+            // so its emissive face is unmistakable when it enters view.
             s.mesh.visible=true;
+            s.mesh.lookAt(Player.position.x,Player.position.y+1.25,Player.position.z);
           }
         }
 
@@ -3157,7 +3212,7 @@
       levelTime:0, blackoutState:'idle', blackoutTimer:0, blackoutNext:60,
       blackoutCooldown:0, blackoutDuration:0, blackoutCycle:0,
       blackoutFlickerT:0, blackoutFlickerNext:0, blackoutWindowStart:0,
-      shared:{}, macroCache:new Map(), exitMacro:null,
+      shared:{}, macroCache:new Map(), exitMacro:null, exitPosition:null,
       resetVisuals(){
         if(this.group && scene) scene.remove(this.group);
         for(const L of this.lights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
@@ -3168,9 +3223,10 @@
         this.group=null; this.active=false; this.lastMCX=999999; this.lastMCZ=999999; this.resourceRegions=Object.create(null);
         this.levelTime=0; this.blackoutState='idle'; this.blackoutTimer=0; this.blackoutNext=60;
         this.blackoutCooldown=0; this.blackoutDuration=0; this.blackoutCycle=0;
-        this.blackoutFlickerT=0; this.blackoutFlickerNext=0; this.blackoutWindowStart=0; this.macroCache.clear(); this.exitMacro=null;
+        this.blackoutFlickerT=0; this.blackoutFlickerNext=0; this.blackoutWindowStart=0; this.macroCache.clear(); this.exitMacro=null; this.exitPosition=null;
         if(typeof SmilerSystem!=="undefined") SmilerSystem.reset();
         if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
+        if(typeof ExitLocator!=="undefined") ExitLocator.hide();
         if(scene){ scene.fog=null; scene.background && scene.background.setHex(0x202321); }
         if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
         if(CameraRig.camera){ CameraRig.camera.far=CONFIG.cameraFar; CameraRig.camera.updateProjectionMatrix(); }
@@ -3467,7 +3523,7 @@
         this.blackoutState='flicker'; this.blackoutFlickerT=0; this.blackoutFlickerNext=0.10;
         this.blackoutDuration=30+this.rngFor(this.blackoutCycle,0,333)()*30;
         this.setFixtureState(false);
-        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,1.2,18); }
+        if(scene){ scene.background && scene.background.setHex(0x050606); scene.fog=new THREE.Fog(0x000000,1.0,Flashlight.enabled?42:15); }
       },
       beginOutage(){
         this.blackoutState='outage'; this.blackoutTimer=0;
@@ -3500,7 +3556,7 @@
         } else if(this.blackoutState==='outage'){
           this.blackoutTimer+=dt;
           this.setFixtureState(false);
-          if(scene&&scene.fog){ scene.fog.near=1.2; scene.fog.far=18; scene.fog.color.setHex(0x000000); }
+          if(scene&&scene.fog){ scene.fog.near=1.0; scene.fog.far=Flashlight.enabled?42:15; scene.fog.color.setHex(0x000000); }
           if(this.blackoutTimer>=this.blackoutDuration) this.endBlackout();
         } else if(this.blackoutState==='cooldown'){
           this.blackoutCooldown-=dt;
@@ -3521,29 +3577,74 @@
         if(Math.abs(CameraRig.camera.far-target)>0.5){ CameraRig.camera.far+=(target-CameraRig.camera.far)*0.35; CameraRig.camera.updateProjectionMatrix(); }
       },
       placeExit(){
-        // Pick the nearest maintenance/parking boundary from the forced spawn macro.
-        // The exit is never placed in the middle of a parking lot.
+        // Level 1 exit: a concrete staircase recessed into a heavy wall, descending
+        // into darkness as the visual/architectural handoff toward Level 2.
         const smx=Math.floor(this.start.x/this.macroSize), smz=Math.floor(this.start.z/this.macroSize);
         let best=null;
         for(let dz=-2;dz<=2;dz++) for(let dx=-2;dx<=2;dx++){
-          const mx=smx+dx,mz=smz+dz,type=this.macroType(mx,mz); const dist=Math.hypot(dx,dz);
+          const mx=smx+dx,mz=smz+dz,type=this.macroType(mx,mz),dist=Math.hypot(dx,dz);
           if(type==='maintenance' || Math.abs(dx)+Math.abs(dz)<=1){ if(!best||dist<best.dist) best={mx,mz,type,dist}; }
         }
         if(!best) best={mx:smx,mz:smz,type:'maintenance',dist:0};
         this.exitMacro=best;
         const mb=this.macroBounds(best.mx,best.mz);
-        const side=Math.floor(this.hash2(best.mx,best.mz,99)*4), inset=12, x0=mb.minx+inset, x1=mb.maxx-inset, z0=mb.minz+inset, z1=mb.maxz-inset;
-        let x=(x0+x1)/2,z=(z0+z1)/2;
-        if(side===0) z=z0+3; if(side===1) x=x1-3; if(side===2) z=z1-3; if(side===3) x=x0+3;
-        const trigger={type:'level1exit',minx:x-2.2,maxx:x+2.2,minz:z-2.2,maxz:z+2.2};
+        const side=Math.floor(this.hash2(best.mx,best.mz,99)*4);
+        const inset=20, x0=mb.minx+inset, x1=mb.maxx-inset, z0=mb.minz+inset, z1=mb.maxz-inset;
+        let x=(x0+x1)/2,z=(z0+z1)/2, dx=0,dz=1;
+        if(side===0){z=z0+inset; dx=0;dz=1;}
+        if(side===1){x=x1-inset; dx=-1;dz=0;}
+        if(side===2){z=z1-inset; dx=0;dz=-1;}
+        if(side===3){x=x0+inset; dx=1;dz=0;}
+        // Force the staircase to sit on a generated maintenance area.
+        if(best.type!=='maintenance'){
+          const candidates=[[smx,smz],[smx+1,smz],[smx-1,smz],[smx,smz+1],[smx,smz-1]];
+          for(const [cmx,cmz] of candidates){ if(this.macroType(cmx,cmz)==='maintenance'){ const b=this.macroBounds(cmx,cmz); x=(b.minx+b.maxx)/2; z=(b.minz+b.maxz)/2; dx=0;dz=1; best={mx:cmx,mz:cmz,type:'maintenance',dist:0}; break; } }
+        }
+        const trigger={type:'level1exit',minx:x-2.5,maxx:x+2.5,minz:z-2.5,maxz:z+2.5};
         this.triggers.push(trigger);
-        const g=new THREE.Group(); g.name='Level1_Exit';
-        const back=this.addBox(g,this.shared.concreteLight,x,this.baseY+1.55,z,4.8,3.1,0.32);
-        const door=this.addBox(g,this.shared.metal,x,this.baseY+1.45,z+0.19,2.2,2.9,0.12); door.material=this.shared.metal;
-        const signMat=new THREE.MeshStandardMaterial({color:0xb8c0bb,emissive:0x24352d,emissiveIntensity:0.7});
-        this.addBox(g,signMat,x,this.baseY+3.15,z+0.18,1.5,0.28,0.08);
-        this.addBox(g,this.shared.light,x,this.baseY+3.55,z,2.0,0.08,0.38);
-        g.position.y=0; this.group.add(g);
+        this.exitPosition=new THREE.Vector3(x,this.baseY,z);
+
+        const g=new THREE.Group(); g.name='Level1_StairExit'; this.group.add(g);
+        const W=6.4, H=8.45, wallT=2.4, stepW=3.4, steps=16, stepD=0.72, drop=0.24;
+        const rightX=-dz, rightZ=dx;
+        const wallMat=this.shared.concrete;
+        // Portal frame around a real central opening. The frame is rotated so
+        // it sits flush with the wall regardless of which macro-edge was chosen.
+        const portalRot=Math.atan2(dx,dz);
+        const lintel=this.addBox(g,wallMat,x,this.baseY+H-wallT/2,z,W,H*0.14,wallT);
+        lintel.rotation.y=portalRot;
+        const sideOffset=W/2-0.75;
+        for(const sign of [-1,1]){
+          const px=x+rightX*sign*sideOffset, pz=z+rightZ*sign*sideOffset;
+          const col=this.addBox(g,wallMat,px,this.baseY+H/2,pz,1.5,H,wallT);
+          col.rotation.y=portalRot;
+        }
+        // Black recessed shaft behind the stair opening.
+        const shaftMat=new THREE.MeshBasicMaterial({color:0x000000});
+        const shaftX=x+dx*3.0, shaftZ=z+dz*3.0;
+        this.addBox(g,shaftMat,shaftX,this.baseY+0.9,shaftZ,stepW,1.8,steps*stepD+1.0);
+        // Descending concrete steps.
+        for(let i=0;i<steps;i++){
+          const along=1.0+i*stepD;
+          const px=x+dx*along, pz=z+dz*along;
+          const yy=this.baseY-(i+1)*drop+0.12;
+          const st=this.addBox(g,wallMat,px,yy,pz,stepW,0.24,stepD+0.08);
+          st.rotation.y=Math.atan2(dx,dz);
+        }
+        // Heavy side walls follow the staircase downward.
+        const railLen=steps*stepD+1.5;
+        const midAlong=railLen/2;
+        for(const sign of [-1,1]){
+          const px=x+dx*midAlong+rightX*sign*(stepW/2+wallT/2), pz=z+dz*midAlong+rightZ*sign*(stepW/2+wallT/2);
+          const wall=this.addBox(g,wallMat,px,this.baseY-steps*drop/2+1.0,pz,wallT,2.1,railLen);
+          wall.rotation.y=Math.atan2(dx,dz);
+        }
+        const signMat=new THREE.MeshStandardMaterial({color:0x9ea4a1,emissive:0x18201e,emissiveIntensity:0.35,roughness:0.75});
+        const sign=this.addBox(g,signMat,x,this.baseY+H-0.75,z+dz*0.18,3.4,0.42,0.08);
+        sign.rotation.y=Math.atan2(dx,dz);
+        // Very weak light at the top; the staircase itself descends into black.
+        const lm=new THREE.MeshStandardMaterial({color:0xdfe7e4,emissive:0xe7f0ed,emissiveIntensity:0.9});
+        const light=this.addBox(g,lm,x,this.baseY+H-1.15,z-dz*0.5,2.4,0.08,0.55); light.rotation.y=Math.atan2(dx,dz);
       },
       build(seed,origin){
         this.resetVisuals(); this.materialSet(); this.active=true; this.seed=seed>>>0;
@@ -3581,7 +3682,7 @@
       update(dt){
         if(!this.active) return;
         this.streamTimer+=dt; if(this.streamTimer>0.18){this.streamTimer=0;this.stream(false);}
-        this.updateBlackout(dt); this.updatePuddleVisibility(); if(typeof SmilerSystem!=="undefined") SmilerSystem.update(dt);
+        this.updateBlackout(dt); this.updatePuddleVisibility(); if(typeof SmilerSystem!=="undefined") SmilerSystem.update(dt); if(typeof ExitLocator!=="undefined") ExitLocator.update();
         Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
       }
     };
