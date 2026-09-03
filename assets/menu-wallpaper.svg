@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
+<defs>
+ <linearGradient id="wall" x2="0" y2="1"><stop stop-color="#d9c967"/><stop offset="1" stop-color="#a79a4b"/></linearGradient>
+ <linearGradient id="floor" x2="0" y2="1"><stop stop-color="#b5a657"/><stop offset="1" stop-color="#665f35"/></linearGradient>
+ <radialGradient id="glow"><stop stop-color="#fffbd0" stop-opacity=".9"/><stop offset="1" stop-color="#fffbd0" stop-opacity="0"/></radialGradient>
+ <filter id="blur"><feGaussianBlur stdDeviation="16"/></filter>
+ <pattern id="carpet" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M0 4L18 7M2 13L15 10" stroke="#5e5831" stroke-opacity=".22" stroke-width="2"/></pattern>
+</defs>
+<rect width="1600" height="900" fill="#776d38"/>
+<path d="M0 0H1600V590L1040 470L800 430L560 470L0 590Z" fill="url(#wall)"/>
+<path d="M0 590L560 470L800 430L1040 470L1600 590V900H0Z" fill="url(#floor)"/>
+<path d="M0 590L560 470M1600 590L1040 470M560 470L800 430L1040 470" stroke="#5f5831" stroke-width="9" opacity=".65"/>
+<path d="M0 590L560 470L800 430L1040 470L1600 590V900H0Z" fill="url(#carpet)" opacity=".75"/>
+<g opacity=".8">
+ <rect x="270" y="86" width="390" height="30" rx="7" fill="#fffbd0"/><rect x="300" y="120" width="330" height="8" fill="#5e5a35"/>
+ <rect x="940" y="100" width="390" height="30" rx="7" fill="#fffbd0"/><rect x="970" y="134" width="330" height="8" fill="#5e5a35"/>
+ <ellipse cx="465" cy="100" rx="250" ry="120" fill="url(#glow)" filter="url(#blur)"/>
+ <ellipse cx="1135" cy="115" rx="250" ry="120" fill="url(#glow)" filter="url(#blur)"/>
+</g>
+<path d="M590 900L690 472M1010 900L910 472" stroke="#4e492c" stroke-width="12" opacity=".45"/>
+<path d="M0 330H510M1090 330H1600M0 410H450M1150 410H1600" stroke="#837842" stroke-width="5" opacity=".35"/>
+<g opacity=".12" filter="url(#blur)"><ellipse cx="800" cy="590" rx="520" ry="220" fill="#fff7b0"/></g>
+<rect width="1600" height="900" fill="#1b180b" opacity=".16"/>
+</svg>
