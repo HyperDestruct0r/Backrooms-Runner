@@ -148,11 +148,10 @@ const CONFIG = {
     dark: [90, 22, 16]
   },
   keys: {
-    inventory: "KeyI",
-    drink: "KeyQ",
-    use: "KeyE",
-    flashlight: "KeyF",
-    nearestExit: "KeyN"
+    forward: "KeyW", backward: "KeyS", left: "KeyA", right: "KeyD",
+    sprint: "ShiftLeft", crouch: "KeyC", jump: "Space",
+    inventory: "KeyI", drink: "KeyQ", use: "KeyE", flashlight: "KeyF",
+    nearestExit: "KeyN", regenerate: "KeyG", respawn: "KeyR"
   },
   flashlight: {
     // Deliberately powerful: Level 1 blackouts are nearly pitch black.
@@ -197,7 +196,8 @@ const GameState = {
   elevatorShake: 0,
   level: 0,
   cinematicCamera: false,
-  regenerating: false
+  regenerating: false,
+  levelTimes: { 0: 0, 1: 0 }
 };
 
 /* ------------------------------------------------------------------
@@ -212,15 +212,10 @@ const Input = {
   resetMouse() { this.mouseDX = 0; this.mouseDY = 0; }
 };
 
-function isGameplayKey(code) {
-  return code === "KeyW" || code === "KeyA" || code === "KeyS" || code === "KeyD" ||
-    code === "KeyC" || code === "KeyR" || code === "KeyG" ||
-    code === "KeyI" || code === "KeyQ" || code === "KeyE" || code === "KeyF" ||
-    code === "Space" || code === "ShiftLeft" || code === "ShiftRight" ||
-    code === "ControlLeft" || code === "ControlRight" || code === "F3";
-}
+function isGameplayKey(code) { return Object.values(CONFIG.keys).includes(code) || code === "F3"; }
 
 window.addEventListener("keydown", (e) => {
+  if (typeof MenuSystem !== "undefined" && MenuSystem.handleKeydown(e)) return;
   if (e.code === "ControlLeft" || e.code === "ControlRight") Input.ctrlDown = true;
   Input.keys[e.code] = true;
 
@@ -234,14 +229,14 @@ window.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || isGameplayKey(e.code)) {
       e.preventDefault();
     }
-  } else if (["Space", "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight"].includes(e.code)) {
+  } else if (Object.values(CONFIG.keys).includes(e.code)) {
     e.preventDefault();
   }
 
-  if (e.code === "KeyR" && GameState.phase === "playing") {
+  if (e.code === CONFIG.keys.respawn && GameState.phase === "playing") {
     Checkpoints.respawn();
   }
-  if (e.code === "KeyG" && GameState.ready && (GameState.phase === "playing" || GameState.phase === "complete" || GameState.phase === "start")) {
+  if (e.code === CONFIG.keys.regenerate && GameState.ready && (GameState.phase === "playing" || GameState.phase === "complete" || GameState.phase === "start")) {
     if (e.repeat || GameState.regenerating) return;
     e.preventDefault();
     Game.regenerate();
