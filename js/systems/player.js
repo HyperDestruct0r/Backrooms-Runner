@@ -264,9 +264,9 @@ const Player = {
 
   update(dt) {
     const P = CONFIG.player;
-    const wantCrouch = !!(Input.keys.ControlLeft || Input.keys.ControlRight || Input.keys.KeyC);
-    const wantSprint = !!(Input.keys.ShiftLeft || Input.keys.ShiftRight);
-    const wantJump = !!Input.keys.Space;
+    const wantCrouch = !!Input.keys[CONFIG.keys.crouch];
+    const wantSprint = !!Input.keys[CONFIG.keys.sprint];
+    const wantJump = !!Input.keys[CONFIG.keys.jump];
 
     // Look
     this.yaw -= Input.mouseDX * CONFIG.lookSens;
@@ -278,7 +278,7 @@ const Player = {
 
     // Slide
     if (wantCrouch && wantSprint && this.onGround && !this.sliding && this.stamina > 12 &&
-        (Input.keys.KeyW || this.velocity.length() > 4)) {
+        (Input.keys[CONFIG.keys.forward] || this.velocity.length() > 4)) {
       this.sliding = true;
       this.slideTimer = P.slideDuration;
       this.slideYaw = this.yaw;
@@ -297,10 +297,10 @@ const Player = {
 
     // Camera-relative wish on XZ. Three.js yaw: local forward is (-sin(y), -cos(y)).
     let fwd = 0, str = 0;
-    if (Input.keys.KeyW) fwd += 1;
-    if (Input.keys.KeyS) fwd -= 1;
-    if (Input.keys.KeyD) str += 1;
-    if (Input.keys.KeyA) str -= 1;
+    if (Input.keys[CONFIG.keys.forward]) fwd += 1;
+    if (Input.keys[CONFIG.keys.backward]) fwd -= 1;
+    if (Input.keys[CONFIG.keys.right]) str += 1;
+    if (Input.keys[CONFIG.keys.left]) str -= 1;
     const len = Math.hypot(fwd, str);
     if (len > 0) { fwd /= len; str /= len; }
 
