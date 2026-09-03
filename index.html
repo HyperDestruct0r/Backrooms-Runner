@@ -14,7 +14,7 @@
 </head>
 <body>
 
-  <button id="account-button" type="button"><span id="account-label">Account</span></button>
+  <button id="account-button" type="button" style="display:none"><span id="account-label">Account</span></button>
 
   <div id="auth-modal">
     <div id="auth-panel">
@@ -108,7 +108,67 @@
     </div>
   </div>
 
-  <div id="main-menu-root"></div>
+  <div id="start-overlay" class="menu-overlay" aria-label="Main menu">
+    <div class="menu-shell">
+      <div id="menu-main" class="menu-main">
+        <h1 class="menu-logo">BACKROOMS</h1>
+        <p class="menu-subtitle">RUNNER // LEVEL 0</p>
+        <div class="menu-options">
+          <button class="menu-option selected" type="button" data-menu-index="0" data-menu-action="play">PLAY</button>
+          <button class="menu-option" type="button" data-menu-index="1" data-menu-action="settings">SETTINGS</button>
+          <button class="menu-option" type="button" data-menu-index="2" data-menu-action="controls">CONTROLS</button>
+          <button class="menu-option" type="button" data-menu-index="3" data-menu-action="credits">CREDITS</button>
+        </div>
+        <div class="menu-footer">W/S OR ARROWS TO SELECT · ENTER TO CONFIRM</div>
+      </div>
+
+      <section id="menu-page-settings" class="menu-page" aria-label="Settings">
+        <div class="menu-page-inner">
+          <button id="menu-back-settings" class="menu-back" type="button">← BACK</button>
+          <h2>SETTINGS</h2>
+          <p class="page-desc">Tune the atmosphere. Changes save automatically.</p>
+          <div class="settings-grid">
+            <div class="setting-card"><label>MASTER <span id="setting-master-value">55%</span></label><input class="menu-range" data-setting="master" type="range" min="0" max="1" step="0.01" value="0.55"></div>
+            <div class="setting-card"><label>AMBIENT <span id="setting-ambient-value">3%</span></label><input class="menu-range" data-setting="ambient" type="range" min="0" max="0.2" step="0.001" value="0.028"></div>
+            <div class="setting-card"><label>FOOTSTEPS <span id="setting-footsteps-value">22%</span></label><input class="menu-range" data-setting="footsteps" type="range" min="0" max="1" step="0.01" value="0.22"></div>
+            <div class="setting-card"><label>EVENTS <span id="setting-events-value">18%</span></label><input class="menu-range" data-setting="events" type="range" min="0" max="1" step="0.01" value="0.18"></div>
+            <div class="setting-card"><label>MOUSE SENSITIVITY <span id="setting-sensitivity-value">0.002</span></label><input id="setting-sensitivity" type="range" min="0.0005" max="0.005" step="0.00005" value="0.00215"></div>
+            <div class="setting-card"><div class="switch"><span>FULLSCREEN</span><input id="setting-fullscreen" type="checkbox"></div><div class="setting-note">Uses your browser's fullscreen permission.</div></div>
+          </div>
+          <h3>GAME MODES</h3>
+          <div class="mode-list">
+            <div class="mode-card active"><strong>NORMAL</strong><small>AVAILABLE</small></div>
+            <div class="mode-card locked"><strong>NIGHTMARE</strong><small>🔒 COMING SOON</small></div>
+            <div class="mode-card locked"><strong>ENDLESS</strong><small>🔒 COMING SOON</small></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="menu-page-controls" class="menu-page" aria-label="Controls">
+        <div class="menu-page-inner">
+          <button id="menu-back-controls" class="menu-back" type="button">← BACK</button>
+          <h2>CONTROLS</h2>
+          <p class="page-desc">Click a key to rebind it. Changes save immediately. Backspace/Delete unbinds a control.</p>
+          <div id="controls-error" class="controls-message info">Select any key to begin rebinding.</div>
+          <div id="controls-list" class="controls-list"></div>
+        </div>
+      </section>
+
+      <section id="menu-page-credits" class="menu-page" aria-label="Credits">
+        <div class="menu-page-inner">
+          <button id="menu-back-credits" class="menu-back" type="button">← BACK</button>
+          <h2>CREDITS</h2>
+          <p class="page-desc">BACKROOMS RUNNER</p>
+          <div class="credits-card">
+            <p><strong>GAME</strong><br>Procedural liminal-space exploration.</p>
+            <p><strong>ENGINE</strong><br>Three.js and browser-native Web APIs.</p>
+            <p><strong>RUN DATA</strong><br>Local settings and control bindings are stored in your browser.</p>
+            <p>More features are planned.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
 
   <div id="gameover-overlay" class="overlay" style="display:none">
     <div class="panel">
