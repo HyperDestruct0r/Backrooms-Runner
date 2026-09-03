@@ -148,10 +148,20 @@ const CONFIG = {
     dark: [90, 22, 16]
   },
   keys: {
-    forward: "KeyW", backward: "KeyS", left: "KeyA", right: "KeyD",
-    sprint: "ShiftLeft", crouch: "KeyC", jump: "Space",
-    inventory: "KeyI", drink: "KeyQ", use: "KeyE", flashlight: "KeyF",
-    nearestExit: "KeyN", regenerate: "KeyG", respawn: "KeyR"
+    forward: "KeyW",
+    backward: "KeyS",
+    left: "KeyA",
+    right: "KeyD",
+    crouch: "KeyC",
+    sprint: "ShiftLeft",
+    jump: "Space",
+    inventory: "KeyI",
+    drink: "KeyQ",
+    use: "KeyE",
+    flashlight: "KeyF",
+    nearestExit: "KeyN",
+    regenerate: "KeyG",
+    respawn: "KeyR"
   },
   flashlight: {
     // Deliberately powerful: Level 1 blackouts are nearly pitch black.
@@ -177,6 +187,16 @@ const CONFIG = {
     visualDur: 0.28
   }
 };
+
+/* Restore user key bindings before gameplay starts. */
+try {
+  const savedBindings = JSON.parse(localStorage.getItem("backroomsRunner.bindings.v1") || "null");
+  if (savedBindings && typeof savedBindings === "object") {
+    Object.keys(CONFIG.keys).forEach(action => {
+      if (typeof savedBindings[action] === "string" && savedBindings[action]) CONFIG.keys[action] = savedBindings[action];
+    });
+  }
+} catch (_) {}
 
 /* ------------------------------------------------------------------
    GAME STATE
@@ -212,10 +232,31 @@ const Input = {
   resetMouse() { this.mouseDX = 0; this.mouseDY = 0; }
 };
 
-function isGameplayKey(code) { return Object.values(CONFIG.keys).includes(code) || code === "F3"; }
+function bindingCode(action) {
+  return CONFIG.keys[action];
+}
+
+function isActionDown(action) {
+  const code = bindingCode(action);
+  if (!code) return false;
+  if (Input.keys[code]) return true;
+  // Preserve both physical Shift/Ctrl keys when their primary binding is the
+  // default modifier, while custom bindings remain single-key bindings.
+  if (code === "ShiftLeft") return !!(Input.keys.ShiftLeft || Input.keys.ShiftRight);
+  if (code === "ControlLeft") return !!(Input.keys.ControlLeft || Input.keys.ControlRight);
+  return false;
+}
+
+function isGameplayKey(code) {
+  const configured = Object.values(CONFIG.keys);
+  return configured.includes(code) || [
+    "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "KeyR", "KeyG",
+    "KeyI", "KeyQ", "KeyE", "KeyF", "KeyN", "Space",
+    "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "F3"
+  ].includes(code);
+}
 
 window.addEventListener("keydown", (e) => {
-  if (typeof MenuSystem !== "undefined" && MenuSystem.handleKeydown(e)) return;
   if (e.code === "ControlLeft" || e.code === "ControlRight") Input.ctrlDown = true;
   Input.keys[e.code] = true;
 
@@ -229,7 +270,7 @@ window.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || isGameplayKey(e.code)) {
       e.preventDefault();
     }
-  } else if (Object.values(CONFIG.keys).includes(e.code)) {
+  } else if (["Space", "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight"].includes(e.code)) {
     e.preventDefault();
   }
 
