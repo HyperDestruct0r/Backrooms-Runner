@@ -95,43 +95,13 @@ const Game = {
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
+    if (typeof MenuSystem !== "undefined") MenuSystem.init();
     document.getElementById("btn-restart").addEventListener("click", () => this.restart());
     const pauseResume = document.getElementById("pause-resume");
     if (pauseResume) pauseResume.addEventListener("click", () => {
       if (GameState.phase === "playing" && renderer && renderer.domElement) {
         setPauseOverlay(false);
         renderer.domElement.requestPointerLock();
-      }
-    });
-    window.addEventListener("keydown", (e) => {
-      if (e.code !== "Enter" || e.repeat) return;
-    
-      // Never let authentication/UI input start the game.
-      const authModal = document.getElementById("auth-modal");
-      if (authModal && getComputedStyle(authModal).display !== "none") {
-        return;
-      }
-    
-      // Don't let Enter from text fields/forms trigger game start.
-      const target = e.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        target instanceof HTMLButtonElement ||
-        target instanceof HTMLFormElement
-      ) {
-        return;
-      }
-    
-      if (
-        GameState.ready &&
-        GameState.phase === "start" &&
-        typeof MenuSystem !== "undefined" &&
-        MenuSystem.isMainOpen()
-      ) {
-        e.preventDefault();
-        MenuSystem.activateSelected();
       }
     });
     const goBtn = document.getElementById("btn-gameover");
@@ -149,9 +119,10 @@ const Game = {
 
   async start() {
     if (!GameState.ready || GameState.phase === "loading") return;
+    const startOverlay = document.getElementById("start-overlay");
     const loadOverlay = document.getElementById("game-loading");
     GameState.phase = "loading";
-    if (typeof MenuSystem !== "undefined") MenuSystem.hide();
+    if (startOverlay) startOverlay.style.display = "none";
     setPauseOverlay(false);
     if (loadOverlay) loadOverlay.style.display = "flex";
     this._setGameLoading(8, "LOADING PLAYER STATE...");
@@ -214,7 +185,7 @@ const Game = {
       return;
     }
     GameState.seed = (LevelGenerator.last && LevelGenerator.last.seed) ? LevelGenerator.last.seed : newSeed;
-    if (typeof MenuSystem !== "undefined") MenuSystem.hide();
+    document.getElementById("start-overlay").style.display = "none";
     document.getElementById("complete-overlay").style.display = "none";
     const go = document.getElementById("gameover-overlay");
     if (go) go.style.display = "none";
@@ -304,7 +275,7 @@ const Game = {
     if (GameState.phase === "playing" && Stairwell.sequenceActive) {
       GameState.elapsed += dt;
       if (GameState.level === 0) GameState.levelTimes[0] += dt;
-      else GameState.levelTimes[GameState.level] = (GameState.levelTimes[GameState.level] || 0) + dt;
+      else if (GameState.level === 1) GameState.levelTimes[1] += dt;
       Stairwell.update(dt);
       CameraRig.update(dt);
     } else if (GameState.phase === "playing" && Input.locked) {
