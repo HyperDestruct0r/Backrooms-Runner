@@ -95,7 +95,6 @@ const Game = {
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    document.getElementById("btn-start").addEventListener("click", () => this.start());
     document.getElementById("btn-restart").addEventListener("click", () => this.restart());
     const pauseResume = document.getElementById("pause-resume");
     if (pauseResume) pauseResume.addEventListener("click", () => {
@@ -125,16 +124,14 @@ const Game = {
         return;
       }
     
-      const startOverlay = document.getElementById("start-overlay");
-    
       if (
         GameState.ready &&
         GameState.phase === "start" &&
-        startOverlay &&
-        getComputedStyle(startOverlay).display !== "none"
+        typeof MenuSystem !== "undefined" &&
+        MenuSystem.isMainOpen()
       ) {
         e.preventDefault();
-        this.start();
+        MenuSystem.activateSelected();
       }
     });
     const goBtn = document.getElementById("btn-gameover");
@@ -146,16 +143,15 @@ const Game = {
     await this._nextFrame();
     if (boot) boot.style.display = "none";
     setPauseOverlay(false);
-    document.getElementById("start-overlay").style.display = "flex";
+    if (typeof MenuSystem !== "undefined") MenuSystem.showMain();
     this.loop();
   },
 
   async start() {
     if (!GameState.ready || GameState.phase === "loading") return;
-    const startOverlay = document.getElementById("start-overlay");
     const loadOverlay = document.getElementById("game-loading");
     GameState.phase = "loading";
-    if (startOverlay) startOverlay.style.display = "none";
+    if (typeof MenuSystem !== "undefined") MenuSystem.hide();
     setPauseOverlay(false);
     if (loadOverlay) loadOverlay.style.display = "flex";
     this._setGameLoading(8, "LOADING PLAYER STATE...");
@@ -167,6 +163,7 @@ const Game = {
     if (go) go.style.display = "none";
     GameState.phase = "playing";
     GameState.elapsed = 0;
+    GameState.levelTimes = { 0: 0, 1: 0 };
     GameState.distance = 0;
     Player.resetToStart();
     Checkpoints.respawn();
@@ -217,12 +214,13 @@ const Game = {
       return;
     }
     GameState.seed = (LevelGenerator.last && LevelGenerator.last.seed) ? LevelGenerator.last.seed : newSeed;
-    document.getElementById("start-overlay").style.display = "none";
+    if (typeof MenuSystem !== "undefined") MenuSystem.hide();
     document.getElementById("complete-overlay").style.display = "none";
     const go = document.getElementById("gameover-overlay");
     if (go) go.style.display = "none";
     GameState.phase = "playing";
     GameState.elapsed = 0;
+    GameState.levelTimes = { 0: 0, 1: 0 };
     GameState.distance = 0;
     Player.resetToStart();
     AtmosphereSystem.reset();
@@ -305,11 +303,18 @@ const Game = {
 
     if (GameState.phase === "playing" && Stairwell.sequenceActive) {
       GameState.elapsed += dt;
+      if (GameState.level === 0) GameState.levelTimes[0] += dt;
+      else GameState.levelTimes[GameState.level] = (GameState.levelTimes[GameState.level] || 0) + dt;
       Stairwell.update(dt);
       CameraRig.update(dt);
     } else if (GameState.phase === "playing" && Input.locked) {
       GameState.elapsed += dt;
-      if (GameState.level === 1 && Level1.active) Level1.update(dt);
+      if (GameState.level === 1 && Level1.active) {
+        Level1.update(dt);
+        GameState.levelTimes[1] = Level1.levelTime;
+      } else if (GameState.level === 0) {
+        GameState.levelTimes[0] += dt;
+      }
       Player.update(dt);
       if (GameState.level === 1) {
         ChaseFx.update(dt);
