@@ -90,6 +90,7 @@
     <div id="chase-vignette"></div>
     <div id="dmg-flash"></div>
     <div id="run-flash">RUN!</div>
+    <div id="recording-indicator" aria-live="polite">● RECORDING</div>
   </div>
   <div id="inv-overlay">
     <div id="inv-panel">
@@ -98,7 +99,7 @@
       <div id="inv-hint">Q drink Almond Water · I close</div>
     </div>
   </div>
-  <div id="pause-note">Click to resume — I inventory — Q drink — E pick up — R checkpoint — G new layout</div>
+  <div id="pause-note">Click to resume — I inventory — Q drink — E pick up — R record run — G new layout</div>
   <div id="pause-overlay">
     <div id="pause-panel">
       <h1>Paused</h1>
@@ -106,6 +107,7 @@
       <p class="pause-hint">Press ESC again or choose an option below.</p>
       <div class="pause-actions">
         <button id="pause-resume" type="button">Resume</button>
+        <button id="pause-export" type="button" class="pause-export" style="display:none">Export Run</button>
         <button id="pause-leave" type="button" class="pause-leave">Leave Run</button>
       </div>
     </div>
@@ -181,7 +183,10 @@
         <div>Time: <span id="go-time">—</span></div>
         <div>Distance: <span id="go-dist">—</span></div>
       </div>
-      <button id="btn-gameover" type="button">Restart</button>
+      <div class="run-actions">
+        <button id="btn-gameover" type="button">Restart</button>
+        <button id="gameover-export" type="button" class="run-export" style="display:none">Export Run</button>
+      </div>
     </div>
   </div>
   <div id="complete-overlay" class="overlay">
@@ -191,7 +196,21 @@
         <div>Time: <span id="stat-time">—</span></div>
         <div>Distance: <span id="stat-dist">—</span></div>
       </div>
-      <button id="btn-restart" type="button">Restart</button>
+      <div class="run-actions">
+        <button id="btn-restart" type="button">Restart</button>
+        <button id="complete-export" type="button" class="run-export" style="display:none">Export Run</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="record-confirm-overlay" class="overlay" style="display:none">
+    <div class="panel record-confirm-panel">
+      <h1 id="record-confirm-title">Record Run?</h1>
+      <p id="record-confirm-text">Do you wish to record this run?</p>
+      <div class="run-actions">
+        <button id="record-confirm-yes" type="button">Yes</button>
+        <button id="record-confirm-no" type="button" class="secondary-action">No</button>
+      </div>
     </div>
   </div>
 
