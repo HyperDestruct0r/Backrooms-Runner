@@ -716,10 +716,11 @@ const LevelGenerator = {
 
   generateValid(seed, maxTries) {
     let s = seed >>> 0;
-    // Keep startup bounded. The generator already validates connectivity;
-    // dozens of full-map attempts can make the browser look like it has
-    // frozen on the yellow loading screen.
-    const tries = maxTries || 10;
+    // The validation rules are intentionally strict, so a small retry budget
+    // can reject a surprisingly large fraction of otherwise random seeds.
+    // Keep retries deterministic while making startup generation highly
+    // reliable. A valid map is returned as soon as one is found.
+    const tries = maxTries || 160;
     for (let i = 0; i < tries; i++) {
       const res = this.generate((s + i * 7919) >>> 0);
       if (res) {
@@ -1415,7 +1416,8 @@ const Stairwell = {
         const exitForward=new THREE.Vector3(st.fx,0,st.fz);
         Player.position.set(st.origin.x + exitForward.x*3.2, st.minY||-10.5, st.origin.z + exitForward.z*3.2);
         Player.yaw=Math.atan2(-st.fx,-st.fz); Player.pitch=0;
-        GameState.elapsed=0; GameState.distance=0; GameState.exitReached=false;
+        /* Preserve total run time across the Level 0 → Level 1 transition. */
+        GameState.distance=0; GameState.exitReached=false;
         GameState.elevatorShake=0;
         const ov=document.getElementById('elevator-sequence');if(ov)ov.style.display='none';
         if(document.getElementById('hud-obj'))document.getElementById('hud-obj').textContent='Objective: explore Level 1';
@@ -1995,11 +1997,11 @@ const Level = {
   },
 
   buildProcedural(sceneRef, seed) {
-    const result = LevelGenerator.generateValid(seed, 10);
+    const result = LevelGenerator.generateValid(seed, 160);
     if (!result) {
       console.warn("Procedural generation failed; retrying with a fresh seed");
       const retrySeed = ((seed ^ 0x9e3779b9) >>> 0);
-      const retry = LevelGenerator.generateValid(retrySeed, 10);
+      const retry = LevelGenerator.generateValid(retrySeed, 160);
       if (!retry) {
         const startSeed = document.getElementById("start-seed");
         if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — PRESS R TO RETRY";
