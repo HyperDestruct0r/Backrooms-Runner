@@ -273,9 +273,6 @@ const Player = {
     if (DeviceMode.mobile) {
       const stick = MobileControls;
       const lookGain = CONFIG.lookSens * 18 * stick.lookSensitivity / 0.055;
-      // A virtual look stick represents a held direction, so keep rotating
-      // while the finger remains on the stick. The stick values are reset only
-      // when the touch is released, not every frame.
       this.yaw -= stick.lookX * lookGain * dt * 60;
       this.pitch -= stick.lookY * lookGain * dt * 60;
     } else {
@@ -308,12 +305,19 @@ const Player = {
 
     // Camera-relative wish on XZ. Three.js yaw: local forward is (-sin(y), -cos(y)).
     let fwd = 0, str = 0;
-    if (isActionDown("forward")) fwd += 1;
-    if (isActionDown("backward")) fwd -= 1;
-    if (isActionDown("right")) str += 1;
-    if (isActionDown("left")) str -= 1;
-    const len = Math.hypot(fwd, str);
-    if (len > 0) { fwd /= len; str /= len; }
+    if (DeviceMode.mobile) {
+      fwd = -MobileControls.moveY;
+      str = MobileControls.moveX;
+      const len = Math.hypot(fwd, str);
+      if (len > 1) { fwd /= len; str /= len; }
+    } else {
+      if (isActionDown("forward")) fwd += 1;
+      if (isActionDown("backward")) fwd -= 1;
+      if (isActionDown("right")) str += 1;
+      if (isActionDown("left")) str -= 1;
+      const len = Math.hypot(fwd, str);
+      if (len > 0) { fwd /= len; str /= len; }
+    }
 
     const sinY = Math.sin(this.yaw);
     const cosY = Math.cos(this.yaw);
