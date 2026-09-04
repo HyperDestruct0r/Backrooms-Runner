@@ -104,6 +104,8 @@ const Game = {
         renderer.domElement.requestPointerLock();
       }
     });
+    const pauseLeave = document.getElementById("pause-leave");
+    if (pauseLeave) pauseLeave.addEventListener("click", () => this.leaveRun());
     const goBtn = document.getElementById("btn-gameover");
     if (goBtn) goBtn.addEventListener("click", () => this.restart());
 
@@ -159,6 +161,32 @@ const Game = {
     if (loadOverlay) loadOverlay.style.display = "none";
     GameState.phase = "playing";
     renderer.domElement.requestPointerLock();
+  },
+
+  leaveRun() {
+    if (GameState.phase !== "playing") return;
+
+    // Abandoning a run deliberately does not call AuthSystem.recordRun().
+    // The run is discarded when the player returns to the main menu.
+    GameState.phase = "start";
+    GameState.inventoryOpen = false;
+    GameState.cinematicCamera = false;
+    setPauseOverlay(false);
+    clearInput();
+    Inventory.close();
+
+    if (document.pointerLockElement && document.exitPointerLock) {
+      document.exitPointerLock();
+    }
+
+    const loadOverlay = document.getElementById("game-loading");
+    if (loadOverlay) loadOverlay.style.display = "none";
+    const completeOverlay = document.getElementById("complete-overlay");
+    if (completeOverlay) completeOverlay.style.display = "none";
+    const gameoverOverlay = document.getElementById("gameover-overlay");
+    if (gameoverOverlay) gameoverOverlay.style.display = "none";
+
+    if (typeof MenuSystem !== "undefined") MenuSystem.showMain();
   },
 
   restart() {
