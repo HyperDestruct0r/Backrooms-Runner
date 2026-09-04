@@ -2,6 +2,158 @@
 
 let scene, renderer;
 
+const RunRecorder = {
+  mediaRecorder: null,
+  chunks: [],
+  blob: null,
+  stream: null,
+  mimeType: "",
+  recording: false,
+  confirmMode: null,
+  discarding: false,
+
+  init(canvas) {
+    this.canvas = canvas;
+    this.supported = !!(window.MediaRecorder && canvas && canvas.captureStream);
+  },
+
+  confirmToggle() {
+    if (!this.supported) {
+      if (typeof HUD !== "undefined") HUD.toast("Run recording is not supported by this browser");
+      return;
+    }
+    this.confirmMode = this.recording ? "stop" : "start";
+    const title = document.getElementById("record-confirm-title");
+    const text = document.getElementById("record-confirm-text");
+    const yes = document.getElementById("record-confirm-yes");
+    const no = document.getElementById("record-confirm-no");
+    if (title) title.textContent = this.recording ? "Stop Recording?" : "Record Run?";
+    if (text) text.textContent = this.recording ? "Stop recording this run?" : "Do you wish to record this run?";
+    if (yes) yes.textContent = this.recording ? "Stop" : "Record";
+    if (no) no.textContent = "Cancel";
+    const overlay = document.getElementById("record-confirm-overlay");
+    if (overlay) overlay.style.display = "flex";
+    if (typeof setPauseOverlay === "function") setPauseOverlay(false);
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+  },
+
+  closeConfirm() {
+    const overlay = document.getElementById("record-confirm-overlay");
+    if (overlay) overlay.style.display = "none";
+    this.confirmMode = null;
+    if (GameState.phase === "playing" && renderer && renderer.domElement && !GameState.inventoryOpen && !Stairwell.sequenceActive) {
+      setPauseOverlay(false);
+      renderer.domElement.requestPointerLock();
+    }
+  },
+
+  confirmYes() {
+    const mode = this.confirmMode;
+    this.closeConfirm();
+    if (mode === "start") this.start();
+    else if (mode === "stop") this.stop();
+  },
+
+  chooseMime() {
+    const choices = [
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm"
+    ];
+    for (const type of choices) if (MediaRecorder.isTypeSupported(type)) return type;
+    return "";
+  },
+
+  start() {
+    if (this.recording || !this.supported) return false;
+    this.chunks = []; this.blob = null; this.mimeType = this.chooseMime();
+    try {
+      this.stream = this.canvas.captureStream(30);
+      this.mediaRecorder = new MediaRecorder(this.stream, this.mimeType ? { mimeType: this.mimeType } : undefined);
+      this.mediaRecorder.ondataavailable = e => { if (!this.discarding && e.data && e.data.size) this.chunks.push(e.data); };
+      this.mediaRecorder.onstop = () => {
+        const type = this.mimeType || "video/webm";
+        if (!this.discarding) this.blob = new Blob(this.chunks, { type });
+        else { this.blob = null; this.chunks = []; }
+        this.discarding = false;
+        this.recording = false;
+        const indicator = document.getElementById("recording-indicator");
+        if (indicator) indicator.classList.remove("is-recording");
+        if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+        this.stream = null;
+        this.mediaRecorder = null;
+        this.updateButtons();
+        if (this.exportAfterStop && this.blob) {
+          this.exportAfterStop = false;
+          this.export();
+        }
+      };
+      this.mediaRecorder.start(1000);
+      this.recording = true;
+      const indicator = document.getElementById("recording-indicator");
+      if (indicator) indicator.classList.add("is-recording");
+      this.updateButtons();
+      if (typeof HUD !== "undefined") HUD.toast("RECORDING STARTED");
+      return true;
+    } catch (err) {
+      console.error("Could not start run recording:", err);
+      this.mediaRecorder = null; this.stream = null; this.recording = false;
+      if (typeof HUD !== "undefined") HUD.toast("Could not start run recording");
+      return false;
+    }
+  },
+
+  stop(discard=false) {
+    if (!this.mediaRecorder) return;
+    this.discarding = !!discard;
+    if (discard) { this.chunks = []; this.blob = null; }
+    try { this.mediaRecorder.stop(); } catch (_) {}
+  },
+
+  discard() {
+    if (this.mediaRecorder) {
+      const recorder = this.mediaRecorder;
+      const stream = this.stream;
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      try { recorder.stop(); } catch (_) {}
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      this.mediaRecorder = null;
+      this.stream = null;
+    }
+    this.discarding = false;
+    this.blob = null;
+    this.chunks = [];
+    this.recording = false;
+    const indicator=document.getElementById("recording-indicator");
+    if(indicator) indicator.classList.remove("is-recording");
+    this.updateButtons();
+  },
+
+  export() {
+    if (!this.blob) {
+      if (this.recording) {
+        this.exportAfterStop = true;
+        this.stop();
+      } else if (typeof HUD !== "undefined") HUD.toast("No recorded run available");
+      return;
+    }
+    const url = URL.createObjectURL(this.blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url; a.download = "backrooms-run-" + stamp + ".webm";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+
+  updateButtons() {
+    const ids = ["pause-export", "complete-export", "gameover-export"];
+    ids.forEach(id => { const el=document.getElementById(id); if(el) el.style.display=(this.blob || this.recording) ? "inline-block" : "none"; });
+  },
+
+  reset() { this.exportAfterStop = false; this.discard(); this.blob=null; this.chunks=[]; this.updateButtons(); }
+};
+
 const Game = {
   _nextFrame() { return new Promise(resolve => requestAnimationFrame(resolve)); },
   _setBoot(progress, status) {
@@ -38,8 +190,9 @@ const Game = {
     renderer.setClearColor(CONFIG.fogColor);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.16;
     document.body.appendChild(renderer.domElement);
+    RunRecorder.init(renderer.domElement);
 
     CameraRig.init();
     scene.add(CameraRig.camera);
@@ -106,6 +259,16 @@ const Game = {
     });
     const pauseLeave = document.getElementById("pause-leave");
     if (pauseLeave) pauseLeave.addEventListener("click", () => this.leaveRun());
+    const pauseExport = document.getElementById("pause-export");
+    if (pauseExport) pauseExport.addEventListener("click", () => RunRecorder.export());
+    const completeExport = document.getElementById("complete-export");
+    if (completeExport) completeExport.addEventListener("click", () => RunRecorder.export());
+    const gameoverExport = document.getElementById("gameover-export");
+    if (gameoverExport) gameoverExport.addEventListener("click", () => RunRecorder.export());
+    const recYes = document.getElementById("record-confirm-yes");
+    const recNo = document.getElementById("record-confirm-no");
+    if (recYes) recYes.addEventListener("click", () => RunRecorder.confirmYes());
+    if (recNo) recNo.addEventListener("click", () => RunRecorder.closeConfirm());
     const goBtn = document.getElementById("btn-gameover");
     if (goBtn) goBtn.addEventListener("click", () => this.restart());
 
@@ -135,6 +298,7 @@ const Game = {
     const go = document.getElementById("gameover-overlay");
     if (go) go.style.display = "none";
     GameState.phase = "playing";
+    RunRecorder.reset();
     GameState.elapsed = 0;
     GameState.levelTimes = { 0: 0, 1: 0 };
     GameState.distance = 0;
@@ -166,6 +330,7 @@ const Game = {
   leaveRun() {
     if (GameState.phase !== "playing") return;
 
+    RunRecorder.discard();
     // Abandoning a run deliberately does not call AuthSystem.recordRun().
     // The run is discarded when the player returns to the main menu.
     GameState.phase = "start";
@@ -244,6 +409,7 @@ const Game = {
   
     GameState.phase = "complete";
     setPauseOverlay(false);
+    if (RunRecorder.recording) RunRecorder.stop();
     document.exitPointerLock();
   
     document.getElementById("stat-time").textContent =
@@ -252,6 +418,7 @@ const Game = {
       GameState.distance.toFixed(1) + " m";
   
     document.getElementById("complete-overlay").style.display = "flex";
+    RunRecorder.updateButtons();
   
     // Save the completed run for signed-in users.
     if (typeof AuthSystem !== "undefined") {
@@ -270,6 +437,7 @@ const Game = {
   
     GameState.phase = "complete";
     setPauseOverlay(false);
+    if (RunRecorder.recording) RunRecorder.stop();
     document.exitPointerLock();
   
     const t = document.getElementById("go-time");
@@ -280,6 +448,7 @@ const Game = {
   
     const el = document.getElementById("gameover-overlay");
     if (el) el.style.display = "flex";
+    RunRecorder.updateButtons();
   
     // Save the failed run for signed-in users.
     if (typeof AuthSystem !== "undefined") {
