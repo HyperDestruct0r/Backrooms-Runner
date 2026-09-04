@@ -14,7 +14,7 @@ const MenuSystem = {
     ["drink", "Drink Almond Water"],
     ["use", "Pick up / interact"],
     ["nearestExit", "Nearest exit"],
-    ["respawn", "Respawn at checkpoint"],
+    ["recordRun", "Record run"],
     ["regenerate", "New layout"]
   ],
   menuIndex: 0,
@@ -222,7 +222,7 @@ const MenuSystem = {
     this.bindings.forEach(([action, label]) => {
       const row = document.createElement("div");
       row.className = "control-row";
-      row.innerHTML = `<div><strong>${label}</strong><small>${action === "respawn" || action === "regenerate" ? "Utility" : "Gameplay"}</small></div>`;
+      row.innerHTML = `<div><strong>${label}</strong><small>${action === "recordRun" || action === "regenerate" ? "Utility" : "Gameplay"}</small></div>`;
       const right = document.createElement("div"); right.className = "control-right";
       const key = document.createElement("button"); key.type = "button"; key.className = "key-button";
       key.textContent = this.formatKey(CONFIG.keys[action]);
