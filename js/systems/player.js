@@ -647,7 +647,7 @@ const Inventory = {
       setPauseOverlay(false);
       this.refresh();
       if (document.pointerLockElement) document.exitPointerLock();
-    } else if (renderer && renderer.domElement && GameState.phase === "playing") {
+    } else if (!DeviceMode.mobile && renderer && renderer.domElement && GameState.phase === "playing") {
       renderer.domElement.requestPointerLock();
     }
   },
