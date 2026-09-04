@@ -226,6 +226,9 @@ const GameState = {
    ------------------------------------------------------------------ */
 const Input = {
   keys: Object.create(null),
+  virtual: Object.create(null),
+  moveX: 0,
+  moveY: 0,
   mouseDX: 0,
   mouseDY: 0,
   locked: false,
@@ -239,7 +242,8 @@ function bindingCode(action) {
 
 function isActionDown(action) {
   const code = bindingCode(action);
-  if (!code) return false;
+  if (!code) return !!Input.virtual[action];
+  if (Input.virtual[action]) return true;
   if (Input.keys[code]) return true;
   // Preserve both physical Shift/Ctrl keys when their primary binding is the
   // default modifier, while custom bindings remain single-key bindings.
@@ -338,6 +342,9 @@ window.addEventListener("keyup", (e) => {
 }, true);
 function clearInput() {
   Input.keys = Object.create(null);
+  Input.virtual = Object.create(null);
+  Input.moveX = 0;
+  Input.moveY = 0;
   Input.ctrlDown = false;
 }
 function setPauseOverlay(show) {
@@ -355,6 +362,9 @@ document.addEventListener("mousemove", (e) => {
 });
 
 document.addEventListener("pointerlockchange", () => {
+  if (window.MobileControls && window.MobileControls.isMobile) {
+    return;
+  }
   Input.locked = !!(renderer && document.pointerLockElement === renderer.domElement);
   if (!Input.locked) clearInput();
   const paused = GameState.phase === "playing" && !Input.locked && !GameState.inventoryOpen && !Stairwell.sequenceActive;
@@ -362,6 +372,105 @@ document.addEventListener("pointerlockchange", () => {
   const note = document.getElementById("pause-note");
   if (note) note.style.display = "none";
 });
+
+/* ------------------------------------------------------------------
+   MOBILE / TOUCH CONTROLS
+   ------------------------------------------------------------------ */
+const MobileControls = {
+  isMobile: !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || navigator.maxTouchPoints > 0,
+  initialized: false,
+  joystick: null,
+  knob: null,
+  look: null,
+  pause: null,
+  radius: 58,
+  init() {
+    if (this.initialized || !this.isMobile) return;
+    this.initialized = true;
+    document.body.classList.add("touch-device");
+
+    const controls = document.getElementById("mobile-controls");
+    this.joystick = document.getElementById("mobile-joystick");
+    this.knob = document.getElementById("mobile-joystick-knob");
+    this.look = document.getElementById("mobile-look");
+    this.pause = document.getElementById("mobile-pause");
+    if (!controls || !this.joystick || !this.knob || !this.look) return;
+
+    const setMove = (x, y) => {
+      const len = Math.hypot(x, y);
+      if (len > this.radius) { x = x / len * this.radius; y = y / len * this.radius; }
+      const nx = x / this.radius;
+      const ny = y / this.radius;
+      Input.moveX = Math.abs(nx) < 0.12 ? 0 : nx;
+      Input.moveY = Math.abs(ny) < 0.12 ? 0 : ny;
+      Input.virtual.forward = Input.moveY < -0.18;
+      Input.virtual.backward = Input.moveY > 0.18;
+      Input.virtual.left = Input.moveX < -0.18;
+      Input.virtual.right = Input.moveX > 0.18;
+      this.knob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+    };
+    const resetMove = () => setMove(0, 0);
+    const joyPoint = (e) => {
+      const r = this.joystick.getBoundingClientRect();
+      return { x: e.clientX - (r.left + r.width / 2), y: e.clientY - (r.top + r.height / 2) };
+    };
+
+    this.joystick.addEventListener("pointerdown", e => {
+      if (GameState.phase !== "playing") return;
+      e.preventDefault();
+      this.joystick.setPointerCapture?.(e.pointerId);
+      const p = joyPoint(e); setMove(p.x, p.y);
+    });
+    this.joystick.addEventListener("pointermove", e => {
+      if (!this.joystick.hasPointerCapture?.(e.pointerId)) return;
+      e.preventDefault();
+      const p = joyPoint(e); setMove(p.x, p.y);
+    });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(type => this.joystick.addEventListener(type, resetMove));
+
+    let lastX = 0, lastY = 0;
+    this.look.addEventListener("pointerdown", e => {
+      if (GameState.phase !== "playing" || GameState.inventoryOpen || Stairwell.sequenceActive) return;
+      e.preventDefault();
+      this.look.setPointerCapture?.(e.pointerId);
+      lastX = e.clientX; lastY = e.clientY;
+    });
+    this.look.addEventListener("pointermove", e => {
+      if (!this.look.hasPointerCapture?.(e.pointerId)) return;
+      e.preventDefault();
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      Input.mouseDX += dx;
+      Input.mouseDY += dy;
+    });
+
+    const hold = (id, action) => {
+      const el = document.getElementById(id); if (!el) return;
+      const down = e => { e.preventDefault(); if (GameState.phase === "playing") Input.virtual[action] = true; };
+      const up = e => { e.preventDefault(); Input.virtual[action] = false; };
+      el.addEventListener("pointerdown", down);
+      ["pointerup", "pointercancel", "pointerleave"].forEach(t => el.addEventListener(t, up));
+    };
+    hold("mobile-sprint", "sprint");
+    hold("mobile-crouch", "crouch");
+    hold("mobile-jump", "jump");
+
+    const tap = (id, fn) => {
+      const el = document.getElementById(id); if (!el) return;
+      el.addEventListener("pointerdown", e => { e.preventDefault(); if (GameState.phase === "playing") fn(); });
+    };
+    tap("mobile-flashlight", () => Flashlight.toggle());
+    tap("mobile-use", () => { if (!GameState.inventoryOpen) PickupSystem.tryPickup(); });
+    tap("mobile-inventory", () => Inventory.toggle());
+    if (this.pause) this.pause.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      if (GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive) {
+        Input.locked = false; clearInput(); setPauseOverlay(true);
+      }
+    });
+  }
+};
+window.MobileControls = MobileControls;
 
 /* ------------------------------------------------------------------
    AUDIO MANAGER
