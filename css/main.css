@@ -36,6 +36,10 @@
       color: #efe6b0; padding: 22px 24px; pointer-events: auto;
     }
     #inv-panel h2 { font-size: 15px; letter-spacing: 0.2em; text-align: center; margin-bottom: 16px; }
+    .inv-title-row { position: relative; }
+    #mobile-inventory-close { display:none; position:absolute; top:-8px; right:-8px; width:38px; height:38px;
+      border:1px solid #6a5a30; background:#1e1b11; color:#efe6b0; font-size:25px; line-height:1;
+      cursor:pointer; pointer-events:auto; border-radius:6px; }
     #inv-list { font-size: 14px; line-height: 1.8; min-height: 48px; }
     #inv-list button {
       display: block; width: 100%; text-align: left; background: transparent;
@@ -288,6 +292,7 @@
   pointer-events: auto;
   font-size: 16px;
 }
+html.mobile-input #mobile-inventory-close { display:block; }
 @media (max-width: 720px) {
   #hud-obj { max-width: 44vw; text-align: right; }
   #res-panel { width: 170px; }
