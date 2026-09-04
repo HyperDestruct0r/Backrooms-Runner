@@ -268,13 +268,23 @@ const Player = {
     const wantSprint = isActionDown("sprint");
     const wantJump = isActionDown("jump");
 
-    // Look
-    this.yaw -= Input.mouseDX * CONFIG.lookSens;
-    this.pitch -= Input.mouseDY * CONFIG.lookSens;
+    // Look: desktop uses pointer-lock mouse deltas; mobile uses the right
+    // virtual stick. Horizontal input rotates yaw, vertical input rotates pitch.
+    if (DeviceMode.mobile) {
+      const stick = MobileControls;
+      const lookGain = CONFIG.lookSens * 18 * stick.lookSensitivity / 0.055;
+      this.yaw -= stick.lookX * lookGain * dt * 60;
+      this.pitch -= stick.lookY * lookGain * dt * 60;
+      stick.lookX *= Math.max(0, 1 - dt * 7);
+      stick.lookY *= Math.max(0, 1 - dt * 7);
+    } else {
+      this.yaw -= Input.mouseDX * CONFIG.lookSens;
+      this.pitch -= Input.mouseDY * CONFIG.lookSens;
+      Input.resetMouse();
+    }
     const lim = Math.PI * 0.48;
     if (this.pitch > lim) this.pitch = lim;
     if (this.pitch < -lim) this.pitch = -lim;
-    Input.resetMouse();
 
     // Slide
     if (wantCrouch && wantSprint && this.onGround && !this.sliding && this.stamina > 12 &&
@@ -297,15 +307,10 @@ const Player = {
 
     // Camera-relative wish on XZ. Three.js yaw: local forward is (-sin(y), -cos(y)).
     let fwd = 0, str = 0;
-    if (window.MobileControls && window.MobileControls.isMobile) {
-      fwd = -Input.moveY;
-      str = Input.moveX;
-    } else {
-      if (isActionDown("forward")) fwd += 1;
-      if (isActionDown("backward")) fwd -= 1;
-      if (isActionDown("right")) str += 1;
-      if (isActionDown("left")) str -= 1;
-    }
+    if (isActionDown("forward")) fwd += 1;
+    if (isActionDown("backward")) fwd -= 1;
+    if (isActionDown("right")) str += 1;
+    if (isActionDown("left")) str -= 1;
     const len = Math.hypot(fwd, str);
     if (len > 0) { fwd /= len; str /= len; }
 
@@ -643,8 +648,7 @@ const Inventory = {
       this.refresh();
       if (document.pointerLockElement) document.exitPointerLock();
     } else if (renderer && renderer.domElement && GameState.phase === "playing") {
-      if (window.MobileControls && window.MobileControls.isMobile) Input.locked = true;
-      else renderer.domElement.requestPointerLock();
+      renderer.domElement.requestPointerLock();
     }
   },
   close() {
