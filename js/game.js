@@ -20,6 +20,33 @@ const Game = {
     if (pct) pct.textContent = Math.round(progress) + "%";
     if (st) st.textContent = status;
   },
+  _newRunSeed() {
+    // Prefer the browser's secure RNG so leaving a run and starting again
+    // cannot accidentally reuse the previous Level 0 seed.
+    try {
+      const buf = new Uint32Array(1);
+      if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(buf);
+      const seed = buf[0] >>> 0;
+      if (seed) return seed;
+    } catch (err) {}
+    const seed = ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0);
+    return seed || 483921;
+  },
+  _restoreLevel0ForNewRun() {
+    // Level 1 replaces Level.group/colliders with its streaming world. A new
+    // run must explicitly tear that world down and rebuild Level 0 before the
+    // player is reset, otherwise collision checks can use stale Level 1 state.
+    if (typeof Level1 !== "undefined") Level1.resetVisuals();
+    if (typeof Level !== "undefined" && typeof Level.buildProcedural === "function") {
+      const seed = this._newRunSeed();
+      const built = !!Level.buildProcedural(scene, seed);
+      if (!built) throw new Error("Level 0 could not be rebuilt for the new run.");
+      GameState.seed = (LevelGenerator.last && LevelGenerator.last.seed)
+        ? LevelGenerator.last.seed : GameState.seed;
+    }
+    GameState.level = 0;
+    GameState.exitReached = false;
+  },
   async init() {
     const boot = document.getElementById("boot-loading");
     this._setBoot(4, "INITIALIZING RENDERER...");
@@ -71,7 +98,6 @@ const Game = {
         level0Built = false;
       }
     }
-    if (level0Built) GameState.level0Seed = GameState.seed;
     if (!level0Built) {
       const st = document.getElementById("boot-status");
       if (st) st.textContent = "LEVEL 0 GENERATION FAILED — PRESS G TO RETRY";
@@ -120,45 +146,6 @@ const Game = {
     this.loop();
   },
 
-  _restoreLevel0World() {
-    const seed = (GameState.level0Seed || GameState.seed || 483921) >>> 0;
-
-    // Level 1 owns its own streamed world. Tear it down before rebuilding
-    // Level 0 so the next run never inherits Level 1 geometry/colliders or
-    // checkpoints. This also safely aborts an in-progress elevator sequence.
-    if (typeof Level1 !== "undefined" && Level1.active) Level1.resetVisuals();
-    if (typeof Stairwell !== "undefined") Stairwell.reset();
-
-    let built = false;
-    try {
-      built = !!Level.buildProcedural(scene, seed);
-    } catch (err) {
-      console.error("Level 0 restore exception:", err);
-      built = false;
-    }
-    if (!built) return false;
-
-    GameState.seed = (LevelGenerator.last && LevelGenerator.last.seed) ? LevelGenerator.last.seed : seed;
-    GameState.level0Seed = GameState.seed;
-    GameState.level = 0;
-    GameState.exitReached = false;
-    GameState.cinematicCamera = false;
-    GameState.distance = 0;
-    GameState.levelTimes = { 0: 0, 1: 0 };
-    Player.resetToStart();
-    AtmosphereSystem.reset();
-    DarknessSystem.reset();
-    EnvEventSystem.reset();
-    EncounterManager.reset();
-    Inventory.reset();
-    Inventory.close();
-    Flashlight.reset();
-    if (typeof Level1 !== "undefined") Level1.resetVisuals();
-    const elevator = document.getElementById("elevator-sequence");
-    if (elevator) elevator.style.display = "none";
-    return true;
-  },
-
   async start() {
     if (!GameState.ready || GameState.phase === "loading") return;
     const startOverlay = document.getElementById("start-overlay");
@@ -174,19 +161,18 @@ const Game = {
     document.getElementById("complete-overlay").style.display = "none";
     const go = document.getElementById("gameover-overlay");
     if (go) go.style.display = "none";
-
-    // A run may have been abandoned from Level 1 (or during the elevator).
-    // Rebuild the Level 0 world before resetting the player so checkpoints,
-    // colliders, and rendered geometry all belong to the same level.
-    const needsLevel0Restore = GameState.level !== 0 || (typeof Level1 !== "undefined" && Level1.active) || (typeof Stairwell !== "undefined" && Stairwell.sequenceActive);
-    if (needsLevel0Restore && !this._restoreLevel0World()) {
-      if (loadOverlay) loadOverlay.style.display = "none";
+    // Every Play action starts a genuinely new run. If the previous run was
+    // in Level 1, restore the complete Level 0 world before placing the player.
+    try {
+      this._restoreLevel0ForNewRun();
+    } catch (err) {
+      console.error("Could not restore Level 0 for new run:", err);
       GameState.phase = "start";
+      if (loadOverlay) loadOverlay.style.display = "none";
+      HUD.toast("LEVEL 0 COULD NOT BE RESTORED");
       if (typeof MenuSystem !== "undefined") MenuSystem.showMain();
-      HUD.toast("Level 0 could not be restored — try Play again");
       return;
     }
-
     GameState.phase = "playing";
     GameState.elapsed = 0;
     GameState.levelTimes = { 0: 0, 1: 0 };
@@ -232,21 +218,13 @@ const Game = {
       document.exitPointerLock();
     }
 
-    // Explicitly tear down any Level 1/elevator state. Then rebuild Level 0
-    // immediately so the next Play starts on a real Level 0 floor instead of
-    // a removed Level 1 group. No run data is saved.
-    const restored = this._restoreLevel0World();
-
     const loadOverlay = document.getElementById("game-loading");
     if (loadOverlay) loadOverlay.style.display = "none";
     const completeOverlay = document.getElementById("complete-overlay");
     if (completeOverlay) completeOverlay.style.display = "none";
     const gameoverOverlay = document.getElementById("gameover-overlay");
     if (gameoverOverlay) gameoverOverlay.style.display = "none";
-    const elevatorOverlay = document.getElementById("elevator-sequence");
-    if (elevatorOverlay) elevatorOverlay.style.display = "none";
 
-    if (!restored) HUD.toast("Level 0 restore failed — Play will retry");
     if (typeof MenuSystem !== "undefined") MenuSystem.showMain();
   },
 
