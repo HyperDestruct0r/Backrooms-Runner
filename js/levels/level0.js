@@ -1422,7 +1422,8 @@ const Stairwell = {
         const ov=document.getElementById('elevator-sequence');if(ov)ov.style.display='none';
         if(document.getElementById('hud-obj'))document.getElementById('hud-obj').textContent='Objective: explore Level 1';
         const lvlLabel=document.getElementById('hud-level-label'); if(lvlLabel)lvlLabel.textContent='LEVEL 1';
-        renderer.domElement.requestPointerLock();
+        if (window.MobileControls && window.MobileControls.isMobile) Input.locked = true;
+        else renderer.domElement.requestPointerLock();
       }
     }
   }
