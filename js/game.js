@@ -129,7 +129,8 @@ const Game = {
     if (pauseResume) pauseResume.addEventListener("click", () => {
       if (GameState.phase === "playing" && renderer && renderer.domElement) {
         setPauseOverlay(false);
-        if (!DeviceMode.mobile) renderer.domElement.requestPointerLock();
+        if (DeviceMode.mobile) Input.locked = true;
+        else renderer.domElement.requestPointerLock();
       }
     });
     const pauseLeave = document.getElementById("pause-leave");
@@ -200,7 +201,8 @@ const Game = {
     await this._nextFrame();
     if (loadOverlay) loadOverlay.style.display = "none";
     GameState.phase = "playing";
-    if (!DeviceMode.mobile) renderer.domElement.requestPointerLock();
+    if (DeviceMode.mobile) Input.locked = true;
+    else renderer.domElement.requestPointerLock();
   },
 
   leaveRun() {
@@ -276,7 +278,8 @@ const Game = {
     AudioSystem.resume();
     AudioSystem.ambientHumStart();
     GameState.regenerating = false;
-    if (renderer && renderer.domElement && !DeviceMode.mobile) renderer.domElement.requestPointerLock();
+    if (DeviceMode.mobile) Input.locked = true;
+    else if (renderer && renderer.domElement) renderer.domElement.requestPointerLock();
   },
 
   complete() {
@@ -346,7 +349,7 @@ const Game = {
       else if (GameState.level === 1) GameState.levelTimes[1] += dt;
       Stairwell.update(dt);
       CameraRig.update(dt);
-    } else if (GameState.phase === "playing" && Input.locked) {
+    } else if (GameState.phase === "playing" && (Input.locked || DeviceMode.mobile)) {
       GameState.elapsed += dt;
       if (GameState.level === 1 && Level1.active) {
         Level1.update(dt);
