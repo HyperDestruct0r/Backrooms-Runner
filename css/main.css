@@ -307,3 +307,24 @@
   #mobile-actions { right: 14px; bottom: 158px; grid-template-columns: repeat(2, 68px); gap: 6px; }
   #mobile-actions button { min-width: 68px; min-height: 42px; font-size: 9px; }
 }
+
+/* Mobile inventory close control */
+#inv-panel .inv-title-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+#inv-close {
+  appearance:none;
+  -webkit-appearance:none;
+  border:1px solid rgba(239,230,176,.38);
+  border-radius:6px;
+  background:rgba(28,25,14,.72);
+  color:#efe6b0;
+  min-width:76px;
+  min-height:40px;
+  padding:8px 12px;
+  font:700 10px/1 Consolas,monospace;
+  letter-spacing:.12em;
+  cursor:pointer;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+#inv-close:active { background:rgba(203,184,90,.38); }
+html.mobile-input #inv-close { display:block; }
