@@ -1874,7 +1874,7 @@ const Level = {
     const darkFogMaterial = new THREE.MeshBasicMaterial({
       color: 0x17191c,
       transparent: true,
-      opacity: 0.20,
+      opacity: 0.15,
       depthWrite: false,
       side: THREE.DoubleSide
     });
@@ -1903,7 +1903,7 @@ const Level = {
       const minZ = mod.gz * LevelGenerator.CELL * T + 0.35;
       const width = Math.max(2, mod.w * LevelGenerator.CELL * T - 0.70);
       const depth = Math.max(2, mod.h * LevelGenerator.CELL * T - 0.70);
-      const fogHeight = Math.max(2.8, H - 0.45);
+      const fogHeight = Math.max(2.8, H - 0.55);
 
       // Main volume. Slightly inset from the walls so it feels like haze
       // occupying the room rather than a black wall pasted over it.
@@ -1911,7 +1911,7 @@ const Level = {
         new THREE.BoxGeometry(width, fogHeight, depth),
         darkFogMaterial
       );
-      volume.position.set(minX + width * 0.5, fogHeight * 0.5, minZ + depth * 0.5);
+      volume.position.set(minX + width * 0.5, 0.08 + fogHeight * 0.5, minZ + depth * 0.5);
       this.darkFogGroup.add(volume);
 
       // A larger, much weaker shell softens the visible boundary from
@@ -1921,7 +1921,7 @@ const Level = {
         darkFogEdgeMaterial
       );
       edge.position.copy(volume.position);
-      edge.position.y += 0.12;
+      edge.position.y += 0.20;
       this.darkFogGroup.add(edge);
 
       // Connected modules are effectively doorways. Put a very subtle
