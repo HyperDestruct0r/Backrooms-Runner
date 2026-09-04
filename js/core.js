@@ -258,9 +258,10 @@ const DeviceMode = {
     const coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
     const touch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
     const uaMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-    // Prefer coarse pointer + touch. A touch-capable Chromebook with a fine
-    // pointer remains in desktop mode until an actual touch pointer is used.
-    this._set(coarse && (touch || uaMobile), "auto");
+    // If the device exposes touch input, enable the touch UI immediately so
+    // the controls are actually reachable. Hybrid Chromebooks can then switch
+    // back to desktop mode as soon as a mouse/trackpad pointer is used.
+    this._set(touch || uaMobile || coarse, "auto");
   },
   onPointerType(type) {
     if (type === "touch") {
@@ -338,6 +339,12 @@ const MobileControls = {
   init() {
     this._stick("mobile-move-zone", "mobile-move-stick", "move");
     this._stick("mobile-look-zone", "mobile-look-stick", "look");
+    const invClose = document.getElementById("mobile-inventory-close");
+    if (invClose) invClose.addEventListener("pointerup", e => {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen" && e.pointerType !== "mouse") return;
+      e.preventDefault();
+      if (GameState.phase === "playing" && GameState.inventoryOpen) Inventory.close();
+    }, {passive:false});
     document.querySelectorAll("[data-mobile-action]").forEach(btn => {
       const action = btn.dataset.mobileAction;
       const code = {
