@@ -297,10 +297,15 @@ const Player = {
 
     // Camera-relative wish on XZ. Three.js yaw: local forward is (-sin(y), -cos(y)).
     let fwd = 0, str = 0;
-    if (isActionDown("forward")) fwd += 1;
-    if (isActionDown("backward")) fwd -= 1;
-    if (isActionDown("right")) str += 1;
-    if (isActionDown("left")) str -= 1;
+    if (window.MobileControls && window.MobileControls.isMobile) {
+      fwd = -Input.moveY;
+      str = Input.moveX;
+    } else {
+      if (isActionDown("forward")) fwd += 1;
+      if (isActionDown("backward")) fwd -= 1;
+      if (isActionDown("right")) str += 1;
+      if (isActionDown("left")) str -= 1;
+    }
     const len = Math.hypot(fwd, str);
     if (len > 0) { fwd /= len; str /= len; }
 
@@ -638,7 +643,8 @@ const Inventory = {
       this.refresh();
       if (document.pointerLockElement) document.exitPointerLock();
     } else if (renderer && renderer.domElement && GameState.phase === "playing") {
-      renderer.domElement.requestPointerLock();
+      if (window.MobileControls && window.MobileControls.isMobile) Input.locked = true;
+      else renderer.domElement.requestPointerLock();
     }
   },
   close() {
