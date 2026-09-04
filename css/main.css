@@ -162,3 +162,29 @@
     #elevator-track { height:3px; margin-top:15px; background:rgba(255,255,255,.12); overflow:hidden; }
     #elevator-fill { height:100%; width:0%; background:#d8d9d4; transition:width .12s linear; }
     #elevator-floor { margin-top:9px; font-size:10px; letter-spacing:.12em; opacity:.42; text-align:right; }
+
+    .run-actions { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:22px; }
+    .run-actions button { margin-top:0; }
+    #pause-export, .run-export {
+      background: transparent; color:#e8dfb0; border:1px solid rgba(203,184,90,.58);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+    }
+    #pause-export:hover, .run-export:hover { background:rgba(203,184,90,.14); color:#fff3b5; border-color:rgba(228,212,122,.78); }
+    #pause-leave {
+      background: linear-gradient(180deg, rgba(84,69,30,.72), rgba(48,40,20,.82));
+      color:#e7dcae; border:1px solid rgba(203,184,90,.48);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 5px 18px rgba(0,0,0,.18);
+    }
+    #pause-leave:hover { background:linear-gradient(180deg, rgba(116,91,35,.86), rgba(61,48,21,.9)); color:#fff4bf; border-color:rgba(228,212,122,.78); transform:translateY(-1px); }
+    .secondary-action { background:transparent !important; color:#d8cfa0 !important; border:1px solid rgba(203,184,90,.38) !important; }
+    .secondary-action:hover { background:rgba(203,184,90,.12) !important; color:#fff0b0 !important; }
+    #record-confirm-overlay { z-index:100; }
+    .record-confirm-panel { max-width:520px; }
+
+    #recording-indicator {
+      position:absolute; top:16px; left:50%; transform:translateX(-50%);
+      color:#f1d978; font-size:11px; letter-spacing:.14em; opacity:0;
+      text-shadow:0 1px 3px #000; transition:opacity .18s ease;
+    }
+    #recording-indicator.is-recording { opacity:.9; }
+    .record-confirm-panel .run-actions { margin-top:24px; }
