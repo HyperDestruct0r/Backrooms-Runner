@@ -161,7 +161,7 @@ const CONFIG = {
     flashlight: "KeyF",
     nearestExit: "KeyN",
     regenerate: "KeyG",
-    respawn: "KeyR"
+    recordRun: "KeyR"
   },
   flashlight: {
     // Deliberately powerful: Level 1 blackouts are nearly pitch black.
@@ -279,8 +279,10 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
   }
 
-  if (e.code === CONFIG.keys.respawn && GameState.phase === "playing") {
-    Checkpoints.respawn();
+  if (e.code === CONFIG.keys.recordRun && GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive && !e.repeat) {
+    e.preventDefault();
+    if (typeof RunRecorder !== "undefined") RunRecorder.confirmToggle();
+    return;
   }
   if (e.code === CONFIG.keys.regenerate && GameState.ready && (GameState.phase === "playing" || GameState.phase === "complete" || GameState.phase === "start")) {
     if (e.repeat || GameState.regenerating) return;
@@ -356,7 +358,9 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("pointerlockchange", () => {
   Input.locked = !!(renderer && document.pointerLockElement === renderer.domElement);
   if (!Input.locked) clearInput();
-  const paused = GameState.phase === "playing" && !Input.locked && !GameState.inventoryOpen;
+  const recordConfirm = document.getElementById("record-confirm-overlay");
+  const confirmingRecord = !!recordConfirm && getComputedStyle(recordConfirm).display !== "none";
+  const paused = GameState.phase === "playing" && !Input.locked && !GameState.inventoryOpen && !confirmingRecord;
   setPauseOverlay(paused);
   const note = document.getElementById("pause-note");
   if (note) note.style.display = "none";
@@ -572,9 +576,9 @@ const LightingSystem = {
   clusterUntil: 0,
   init(scene) {
     // Soft fill only — fixtures do the real illumination (VERSION 3 can retune)
-    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.38);
+    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.48);
     scene.add(this.hemi);
-    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.34);
+    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.43);
     scene.add(this.ambient);
     scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
     scene.background = new THREE.Color(CONFIG.fogColor);
@@ -601,7 +605,7 @@ const LightingSystem = {
     }
 
     let light = null;
-    const base = (intensityScale == null ? 1 : intensityScale) * 1.6;
+    const base = (intensityScale == null ? 1 : intensityScale) * 1.85;
     if (withPoint && state !== "BROKEN") {
       light = new THREE.PointLight(0xfff1c4, state === "DIM" ? base * 0.45 : base, 20, 1.55);
       light.position.set(x, y - 0.28, z);
