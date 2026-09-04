@@ -102,12 +102,24 @@
       margin-top: 18px; opacity: 0.7; font-size: 11px;
       letter-spacing: 0.08em;
     }
-    #pause-resume {
-      margin-top: 20px; padding: 10px 24px; border: none;
+    .pause-actions {
+      display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+      margin-top: 20px;
+    }
+    #pause-resume, #pause-leave {
+      margin-top: 0; padding: 10px 24px; border: none;
       background: #cbb85a; color: #1c190e; cursor: pointer;
       font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
     }
     #pause-resume:hover { background: #e4d47a; }
+    #pause-leave {
+      background: transparent; color: #d8cfa0;
+      border: 1px solid rgba(203,184,90,0.38);
+    }
+    #pause-leave:hover {
+      background: rgba(203,184,90,0.12); color: #efe6b0;
+      border-color: rgba(203,184,90,0.65);
+    }
     #hud-seed {
       position: absolute; bottom: 18px; right: 18px; font-size: 11px;
       letter-spacing: 0.1em; opacity: 0.55;
