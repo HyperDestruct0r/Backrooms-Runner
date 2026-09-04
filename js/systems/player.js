@@ -273,10 +273,11 @@ const Player = {
     if (DeviceMode.mobile) {
       const stick = MobileControls;
       const lookGain = CONFIG.lookSens * 18 * stick.lookSensitivity / 0.055;
+      // A virtual look stick represents a held direction, so keep rotating
+      // while the finger remains on the stick. The stick values are reset only
+      // when the touch is released, not every frame.
       this.yaw -= stick.lookX * lookGain * dt * 60;
       this.pitch -= stick.lookY * lookGain * dt * 60;
-      stick.lookX *= Math.max(0, 1 - dt * 7);
-      stick.lookY *= Math.max(0, 1 - dt * 7);
     } else {
       this.yaw -= Input.mouseDX * CONFIG.lookSens;
       this.pitch -= Input.mouseDY * CONFIG.lookSens;
