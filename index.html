@@ -214,6 +214,26 @@
     </div>
   </div>
 
+  <div id="mobile-controls" aria-hidden="true">
+    <div id="mobile-move-zone" class="mobile-stick-zone">
+      <div class="mobile-stick-label">MOVE</div>
+      <div id="mobile-move-stick" class="mobile-stick"><div class="mobile-stick-knob"></div></div>
+    </div>
+    <div id="mobile-look-zone" class="mobile-stick-zone">
+      <div class="mobile-stick-label">LOOK</div>
+      <div id="mobile-look-stick" class="mobile-stick"><div class="mobile-stick-knob"></div></div>
+    </div>
+    <div id="mobile-actions">
+      <button type="button" data-mobile-action="jump">JUMP</button>
+      <button type="button" data-mobile-action="sprint">RUN</button>
+      <button type="button" data-mobile-action="crouch">CROUCH</button>
+      <button type="button" data-mobile-action="flashlight">LIGHT</button>
+      <button type="button" data-mobile-action="inventory">INV</button>
+      <button type="button" data-mobile-action="use">USE</button>
+    </div>
+    <button id="mobile-pause" type="button" aria-label="Pause">Ⅱ</button>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/core.js"></script>
@@ -226,25 +246,5 @@
 <script src="js/systems/auth.js"></script>
 <script src="js/systems/menu.js"></script>
 <script src="js/game.js"></script>
-
-  <div id="mobile-controls" aria-label="Touch controls">
-    <div id="mobile-look" aria-hidden="true"></div>
-    <div id="mobile-joystick" class="touch-joystick" aria-label="Move">
-      <div class="touch-joystick-ring"></div>
-      <div id="mobile-joystick-knob" class="touch-joystick-knob"></div>
-    </div>
-    <div class="mobile-action-cluster">
-      <button id="mobile-jump" class="mobile-action jump" type="button">JUMP</button>
-      <button id="mobile-sprint" class="mobile-action sprint" type="button">RUN</button>
-      <button id="mobile-crouch" class="mobile-action crouch" type="button">CROUCH</button>
-    </div>
-    <div class="mobile-utility-cluster">
-      <button id="mobile-flashlight" class="mobile-action utility" type="button">LIGHT</button>
-      <button id="mobile-use" class="mobile-action utility" type="button">USE</button>
-      <button id="mobile-inventory" class="mobile-action utility" type="button">INV</button>
-    </div>
-    <button id="mobile-pause" class="mobile-pause" type="button" aria-label="Pause">Ⅱ</button>
-  </div>
-
 </body>
 </html>
