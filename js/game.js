@@ -60,7 +60,7 @@ const Game = {
     await this._nextFrame();
 
     renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-    renderer.setPixelRatio((window.MobileControls && window.MobileControls.isMobile) ? Math.min(window.devicePixelRatio || 1, 1.25) : 1);
+    renderer.setPixelRatio(1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(CONFIG.fogColor);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -114,12 +114,9 @@ const Game = {
     await this._nextFrame();
 
     renderer.domElement.addEventListener("click", () => {
-      if (GameState.phase === "playing" && !(window.MobileControls && window.MobileControls.isMobile)) {
-        renderer.domElement.requestPointerLock();
-      }
+      if (GameState.phase === "playing" && !DeviceMode.mobile) renderer.domElement.requestPointerLock();
     });
-
-    if (window.MobileControls && window.MobileControls.init) window.MobileControls.init();
+    if (typeof MobileControls !== "undefined") MobileControls.init();
 
     window.addEventListener("resize", () => {
       CameraRig.resize();
@@ -132,11 +129,7 @@ const Game = {
     if (pauseResume) pauseResume.addEventListener("click", () => {
       if (GameState.phase === "playing" && renderer && renderer.domElement) {
         setPauseOverlay(false);
-        if (window.MobileControls && window.MobileControls.isMobile) {
-          Input.locked = true;
-        } else {
-          renderer.domElement.requestPointerLock();
-        }
+        if (!DeviceMode.mobile) renderer.domElement.requestPointerLock();
       }
     });
     const pauseLeave = document.getElementById("pause-leave");
@@ -207,11 +200,7 @@ const Game = {
     await this._nextFrame();
     if (loadOverlay) loadOverlay.style.display = "none";
     GameState.phase = "playing";
-    if (window.MobileControls && window.MobileControls.isMobile) {
-      Input.locked = true;
-    } else {
-      renderer.domElement.requestPointerLock();
-    }
+    if (!DeviceMode.mobile) renderer.domElement.requestPointerLock();
   },
 
   leaveRun() {
@@ -220,7 +209,6 @@ const Game = {
     // Abandoning a run deliberately does not call AuthSystem.recordRun().
     // The run is discarded when the player returns to the main menu.
     GameState.phase = "start";
-    Input.locked = false;
     GameState.inventoryOpen = false;
     GameState.cinematicCamera = false;
     setPauseOverlay(false);
@@ -288,11 +276,7 @@ const Game = {
     AudioSystem.resume();
     AudioSystem.ambientHumStart();
     GameState.regenerating = false;
-    if (window.MobileControls && window.MobileControls.isMobile) {
-      Input.locked = true;
-    } else if (renderer && renderer.domElement) {
-      renderer.domElement.requestPointerLock();
-    }
+    if (renderer && renderer.domElement && !DeviceMode.mobile) renderer.domElement.requestPointerLock();
   },
 
   complete() {
