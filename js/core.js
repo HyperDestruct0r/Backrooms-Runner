@@ -258,9 +258,10 @@ const DeviceMode = {
     const coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
     const touch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
     const uaMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-    // If the device exposes touch input, enable the touch UI immediately so
-    // the controls are actually reachable. Hybrid Chromebooks can then switch
-    // back to desktop mode as soon as a mouse/trackpad pointer is used.
+    // If the device exposes touch, start with touch controls available.
+    // This is important on hybrid Chromebooks where the primary pointer can
+    // still report as fine even though the touchscreen is active. A mouse
+    // pointerdown can switch back to desktop mode immediately.
     this._set(touch || uaMobile || coarse, "auto");
   },
   onPointerType(type) {
@@ -295,96 +296,141 @@ const MobileControls = {
   lookY: 0,
   maxRadius: 56,
   lookSensitivity: 0.055,
-  _stick(zoneId, knob, kind) {
+  initialized: false,
+  _stick(zoneId, kind) {
     const zone = document.getElementById(zoneId);
-    const k = document.querySelector(`#${zoneId} .mobile-stick-knob`);
+    const k = zone && zone.querySelector('.mobile-stick-knob');
     if (!zone || !k) return;
     const state = this;
-    const reset = () => {
-      if (kind === "move") state.moveId = null;
-      else state.lookId = null;
-      if (kind === "move") { state.moveX = 0; state.moveY = 0; }
-      else { state.lookX = 0; state.lookY = 0; }
-      k.style.transform = "translate3d(0,0,0)";
+    const setValues = (x, y) => {
+      if (kind === 'move') { state.moveX = x; state.moveY = y; }
+      else { state.lookX = x; state.lookY = y; }
     };
-    const move = e => {
-      const active = kind === "move" ? state.moveId : state.lookId;
-      if (active === null || e.pointerId !== active) return;
+    const reset = (id) => {
+      if (kind === 'move') {
+        if (state.moveId !== id && state.moveId !== null) return;
+        state.moveId = null;
+      } else {
+        if (state.lookId !== id && state.lookId !== null) return;
+        state.lookId = null;
+      }
+      setValues(0, 0);
+      k.style.transform = 'translate3d(0,0,0)';
+    };
+    const update = (clientX, clientY) => {
       const r = zone.getBoundingClientRect();
-      let x = e.clientX - (r.left + r.width / 2);
-      let y = e.clientY - (r.top + r.height / 2);
-      const radius = Math.min(r.width, r.height) * 0.5 - 30;
+      let x = clientX - (r.left + r.width / 2);
+      let y = clientY - (r.top + r.height / 2);
+      const radius = Math.max(20, Math.min(r.width, r.height) * 0.5 - 30);
       const d = Math.hypot(x, y);
       if (d > radius) { x *= radius / d; y *= radius / d; }
-      const nx = x / radius;
-      const ny = y / radius;
-      if (kind === "move") { state.moveX = nx; state.moveY = ny; }
-      else { state.lookX = nx; state.lookY = ny; }
+      setValues(x / radius, y / radius);
       k.style.transform = `translate3d(${x}px,${y}px,0)`;
     };
-    zone.addEventListener("pointerdown", e => {
-      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+    const pointerDown = e => {
+      if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
       e.preventDefault();
-      DeviceMode.onPointerType("touch");
-      if (kind === "move") state.moveId = e.pointerId; else state.lookId = e.pointerId;
+      DeviceMode.onPointerType('touch');
+      if (kind === 'move') state.moveId = e.pointerId; else state.lookId = e.pointerId;
       try { zone.setPointerCapture(e.pointerId); } catch (_) {}
-      move(e);
-    }, {passive:false});
-    zone.addEventListener("pointermove", move, {passive:false});
-    ["pointerup", "pointercancel", "lostpointercapture"].forEach(ev => zone.addEventListener(ev, e => {
-      const active = kind === "move" ? state.moveId : state.lookId;
-      if (active !== null && e.pointerId === active) reset();
-    }, {passive:true}));
+      update(e.clientX, e.clientY);
+    };
+    const pointerMove = e => {
+      const id = kind === 'move' ? state.moveId : state.lookId;
+      if (id === null || e.pointerId !== id) return;
+      e.preventDefault();
+      update(e.clientX, e.clientY);
+    };
+    const pointerEnd = e => {
+      const id = kind === 'move' ? state.moveId : state.lookId;
+      if (id !== null && e.pointerId === id) reset(id);
+    };
+    zone.addEventListener('pointerdown', pointerDown, {passive:false});
+    zone.addEventListener('pointermove', pointerMove, {passive:false});
+    ['pointerup','pointercancel','lostpointercapture'].forEach(ev => zone.addEventListener(ev, pointerEnd, {passive:true}));
+
+    // Older/mobile WebViews can expose touch events without reliable pointer
+    // events. Keep a native touch fallback, using identifier as the stick id.
+    const touchStart = e => {
+      if (!DeviceMode.mobile || (kind === 'move' ? state.moveId !== null : state.lookId !== null)) return;
+      const t = e.changedTouches[0]; if (!t) return;
+      e.preventDefault(); DeviceMode.onPointerType('touch');
+      const id = 't' + t.identifier;
+      if (kind === 'move') state.moveId = id; else state.lookId = id;
+      update(t.clientX, t.clientY);
+    };
+    const touchMove = e => {
+      const id = kind === 'move' ? state.moveId : state.lookId;
+      if (!id || typeof id !== 'string' || id[0] !== 't') return;
+      const wanted = Number(id.slice(1));
+      for (const t of e.changedTouches) if (t.identifier === wanted) { e.preventDefault(); update(t.clientX, t.clientY); break; }
+    };
+    const touchEnd = e => {
+      const id = kind === 'move' ? state.moveId : state.lookId;
+      if (!id || typeof id !== 'string' || id[0] !== 't') return;
+      const wanted = Number(id.slice(1));
+      for (const t of e.changedTouches) if (t.identifier === wanted) { reset(id); break; }
+    };
+    if (!window.PointerEvent) {
+      zone.addEventListener('touchstart', touchStart, {passive:false});
+      zone.addEventListener('touchmove', touchMove, {passive:false});
+      zone.addEventListener('touchend', touchEnd, {passive:true});
+      zone.addEventListener('touchcancel', touchEnd, {passive:true});
+    }
   },
   init() {
-    this._stick("mobile-move-zone", "mobile-move-stick", "move");
-    this._stick("mobile-look-zone", "mobile-look-stick", "look");
-    const invClose = document.getElementById("mobile-inventory-close");
-    if (invClose) invClose.addEventListener("pointerup", e => {
-      if (e.pointerType !== "touch" && e.pointerType !== "pen" && e.pointerType !== "mouse") return;
-      e.preventDefault();
-      if (GameState.phase === "playing" && GameState.inventoryOpen) Inventory.close();
-    }, {passive:false});
-    document.querySelectorAll("[data-mobile-action]").forEach(btn => {
+    if (this.initialized) return;
+    this.initialized = true;
+    this._stick('mobile-move-zone', 'move');
+    this._stick('mobile-look-zone', 'look');
+    document.querySelectorAll('[data-mobile-action]').forEach(btn => {
       const action = btn.dataset.mobileAction;
-      const code = {
-        jump:"Space", sprint:"ShiftLeft", crouch:"ControlLeft"
-      }[action];
+      const code = {jump:'Space', sprint:'ShiftLeft', crouch:'ControlLeft'}[action];
       if (code) {
-        btn.addEventListener("pointerdown", e => {
-          if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-          e.preventDefault(); DeviceMode.onPointerType("touch"); Input.keys[code] = true;
-        }, {passive:false});
-        ["pointerup","pointercancel","pointerleave"].forEach(ev => btn.addEventListener(ev, e => {
-          Input.keys[code] = false;
-        }, {passive:true}));
+        const down = e => {
+          if (e.pointerType && e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+          e.preventDefault(); DeviceMode.onPointerType('touch'); Input.keys[code] = true;
+        };
+        const up = () => { Input.keys[code] = false; };
+        btn.addEventListener('pointerdown', down, {passive:false});
+        ['pointerup','pointercancel','pointerleave'].forEach(ev => btn.addEventListener(ev, up, {passive:true}));
+        if (!window.PointerEvent) {
+          btn.addEventListener('touchstart', e => { e.preventDefault(); DeviceMode.onPointerType('touch'); Input.keys[code] = true; }, {passive:false});
+          ['touchend','touchcancel'].forEach(ev => btn.addEventListener(ev, up, {passive:true}));
+        }
       } else {
-        btn.addEventListener("pointerup", e => {
-          if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-          e.preventDefault(); DeviceMode.onPointerType("touch");
-          if (GameState.phase !== "playing") return;
-          if (action === "flashlight") Flashlight.toggle();
-          else if (action === "inventory") Inventory.toggle();
-          else if (action === "use" && !GameState.inventoryOpen) PickupSystem.tryPickup();
-        }, {passive:false});
+        const activate = e => {
+          if (e.pointerType && e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+          e.preventDefault(); DeviceMode.onPointerType('touch');
+          if (GameState.phase !== 'playing') return;
+          if (action === 'flashlight') Flashlight.toggle();
+          else if (action === 'inventory') Inventory.toggle();
+          else if (action === 'use' && !GameState.inventoryOpen) PickupSystem.tryPickup();
+        };
+        btn.addEventListener('pointerup', activate, {passive:false});
+        if (!window.PointerEvent) btn.addEventListener('touchend', e => activate(e), {passive:false});
       }
     });
-    const pause = document.getElementById("mobile-pause");
-    if (pause) pause.addEventListener("pointerup", e => {
-      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-      e.preventDefault(); DeviceMode.onPointerType("touch");
-      if (GameState.phase === "playing") {
-        const overlay = document.getElementById("pause-overlay");
-        const paused = overlay && overlay.style.display === "flex";
-        if (paused) {
-          setPauseOverlay(false);
-          if (!DeviceMode.mobile && renderer && renderer.domElement) renderer.domElement.requestPointerLock();
-        } else {
-          setPauseOverlay(true);
-          clearInput();
+    const pause = document.getElementById('mobile-pause');
+    if (pause) {
+      const activatePause = e => {
+        if (e.pointerType && e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+        e.preventDefault(); DeviceMode.onPointerType('touch');
+        if (GameState.phase === 'playing') {
+          const overlay = document.getElementById('pause-overlay');
+          const paused = overlay && overlay.style.display === 'flex';
+          if (paused) setPauseOverlay(false); else { setPauseOverlay(true); clearInput(); }
         }
-      }
-    }, {passive:false});
+      };
+      pause.addEventListener('pointerup', activatePause, {passive:false});
+      if (!window.PointerEvent) pause.addEventListener('touchend', activatePause, {passive:false});
+    }
+    const invClose = document.getElementById('inv-close');
+    if (invClose) {
+      const close = e => { e.preventDefault(); Inventory.close(); };
+      invClose.addEventListener('click', close);
+      if (!window.PointerEvent) invClose.addEventListener('touchend', close, {passive:false});
+    }
   }
 };
 
@@ -520,6 +566,7 @@ document.addEventListener("mousemove", (e) => {
 });
 
 DeviceMode.init();
+MobileControls.init();
 
 document.addEventListener("pointerlockchange", () => {
   Input.locked = !DeviceMode.mobile && !!(renderer && document.pointerLockElement === renderer.domElement);
