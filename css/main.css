@@ -189,119 +189,113 @@
     #recording-indicator.is-recording { opacity:.9; }
     .record-confirm-panel .run-actions { margin-top:24px; }
 
+
 /* ------------------------------------------------------------------
-   MOBILE / TOUCH CONTROLS
+   MOBILE / HYBRID TOUCH CONTROLS
+   The controls are hidden until DeviceMode selects touch/mobile input.
    ------------------------------------------------------------------ */
-#mobile-controls { display:none; }
-body.touch-device #mobile-controls {
-  display:block;
-  position:fixed;
-  inset:0;
-  z-index:15;
-  pointer-events:none;
-  touch-action:none;
-  user-select:none;
-  -webkit-user-select:none;
+#mobile-controls {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
-body.touch-device #mobile-look {
-  position:absolute;
-  inset:0 0 0 42%;
-  pointer-events:auto;
-  touch-action:none;
+#mobile-controls.mobile-active { display: block; }
+.mobile-stick-zone {
+  position: absolute;
+  bottom: 22px;
+  width: 145px;
+  height: 145px;
+  pointer-events: auto;
+  touch-action: none;
 }
-.touch-joystick {
-  position:absolute;
-  left:24px;
-  bottom:24px;
-  width:132px;
-  height:132px;
-  border-radius:50%;
-  pointer-events:auto;
-  touch-action:none;
-  background:rgba(18,16,10,.20);
-  border:1px solid rgba(239,230,176,.20);
-  box-shadow:inset 0 0 24px rgba(0,0,0,.18);
+#mobile-move-zone { left: 18px; }
+#mobile-look-zone { right: 18px; }
+.mobile-stick-label {
+  position: absolute;
+  top: -18px;
+  width: 100%;
+  text-align: center;
+  color: rgba(239,230,176,.55);
+  font: 9px/1 Consolas, monospace;
+  letter-spacing: .18em;
+  pointer-events: none;
 }
-.touch-joystick-ring {
-  position:absolute;
-  inset:20px;
-  border:1px solid rgba(239,230,176,.12);
-  border-radius:50%;
+.mobile-stick {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(239,230,176,.3);
+  border-radius: 50%;
+  background: rgba(24,21,13,.25);
+  box-shadow: inset 0 0 24px rgba(0,0,0,.18);
 }
-.touch-joystick-knob {
-  position:absolute;
-  left:50%; top:50%;
-  width:54px; height:54px;
-  margin:-27px 0 0 -27px;
-  border-radius:50%;
-  background:rgba(203,184,90,.62);
-  border:1px solid rgba(255,245,190,.55);
-  box-shadow:0 4px 16px rgba(0,0,0,.28);
-  transform:translate(-50%,-50%);
-  pointer-events:none;
+.mobile-stick::after {
+  content: "";
+  position: absolute;
+  inset: 28%;
+  border: 1px solid rgba(239,230,176,.13);
+  border-radius: 50%;
 }
-.mobile-action, .mobile-pause {
-  pointer-events:auto;
-  touch-action:none;
-  -webkit-tap-highlight-color:transparent;
-  border:1px solid rgba(239,230,176,.28);
-  color:#efe6b0;
-  background:rgba(24,21,13,.55);
-  backdrop-filter:blur(3px);
-  font:700 10px "Segoe UI",Consolas,monospace;
-  letter-spacing:.10em;
+.mobile-stick-knob {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  left: 50%;
+  top: 50%;
+  margin: -29px 0 0 -29px;
+  border: 2px solid rgba(239,230,176,.55);
+  border-radius: 50%;
+  background: rgba(203,184,90,.18);
+  box-shadow: 0 3px 12px rgba(0,0,0,.28);
+  pointer-events: none;
 }
-.mobile-action:active, .mobile-pause:active {
-  background:rgba(203,184,90,.55);
-  color:#1c190e;
+#mobile-actions {
+  position: absolute;
+  right: 20px;
+  bottom: 180px;
+  display: grid;
+  grid-template-columns: repeat(2, 76px);
+  gap: 8px;
+  pointer-events: auto;
 }
-.mobile-action { min-width:58px; min-height:44px; padding:8px 10px; border-radius:10px; }
-.mobile-action-cluster {
-  position:absolute;
-  right:20px;
-  bottom:22px;
-  display:flex;
-  gap:8px;
-  align-items:flex-end;
-  pointer-events:none;
+#mobile-actions button,
+#mobile-pause {
+  min-width: 76px;
+  min-height: 44px;
+  border: 1px solid rgba(239,230,176,.34);
+  border-radius: 8px;
+  background: rgba(28,25,14,.62);
+  color: #efe6b0;
+  font: 700 10px/1 Consolas, monospace;
+  letter-spacing: .08em;
+  text-shadow: 0 1px 2px #000;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
-.mobile-action-cluster .mobile-action { pointer-events:auto; }
-.mobile-action.jump { min-width:70px; min-height:56px; border-radius:50%; }
-.mobile-action.sprint { min-width:62px; }
-.mobile-action.crouch { min-width:62px; }
-.mobile-utility-cluster {
-  position:absolute;
-  right:20px;
-  bottom:116px;
-  display:flex;
-  gap:7px;
-  pointer-events:none;
+#mobile-actions button:active,
+#mobile-pause:active { background: rgba(203,184,90,.38); }
+#mobile-pause {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  min-width: 48px;
+  width: 48px;
+  min-height: 42px;
+  pointer-events: auto;
+  font-size: 16px;
 }
-.mobile-utility-cluster .mobile-action { pointer-events:auto; min-width:50px; min-height:40px; }
-.mobile-pause {
-  position:absolute;
-  right:16px;
-  top:16px;
-  width:44px;
-  height:44px;
-  border-radius:50%;
-  font-size:16px;
+@media (max-width: 720px) {
+  #hud-obj { max-width: 44vw; text-align: right; }
+  #res-panel { width: 170px; }
+  #pause-note { display: none !important; }
 }
-body.touch-device #crosshair { opacity:.38; }
-body.touch-device #pause-note { display:none !important; }
-body.touch-device .panel { width:min(520px,92vw); padding:28px 22px; }
-body.touch-device .panel h1 { font-size:22px; }
-body.touch-device .menu-footer { font-size:10px; }
-body.touch-device #hud-top { top:10px; left:10px; font-size:11px; }
-body.touch-device #hud-obj { top:10px; right:66px; max-width:45vw; text-align:right; font-size:10px; }
-body.touch-device #res-panel { top:48px; left:10px; width:150px; }
-body.touch-device #hud-seed { bottom:8px; right:8px; font-size:9px; }
-body.touch-device #toast-note { bottom:170px; font-size:11px; }
-body.touch-device #recording-indicator { top:10px; font-size:9px; }
-@media (max-width:520px) {
-  .touch-joystick { left:16px; bottom:16px; width:120px; height:120px; }
-  .mobile-action-cluster { right:12px; bottom:14px; gap:5px; }
-  .mobile-utility-cluster { right:12px; bottom:106px; gap:5px; }
-  .mobile-action { min-width:52px; min-height:42px; font-size:9px; }
-  .mobile-action.jump { min-width:62px; min-height:52px; }
+@media (max-width: 560px) {
+  .mobile-stick-zone { width: 125px; height: 125px; bottom: 18px; }
+  .mobile-stick-knob { width: 52px; height: 52px; margin: -26px 0 0 -26px; }
+  #mobile-actions { right: 14px; bottom: 158px; grid-template-columns: repeat(2, 68px); gap: 6px; }
+  #mobile-actions button { min-width: 68px; min-height: 42px; font-size: 9px; }
 }
