@@ -262,9 +262,14 @@ window.addEventListener("keydown", (e) => {
 
   const playing = GameState.phase === "playing" || GameState.phase === "complete";
   if (e.code === "Escape" && GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive) {
-    // Pointer Lock will normally be released by Escape; show the pause UI
-    // immediately as well so the player gets clear feedback.
-    setPauseOverlay(true);
+    if (Input.locked) {
+      // First Escape releases pointer lock and opens the pause menu.
+      setPauseOverlay(true);
+    } else {
+      // A second Escape while paused resumes the current run.
+      const resume = document.getElementById("pause-resume");
+      if (resume) resume.click();
+    }
   }
   if (playing || Input.locked) {
     if (e.ctrlKey || e.metaKey || e.altKey || isGameplayKey(e.code)) {
