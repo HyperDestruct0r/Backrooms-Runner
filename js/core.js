@@ -226,9 +226,6 @@ const GameState = {
    ------------------------------------------------------------------ */
 const Input = {
   keys: Object.create(null),
-  virtual: Object.create(null),
-  moveX: 0,
-  moveY: 0,
   mouseDX: 0,
   mouseDY: 0,
   locked: false,
@@ -236,14 +233,171 @@ const Input = {
   resetMouse() { this.mouseDX = 0; this.mouseDY = 0; }
 };
 
+
+const DeviceMode = {
+  mobile: false,
+  lastPointerType: null,
+  _mq: null,
+  _set(next, reason = "auto") {
+    next = !!next;
+    if (this.mobile === next && reason !== "pointer") return;
+    this.mobile = next;
+    document.documentElement.classList.toggle("mobile-input", next);
+    const controls = document.getElementById("mobile-controls");
+    if (controls) {
+      controls.classList.toggle("mobile-active", next);
+      controls.setAttribute("aria-hidden", next ? "false" : "true");
+    }
+    if (next && document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    clearInput();
+    if (typeof HUD !== "undefined" && HUD.toast && GameState.phase === "playing" && reason === "pointer") {
+      HUD.toast(next ? "TOUCH CONTROLS" : "MOUSE + KEYBOARD");
+    }
+  },
+  detect() {
+    const coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+    const touch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
+    const uaMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+    // Prefer coarse pointer + touch. A touch-capable Chromebook with a fine
+    // pointer remains in desktop mode until an actual touch pointer is used.
+    this._set(coarse && (touch || uaMobile), "auto");
+  },
+  onPointerType(type) {
+    if (type === "touch") {
+      this.lastPointerType = "touch";
+      this._set(true, "pointer");
+    } else if (type === "mouse") {
+      this.lastPointerType = "mouse";
+      this._set(false, "pointer");
+    }
+  },
+  init() {
+    this._mq = window.matchMedia ? window.matchMedia("(pointer: coarse)") : null;
+    this.detect();
+    if (this._mq) {
+      const cb = () => this.detect();
+      if (this._mq.addEventListener) this._mq.addEventListener("change", cb);
+      else if (this._mq.addListener) this._mq.addListener(cb);
+    }
+    window.addEventListener("pointerdown", e => this.onPointerType(e.pointerType), {capture:true, passive:true});
+    window.addEventListener("resize", () => this.detect());
+    window.addEventListener("orientationchange", () => setTimeout(() => this.detect(), 50));
+  }
+};
+
+const MobileControls = {
+  moveId: null,
+  lookId: null,
+  moveX: 0,
+  moveY: 0,
+  lookX: 0,
+  lookY: 0,
+  maxRadius: 56,
+  lookSensitivity: 0.055,
+  _stick(zoneId, knob, kind) {
+    const zone = document.getElementById(zoneId);
+    const k = document.querySelector(`#${zoneId} .mobile-stick-knob`);
+    if (!zone || !k) return;
+    const state = this;
+    const reset = () => {
+      if (kind === "move") state.moveId = null;
+      else state.lookId = null;
+      if (kind === "move") { state.moveX = 0; state.moveY = 0; }
+      else { state.lookX = 0; state.lookY = 0; }
+      k.style.transform = "translate3d(0,0,0)";
+    };
+    const move = e => {
+      const active = kind === "move" ? state.moveId : state.lookId;
+      if (active === null || e.pointerId !== active) return;
+      const r = zone.getBoundingClientRect();
+      let x = e.clientX - (r.left + r.width / 2);
+      let y = e.clientY - (r.top + r.height / 2);
+      const radius = Math.min(r.width, r.height) * 0.5 - 30;
+      const d = Math.hypot(x, y);
+      if (d > radius) { x *= radius / d; y *= radius / d; }
+      const nx = x / radius;
+      const ny = y / radius;
+      if (kind === "move") { state.moveX = nx; state.moveY = ny; }
+      else { state.lookX = nx; state.lookY = ny; }
+      k.style.transform = `translate3d(${x}px,${y}px,0)`;
+    };
+    zone.addEventListener("pointerdown", e => {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      e.preventDefault();
+      DeviceMode.onPointerType("touch");
+      if (kind === "move") state.moveId = e.pointerId; else state.lookId = e.pointerId;
+      try { zone.setPointerCapture(e.pointerId); } catch (_) {}
+      move(e);
+    }, {passive:false});
+    zone.addEventListener("pointermove", move, {passive:false});
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach(ev => zone.addEventListener(ev, e => {
+      const active = kind === "move" ? state.moveId : state.lookId;
+      if (active !== null && e.pointerId === active) reset();
+    }, {passive:true}));
+  },
+  init() {
+    this._stick("mobile-move-zone", "mobile-move-stick", "move");
+    this._stick("mobile-look-zone", "mobile-look-stick", "look");
+    document.querySelectorAll("[data-mobile-action]").forEach(btn => {
+      const action = btn.dataset.mobileAction;
+      const code = {
+        jump:"Space", sprint:"ShiftLeft", crouch:"ControlLeft"
+      }[action];
+      if (code) {
+        btn.addEventListener("pointerdown", e => {
+          if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+          e.preventDefault(); DeviceMode.onPointerType("touch"); Input.keys[code] = true;
+        }, {passive:false});
+        ["pointerup","pointercancel","pointerleave"].forEach(ev => btn.addEventListener(ev, e => {
+          Input.keys[code] = false;
+        }, {passive:true}));
+      } else {
+        btn.addEventListener("pointerup", e => {
+          if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+          e.preventDefault(); DeviceMode.onPointerType("touch");
+          if (GameState.phase !== "playing") return;
+          if (action === "flashlight") Flashlight.toggle();
+          else if (action === "inventory") Inventory.toggle();
+          else if (action === "use" && !GameState.inventoryOpen) PickupSystem.tryPickup();
+        }, {passive:false});
+      }
+    });
+    const pause = document.getElementById("mobile-pause");
+    if (pause) pause.addEventListener("pointerup", e => {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      e.preventDefault(); DeviceMode.onPointerType("touch");
+      if (GameState.phase === "playing") {
+        const overlay = document.getElementById("pause-overlay");
+        const paused = overlay && overlay.style.display === "flex";
+        if (paused) {
+          setPauseOverlay(false);
+          if (!DeviceMode.mobile && renderer && renderer.domElement) renderer.domElement.requestPointerLock();
+        } else {
+          setPauseOverlay(true);
+          clearInput();
+        }
+      }
+    }, {passive:false});
+  }
+};
+
+function mobileActionDown(action) {
+  if (!DeviceMode.mobile) return false;
+  if (action === "forward") return MobileControls.moveY < -0.12;
+  if (action === "backward") return MobileControls.moveY > 0.12;
+  if (action === "left") return MobileControls.moveX < -0.12;
+  if (action === "right") return MobileControls.moveX > 0.12;
+  return false;
+}
+
 function bindingCode(action) {
   return CONFIG.keys[action];
 }
 
 function isActionDown(action) {
+  if (mobileActionDown(action)) return true;
   const code = bindingCode(action);
-  if (!code) return !!Input.virtual[action];
-  if (Input.virtual[action]) return true;
+  if (!code) return false;
   if (Input.keys[code]) return true;
   // Preserve both physical Shift/Ctrl keys when their primary binding is the
   // default modifier, while custom bindings remain single-key bindings.
@@ -342,9 +496,6 @@ window.addEventListener("keyup", (e) => {
 }, true);
 function clearInput() {
   Input.keys = Object.create(null);
-  Input.virtual = Object.create(null);
-  Input.moveX = 0;
-  Input.moveY = 0;
   Input.ctrlDown = false;
 }
 function setPauseOverlay(show) {
@@ -361,116 +512,16 @@ document.addEventListener("mousemove", (e) => {
   Input.mouseDY += e.movementY || 0;
 });
 
+DeviceMode.init();
+
 document.addEventListener("pointerlockchange", () => {
-  if (window.MobileControls && window.MobileControls.isMobile) {
-    return;
-  }
-  Input.locked = !!(renderer && document.pointerLockElement === renderer.domElement);
+  Input.locked = !DeviceMode.mobile && !!(renderer && document.pointerLockElement === renderer.domElement);
   if (!Input.locked) clearInput();
   const paused = GameState.phase === "playing" && !Input.locked && !GameState.inventoryOpen && !Stairwell.sequenceActive;
   setPauseOverlay(paused);
   const note = document.getElementById("pause-note");
   if (note) note.style.display = "none";
 });
-
-/* ------------------------------------------------------------------
-   MOBILE / TOUCH CONTROLS
-   ------------------------------------------------------------------ */
-const MobileControls = {
-  isMobile: !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || navigator.maxTouchPoints > 0,
-  initialized: false,
-  joystick: null,
-  knob: null,
-  look: null,
-  pause: null,
-  radius: 58,
-  init() {
-    if (this.initialized || !this.isMobile) return;
-    this.initialized = true;
-    document.body.classList.add("touch-device");
-
-    const controls = document.getElementById("mobile-controls");
-    this.joystick = document.getElementById("mobile-joystick");
-    this.knob = document.getElementById("mobile-joystick-knob");
-    this.look = document.getElementById("mobile-look");
-    this.pause = document.getElementById("mobile-pause");
-    if (!controls || !this.joystick || !this.knob || !this.look) return;
-
-    const setMove = (x, y) => {
-      const len = Math.hypot(x, y);
-      if (len > this.radius) { x = x / len * this.radius; y = y / len * this.radius; }
-      const nx = x / this.radius;
-      const ny = y / this.radius;
-      Input.moveX = Math.abs(nx) < 0.12 ? 0 : nx;
-      Input.moveY = Math.abs(ny) < 0.12 ? 0 : ny;
-      Input.virtual.forward = Input.moveY < -0.18;
-      Input.virtual.backward = Input.moveY > 0.18;
-      Input.virtual.left = Input.moveX < -0.18;
-      Input.virtual.right = Input.moveX > 0.18;
-      this.knob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
-    };
-    const resetMove = () => setMove(0, 0);
-    const joyPoint = (e) => {
-      const r = this.joystick.getBoundingClientRect();
-      return { x: e.clientX - (r.left + r.width / 2), y: e.clientY - (r.top + r.height / 2) };
-    };
-
-    this.joystick.addEventListener("pointerdown", e => {
-      if (GameState.phase !== "playing") return;
-      e.preventDefault();
-      this.joystick.setPointerCapture?.(e.pointerId);
-      const p = joyPoint(e); setMove(p.x, p.y);
-    });
-    this.joystick.addEventListener("pointermove", e => {
-      if (!this.joystick.hasPointerCapture?.(e.pointerId)) return;
-      e.preventDefault();
-      const p = joyPoint(e); setMove(p.x, p.y);
-    });
-    ["pointerup", "pointercancel", "lostpointercapture"].forEach(type => this.joystick.addEventListener(type, resetMove));
-
-    let lastX = 0, lastY = 0;
-    this.look.addEventListener("pointerdown", e => {
-      if (GameState.phase !== "playing" || GameState.inventoryOpen || Stairwell.sequenceActive) return;
-      e.preventDefault();
-      this.look.setPointerCapture?.(e.pointerId);
-      lastX = e.clientX; lastY = e.clientY;
-    });
-    this.look.addEventListener("pointermove", e => {
-      if (!this.look.hasPointerCapture?.(e.pointerId)) return;
-      e.preventDefault();
-      const dx = e.clientX - lastX, dy = e.clientY - lastY;
-      lastX = e.clientX; lastY = e.clientY;
-      Input.mouseDX += dx;
-      Input.mouseDY += dy;
-    });
-
-    const hold = (id, action) => {
-      const el = document.getElementById(id); if (!el) return;
-      const down = e => { e.preventDefault(); if (GameState.phase === "playing") Input.virtual[action] = true; };
-      const up = e => { e.preventDefault(); Input.virtual[action] = false; };
-      el.addEventListener("pointerdown", down);
-      ["pointerup", "pointercancel", "pointerleave"].forEach(t => el.addEventListener(t, up));
-    };
-    hold("mobile-sprint", "sprint");
-    hold("mobile-crouch", "crouch");
-    hold("mobile-jump", "jump");
-
-    const tap = (id, fn) => {
-      const el = document.getElementById(id); if (!el) return;
-      el.addEventListener("pointerdown", e => { e.preventDefault(); if (GameState.phase === "playing") fn(); });
-    };
-    tap("mobile-flashlight", () => Flashlight.toggle());
-    tap("mobile-use", () => { if (!GameState.inventoryOpen) PickupSystem.tryPickup(); });
-    tap("mobile-inventory", () => Inventory.toggle());
-    if (this.pause) this.pause.addEventListener("pointerdown", e => {
-      e.preventDefault();
-      if (GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive) {
-        Input.locked = false; clearInput(); setPauseOverlay(true);
-      }
-    });
-  }
-};
-window.MobileControls = MobileControls;
 
 /* ------------------------------------------------------------------
    AUDIO MANAGER
