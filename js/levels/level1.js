@@ -4,7 +4,7 @@ const Level1 = {
   active:false, group:null, colliders:[], triggers:[],
   macroSize:600, microSize:60, activeRadius:2, seed:0,
   chunks:new Map(), center:new THREE.Vector3(), start:new THREE.Vector3(),
-  baseY:0, lights:[], ambientLights:[], puddles:[], resourceRegions:Object.create(null),
+  baseY:0, lights:[], ambientLights:[], puddles:[], resourceRegions:Object.create(null), darkMaterial:null,
   streamTimer:0, lastMCX:999999, lastMCZ:999999,
   levelTime:0, blackoutState:'idle', blackoutTimer:0, blackoutNext:60,
   blackoutCooldown:0, blackoutDuration:0, blackoutCycle:0,
@@ -73,10 +73,10 @@ const Level1 = {
     const housing=new THREE.Mesh(Geometries.lightHousing,Materials.lightHousing);
     housing.scale.set(1.42,1,0.4); housing.position.set(x,this.baseY+6.80,z); g.add(housing);
     const blackout=this.blackoutState==='flicker'||this.blackoutState==='outage';
-    panel.material.emissiveIntensity=blackout?0:2.0*bright;
+    panel.material.emissiveIntensity=blackout?0:2.65*bright;
     rec.fixtures.push({panel,housing,base:bright});
     if(rng()<0.10 && this.lights.length<12){
-      const L=new THREE.PointLight(0xf4f7ff,blackout?0:0.92*bright,22,1.65);
+      const L=new THREE.PointLight(0xf4f7ff,blackout?0:1.12*bright,22,1.65);
       L.position.set(x,this.baseY+6.25,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
     }
   },
@@ -335,6 +335,28 @@ const Level1 = {
     const data={type,exitEdge:null};
     this.macroCache.set(key+':geometry',data); return data;
   },
+  addDarkBlob(g, cx, cz, S, rng){
+    // Large, contiguous blackout masses. Several overlapping ellipsoids form
+    // one irregular 25–50m blob instead of the old small rectangular patches.
+    if (!this.darkMaterial) this.darkMaterial = new THREE.MeshBasicMaterial({ color:0x020304, side:THREE.DoubleSide, depthWrite:true });
+    const centerX=cx*this.microSize+S*0.5, centerZ=cz*this.microSize+S*0.5;
+    if (this.start && Math.hypot(centerX-this.start.x, centerZ-this.start.z)<58) return;
+    const size=25+rng()*25;
+    const parts=4;
+    for(let i=0;i<parts;i++){
+      const angle=(i/parts)*Math.PI*2 + rng()*0.55;
+      const reach=(size*0.18)+(rng()*size*0.12);
+      const px=centerX+Math.cos(angle)*reach;
+      const pz=centerZ+Math.sin(angle)*reach;
+      const radiusX=size*(0.38+rng()*0.16);
+      const radiusZ=size*(0.38+rng()*0.16);
+      const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,18,12),this.darkMaterial);
+      mesh.scale.set(radiusX,3.9+rng()*1.1,radiusZ);
+      mesh.position.set(px,this.baseY+3.8,pz);
+      g.add(mesh);
+    }
+  },
+
   buildChunk(cx,cz){
     const key=cx+','+cz; if(this.chunks.has(key)) return;
     const rng=this.rngFor(cx,cz,101), g=new THREE.Group(); g.name='L1_chunk_'+key;
@@ -380,6 +402,11 @@ const Level1 = {
         this.fixture(g,ox+x,oz+z,rec.bright?1.55:1.08,rng,rec);
       }
     }
+    // Large dark regions replace the old fog-like visual patches. They are
+    // deliberately sparse and contiguous so Level 1 still has long lit stretches.
+    const darkChance = type==='maintenance' ? 0.20 : 0.12;
+    if (rng() < darkChance) this.addDarkBlob(g,cx,cz,S,rng);
+
     // Puddles are preferentially placed in parking/open floor; a smaller number
     // can appear in unusually wide maintenance sections.
     if(type==='parking' || rng()<0.20){
@@ -437,8 +464,8 @@ const Level1 = {
       for(const L of rec.pointLights) L.intensity=on ? 1.22*dim : 0;
     }
     for(const L of this.ambientLights){
-      if(L.isHemisphereLight) L.intensity = on ? 1.28*dim : 0.055;
-      else L.intensity = on ? 0.52*dim : 0.018;
+      if(L.isHemisphereLight) L.intensity = on ? 1.48*dim : 0.065;
+      else L.intensity = on ? 0.64*dim : 0.022;
     }
   },
   startBlackout(){
@@ -622,8 +649,8 @@ const Level1 = {
     // level does not leave stale pickups behind.
     if(PickupSystem.group && scene) scene.remove(PickupSystem.group);
     PickupSystem.group=new THREE.Group(); PickupSystem.group.name='Level1_Pickups'; scene.add(PickupSystem.group);
-    const hemi=new THREE.HemisphereLight(0xe9f1f5,0x2b2e2d,1.28);
-    const amb=new THREE.AmbientLight(0xc2c9cc,0.52); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
+    const hemi=new THREE.HemisphereLight(0xe9f1f5,0x2b2e2d,1.48);
+    const amb=new THREE.AmbientLight(0xc2c9cc,0.64); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
     scene.fog=null; if(scene.background) scene.background.setHex(0x202321);
     if(CameraRig.camera){ CameraRig.camera.far=320; CameraRig.camera.updateProjectionMatrix(); }
     this.lastMCX=999999; this.lastMCZ=999999; this.stream(true); this.placeExit();
@@ -649,6 +676,11 @@ const Level1 = {
   },
   update(dt){
     if(!this.active) return;
+    if(this.blackoutState!=='flicker' && this.blackoutState!=='outage'){
+      if(scene) scene.fog=null;
+      const darkFog=document.getElementById('dark-fog');
+      if(darkFog) darkFog.style.opacity='0';
+    }
     this.streamTimer+=dt; if(this.streamTimer>0.18){this.streamTimer=0;this.stream(false);}
     this.updateBlackout(dt); this.updatePuddleVisibility(); if(typeof SmilerSystem!=="undefined") SmilerSystem.update(dt); if(typeof ExitLocator!=="undefined") ExitLocator.update();
     Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
