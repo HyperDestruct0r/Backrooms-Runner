@@ -271,9 +271,6 @@ function initAssets() {
   Materials.lightHousing = new THREE.MeshStandardMaterial({
     color: 0xcfc8a0, roughness: 0.55, metalness: 0.08
   });
-  Materials.checkpoint = new THREE.MeshStandardMaterial({
-    color: 0x8fd18f, emissive: 0x1a4a1a, roughness: 0.6, metalness: 0.05
-  });
   Materials.exit = new THREE.MeshStandardMaterial({
     color: 0x8fa8d8, emissive: 0x1a2a48, roughness: 0.6, metalness: 0.05
   });
