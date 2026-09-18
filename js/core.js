@@ -76,9 +76,9 @@ const CONFIG = {
     runFlash: 0.85
   },
   lookSens: 0.00215,
-  fogColor: 0xd7c57a,
-  fogNear: 48,
-  fogFar: 140,
+  fogColor: 0x9b9369,
+  fogNear: 42,
+  fogFar: 125,
   cameraFar: 180,
   cameraFov: 72,
   sprintFov: 78,
@@ -798,9 +798,9 @@ const LightingSystem = {
   clusterUntil: 0,
   init(scene) {
     // Soft fill only — fixtures do the real illumination (VERSION 3 can retune)
-    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.38);
+    this.hemi = new THREE.HemisphereLight(0xe9e2c5, 0x3e3924, 0.24);
     scene.add(this.hemi);
-    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.34);
+    this.ambient = new THREE.AmbientLight(0x9b8d5c, 0.22);
     scene.add(this.ambient);
     scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
     scene.background = new THREE.Color(CONFIG.fogColor);
@@ -821,15 +821,15 @@ const LightingSystem = {
     const roll = Math.random();
     let state = forcedState || "NORMAL";
     if (!forcedState) {
-      if (roll < 0.012) state = "BROKEN";
-      else if (roll < 0.05) state = "FLICKERING";
-      else if (roll < 0.14) state = "DIM";
+      if (roll < 0.018) state = "BROKEN";
+      else if (roll < 0.075) state = "FLICKERING";
+      else if (roll < 0.21) state = "DIM";
     }
 
     let light = null;
-    const base = (intensityScale == null ? 1 : intensityScale) * 1.6;
+    const base = (intensityScale == null ? 1 : intensityScale) * 2.05;
     if (withPoint && state !== "BROKEN") {
-      light = new THREE.PointLight(0xfff1c4, state === "DIM" ? base * 0.45 : base, 20, 1.55);
+      light = new THREE.PointLight(0xfff4d1, state === "DIM" ? base * 0.32 : base, 17, 1.75);
       light.position.set(x, y - 0.28, z);
       scene.add(light);
       this.lights.push(light);
