@@ -57,19 +57,23 @@ const TextureFactory = {
     const d = img.data;
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const n = this.fbm(x * 0.035 + seed, y * 0.05 + seed * 1.7);
-        const n2 = this.fbm(x * 0.12 + 9, y * 0.09 + 4);
-        const stripe = Math.sin((x + n2 * 6) * Math.PI * 2 / 18) * 0.5 + 0.5;
-        const fine = this.hash(x * 0.7 + seed, y * 1.9) * 0.08;
-        let stain = this.fbm(x * 0.02 + seed * 3, y * 0.018);
-        stain = stain > 0.62 ? (stain - 0.62) * 0.55 : 0;
-        const speckle = this.hash(x + y * 13 + seed * 20, y * 3) > 0.97 ? 0.07 : 0;
-        const baseR = 226 + warmth;
-        const baseG = 206 + warmth * 0.4;
-        const baseB = 108 + warmth * 0.15;
-        let r = baseR + (n - 0.5) * 22 + stripe * 10 - stain * 38 - speckle * 40 + fine * 20;
-        let g = baseG + (n - 0.5) * 18 + stripe * 8 - stain * 32 - speckle * 30 + fine * 16;
-        let b = baseB + (n - 0.5) * 10 + stripe * 4 - stain * 18 + fine * 8;
+        const n = this.fbm(x * 0.028 + seed, y * 0.034 + seed * 1.7);
+        const n2 = this.fbm(x * 0.085 + 13, y * 0.075 + 7);
+        const fine = this.hash(x * 1.7 + seed, y * 2.1 + seed) * 0.10;
+        // Broad, irregular age stains. Keep the wallpaper recognizable rather
+        // than turning it into a noisy yellow texture.
+        let stain = this.fbm(x * 0.012 + seed * 2.1, y * 0.015 + seed * 0.8);
+        stain = Math.max(0, (stain - 0.57) * 1.65);
+        const vertical = Math.sin((x / 30) + n2 * 1.4) * 0.5 + 0.5;
+        const seam = Math.abs(Math.sin(x * Math.PI / 42 + n2 * 0.15));
+        const baseR = 188 + warmth;
+        const baseG = 177 + warmth * 0.35;
+        const baseB = 104 + warmth * 0.12;
+        let r = baseR + (n - 0.5) * 30 + vertical * 5 - stain * 58 - seam * 3 + fine * 15;
+        let g = baseG + (n - 0.5) * 27 + vertical * 4 - stain * 49 - seam * 2 + fine * 13;
+        let b = baseB + (n - 0.5) * 18 + vertical * 2 - stain * 28 + fine * 8;
+        // A few dark flecks mimic old paint/wallpaper imperfections.
+        if (this.hash(x * 3.7 + seed * 8, y * 4.1) > 0.992) { r -= 28; g -= 25; b -= 15; }
         const i = (y * size + x) * 4;
         d[i] = Math.max(0, Math.min(255, r));
         d[i + 1] = Math.max(0, Math.min(255, g));
@@ -88,12 +92,13 @@ const TextureFactory = {
     const d = img.data;
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const n = this.fbm(x * 0.08, y * 0.08);
-        const fiber = this.hash(x * 3.1, y * 0.4) * 0.12 + this.hash(x * 0.3, y * 2.7) * 0.1;
-        const fleck = this.hash(x * 1.7, y * 2.3) > 0.93 ? -18 : 0;
-        const r = 188 + (n - 0.5) * 28 + fiber * 22 + fleck;
-        const g = 154 + (n - 0.5) * 22 + fiber * 14 + fleck * 0.7;
-        const b = 62 + (n - 0.5) * 12 + fiber * 6;
+        const n = this.fbm(x * 0.065, y * 0.065);
+        const fiber = this.hash(x * 4.2, y * 0.7) * 0.16 + this.hash(x * 0.45, y * 3.3) * 0.12;
+        const worn = Math.max(0, this.fbm(x * 0.018, y * 0.018) - 0.56) * 26;
+        const fleck = this.hash(x * 2.2, y * 2.7) > 0.955 ? -12 : 0;
+        const r = 128 + (n - 0.5) * 24 + fiber * 18 - worn + fleck;
+        const g = 111 + (n - 0.5) * 22 + fiber * 14 - worn * 0.8 + fleck * 0.7;
+        const b = 68 + (n - 0.5) * 15 + fiber * 8 - worn * 0.35;
         const i = (y * size + x) * 4;
         d[i] = Math.max(0, Math.min(255, r));
         d[i + 1] = Math.max(0, Math.min(255, g));
@@ -154,7 +159,7 @@ const TextureFactory = {
     const size = 512;
     const c = this.makeCanvas(size);
     const ctx = c.getContext("2d");
-    ctx.fillStyle = "#e6dcb0";
+    ctx.fillStyle = "#c9c3a4";
     ctx.fillRect(0, 0, size, size);
     const img = ctx.getImageData(0, 0, size, size);
     const d = img.data;
@@ -236,7 +241,7 @@ function initAssets() {
   Geometries.lightPanel = new THREE.PlaneGeometry(1.55, 0.42);
   Geometries.lightHousing = new THREE.BoxGeometry(1.72, 0.08, 0.58);
   Geometries.floorTile = new THREE.PlaneGeometry(CONFIG.tile, CONFIG.tile);
-  Geometries.column = makeWorldBox(0.55, CONFIG.wallH, 0.55, 0.55);
+  Geometries.column = makeWorldBox(0.72, CONFIG.wallH, 0.72, 0.55);
   Geometries.beam = new THREE.BoxGeometry(1, 0.1, 0.18);
 
   const wallMap = TextureFactory.fromConfigOrCanvas("wall", () => TextureFactory.wallpaper(1.2, 0));
@@ -248,7 +253,7 @@ function initAssets() {
     map: wallMap, roughness: 0.86, metalness: 0.02, color: 0xffffff
   });
   Materials.wallAlt = new THREE.MeshStandardMaterial({
-    map: wallAltMap, roughness: 0.88, metalness: 0.02, color: 0xf6eec8
+    map: wallAltMap, roughness: 0.88, metalness: 0.02, color: 0xd7cda2
   });
   Materials.wallTrim = new THREE.MeshStandardMaterial({
     color: 0xbba24a, roughness: 0.72, metalness: 0.04
@@ -257,13 +262,13 @@ function initAssets() {
     map: carpetMap, roughness: 0.97, metalness: 0.0, color: 0xffffff
   });
   Materials.carpetDark = new THREE.MeshStandardMaterial({
-    map: carpetMap, roughness: 0.97, metalness: 0.0, color: 0xb89a48
+    map: carpetMap, roughness: 0.97, metalness: 0.0, color: 0x8f7a45
   });
   Materials.ceiling = new THREE.MeshStandardMaterial({
     map: ceilingMap, roughness: 0.9, metalness: 0.0, color: 0xffffff
   });
   Materials.column = new THREE.MeshStandardMaterial({
-    map: wallMap, roughness: 0.84, metalness: 0.02, color: 0xf0e4a8
+    map: wallMap, roughness: 0.84, metalness: 0.02, color: 0xc9bd8c
   });
   Materials.light = new THREE.MeshStandardMaterial({
     color: 0xfff6d8, emissive: 0xfff1c2, emissiveIntensity: 1.35, roughness: 0.4, metalness: 0
