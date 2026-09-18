@@ -7,40 +7,6 @@
 "use strict";
 
 /* ------------------------------------------------------------------
-   CHECKPOINTS
-   ------------------------------------------------------------------ */
-const Checkpoints = {
-  list: [],
-  current: null,
-  reset() {
-    this.list.length = 0;
-    this.current = null;
-  },
-  register(id, position, yaw) {
-    const rec = { id, position: position.clone(), yaw: yaw || 0 };
-    this.list.push(rec);
-    if (!this.current) this.current = rec;
-  },
-  activate(id) {
-    const rec = this.list.find((c) => c.id === id);
-    if (rec) this.current = rec;
-  },
-  respawn() {
-    const rec = this.current;
-    if (!rec) return;
-    Player.position.copy(rec.position);
-    Player.position.y = 0;
-    Player.velocity.set(0, 0, 0);
-    Player.yaw = rec.yaw;
-    Player.pitch = 0;
-    Player.onGround = true;
-    Player.sliding = false;
-    Player.slideTimer = 0;
-    Player.heightCurrent = CONFIG.player.heightStand;
-  }
-};
-
-/* ------------------------------------------------------------------
    COLLISION / PHYSICS
    Capsule approximated as a vertical AABB (radius x height).
    Move and collide one axis at a time so corners do not swallow the player.
@@ -99,10 +65,15 @@ const Physics = {
       vel.y = 0;
     }
 
-    // Safety: fell out of the world
+    // current level's start position.
     if (pos.y < -12) {
-      Checkpoints.respawn();
-      return Player.onGround;
+      Player.position.copy(Level.startPos);
+      Player.position.y = 0;
+      Player.velocity.set(0, 0, 0);
+      Player.yaw = 0;
+      Player.pitch = 0;
+      Player.onGround = true;
+      return true;
     }
     Player.onGround = onGround;
     if (onGround && !groundedBefore && vel.y <= 0.01) {
@@ -157,10 +128,16 @@ const Player = {
   },
 
   resetToStart() {
-    if (!Checkpoints.list.find((c) => c.id === "start")) {
-      Checkpoints.register("start", Level.startPos.clone(), 0);
-    }
-    Checkpoints.activate("start");
+    this.position.copy(Level.startPos);
+    this.position.y = 0;
+    this.velocity.set(0, 0, 0);
+    this.yaw = 0;
+    this.pitch = 0;
+    this.onGround = true;
+    this.crouching = false;
+    this.sliding = false;
+    this.slideTimer = 0;
+    this.heightCurrent = CONFIG.player.heightStand;
     this.stamina = CONFIG.stamina.max;
     this.stamAcc = 0;
     this.stamDelay = 0;
@@ -171,7 +148,6 @@ const Player = {
     this.hpRegenAcc = 0;
     this.lastDamageAgo = 999;
     this.sprintJumping = false;
-    Checkpoints.respawn();
   },
 
   damagePlayer(amount) {
@@ -308,16 +284,14 @@ const Player = {
     if (DeviceMode.mobile) {
       fwd = -MobileControls.moveY;
       str = MobileControls.moveX;
-      const len = Math.hypot(fwd, str);
-      if (len > 1) { fwd /= len; str /= len; }
     } else {
       if (isActionDown("forward")) fwd += 1;
       if (isActionDown("backward")) fwd -= 1;
       if (isActionDown("right")) str += 1;
       if (isActionDown("left")) str -= 1;
-      const len = Math.hypot(fwd, str);
-      if (len > 0) { fwd /= len; str /= len; }
     }
+    const inputLen = Math.hypot(fwd, str);
+    if (inputLen > 1) { fwd /= inputLen; str /= inputLen; }
 
     const sinY = Math.sin(this.yaw);
     const cosY = Math.cos(this.yaw);
@@ -357,7 +331,7 @@ const Player = {
       this.velocity.z *= Math.max(0, 1 - P.airFriction * dt);
     }
 
-    if (len > 0 || this.sliding) {
+    if (inputLen > 0 || this.sliding) {
       let wx = wishX, wz = wishZ;
       if (this.sliding) {
         wx = -Math.sin(this.slideYaw);
@@ -458,7 +432,6 @@ const Player = {
 
     // Triggers
     Level.queryTriggers(this.position.x, this.position.z, (t) => {
-      if (t.type === "checkpoint") Checkpoints.activate(t.id);
       if (t.type === "exit") {
         if (!GameState.exitReached) {
           GameState.exitReached = true;
@@ -919,7 +892,6 @@ const HUD = {
     const mod = MapGraph.nodeAt(gx, gz);
     const exit = ExitManager.worldPos();
     const dist = exit ? Math.hypot(exit.x - Player.position.x, exit.z - Player.position.z) : -1;
-    const cp = Checkpoints.current ? Checkpoints.current.id : "none";
     const entDist = EntitySystem.spawned
       ? Math.hypot(EntitySystem.position.x - Player.position.x, EntitySystem.position.z - Player.position.z)
       : -1;
@@ -935,7 +907,6 @@ const HUD = {
       "LIGHT ZONE " + (mod ? (mod.lightProfile || "NORMAL") : "none") + "\n" +
       "DARK FOG " + (DarknessSystem.active ? "ON" : "OFF") + "  FAR " + (scene && scene.fog ? scene.fog.far.toFixed(1) + "m" : "—") + "\n" +
       "MODULES " + MapGraph.nodes.length + "\n" +
-      "CHECKPOINT " + cp + "\n" +
       "PATH TO EXIT " + (Level.pathMeters ? Level.pathMeters.toFixed(0) + " m" : "—") + "\n" +
       "EUCLID EXIT " + (dist >= 0 ? dist.toFixed(1) + " m" : "—") + "\n" +
       "ENTITY " + (EncounterManager.entitySpawned ? "SPAWNED" : "NOT SPAWNED") + "\n" +
