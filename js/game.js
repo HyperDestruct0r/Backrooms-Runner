@@ -85,6 +85,8 @@ const Game = {
       level0Built = !!Level.buildProcedural(scene, GameState.seed);
     } catch (err) {
       console.error("Level 0 generation exception:", err);
+      const st = document.getElementById("boot-status");
+      if (st) st.textContent = "LEVEL 0 ERROR: " + (err && err.message ? err.message : String(err));
       level0Built = false;
     }
     if (!level0Built) {
@@ -95,6 +97,8 @@ const Game = {
         level0Built = !!Level.buildProcedural(scene, fallbackSeed);
       } catch (err) {
         console.error("Level 0 fallback generation exception:", err);
+        const st = document.getElementById("boot-status");
+        if (st) st.textContent = "LEVEL 0 FALLBACK ERROR: " + (err && err.message ? err.message : String(err));
         level0Built = false;
       }
     }
@@ -180,7 +184,6 @@ const Game = {
     GameState.levelTimes = { 0: 0, 1: 0 };
     GameState.distance = 0;
     Player.resetToStart();
-    Checkpoints.respawn();
     AtmosphereSystem.reset();
     DarknessSystem.reset();
     EnvEventSystem.reset();
