@@ -180,7 +180,6 @@ const Game = {
     GameState.levelTimes = { 0: 0, 1: 0 };
     GameState.distance = 0;
     Player.resetToStart();
-    Checkpoints.respawn();
     AtmosphereSystem.reset();
     DarknessSystem.reset();
     EnvEventSystem.reset();
