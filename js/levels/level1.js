@@ -668,7 +668,6 @@ const Level1 = {
     const lvl=document.getElementById('hud-level-label');if(lvl)lvl.textContent='LEVEL 1';
     const seedEl=document.getElementById('hud-seed-val');if(seedEl)seedEl.textContent=String(this.seed);
     const title=document.getElementById('start-seed');if(title)title.textContent='LEVEL 1 · SEED '+this.seed;
-    Checkpoints.reset(); Checkpoints.register('level1-start',new THREE.Vector3(origin.x,0,origin.z),0); Checkpoints.activate('level1-start');
     Player.position.set(origin.x,0,origin.z); Player.velocity.set(0,0,0); Player.onGround=true;
     EntitySystem.despawn(); EncounterManager.reset(); DebugPath.hide(); DarknessSystem.reset(); AtmosphereSystem.reset(); EnvEventSystem.reset(); Flashlight.reset();
     if(typeof SmilerSystem!=="undefined") SmilerSystem.reset();
