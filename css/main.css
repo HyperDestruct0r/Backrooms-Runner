@@ -328,3 +328,9 @@
 }
 #inv-close:active { background:rgba(203,184,90,.38); }
 html.mobile-input #inv-close { display:block; }
+
+#screen-atmosphere{
+  position:fixed; inset:0; z-index:4; pointer-events:none;
+  background:radial-gradient(ellipse at center, rgba(255,255,255,0) 42%, rgba(20,18,9,.06) 68%, rgba(5,5,3,.34) 100%);
+  mix-blend-mode:multiply;
+}
