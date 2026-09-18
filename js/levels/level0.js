@@ -6,7 +6,7 @@
    collider / mesh / lighting pipeline.
    VERSION 4 entities can query MapGraph / Module records.
    ------------------------------------------------------------------ */
-const TILE = { WALL: 1, FLOOR: 0, START: 2, EXIT: 4, COLUMN: 5, DEAD: 6 };
+const TILE = { WALL: 1, FLOOR: 0, START: 2, CHECK: 3, EXIT: 4, COLUMN: 5, DEAD: 6 };
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -147,6 +147,7 @@ const LevelGenerator = {
         connections: [],
         deadEnd: type === "dead_end",
         hasExit: false,
+        hasCheckpoint: false,
         hasStart: type === "start",
         // Persistent per-module lighting profile.
         lightProfile: (function () {
@@ -196,11 +197,11 @@ const LevelGenerator = {
             if (z + 1 < node.h) openInternalEdge(node.gx + x, node.gz + z, node.gx + x, node.gz + z + 1);
           }
         }
-        if (node.type === "room_pillar" || (node.type === "room_large" && rng() > 0.22)) {
+        if (node.type === "room_pillar" || (node.type === "room_large" && rng() > 0.35)) {
           for (let z = 0; z < node.h; z++) {
             for (let x = 0; x < node.w; x++) {
               localFloor(node.gx + x, node.gz + z, 2, 2, TILE.COLUMN);
-              if (rng() > 0.38) localFloor(node.gx + x, node.gz + z, 3, 3, TILE.COLUMN);
+              if (rng() > 0.45) localFloor(node.gx + x, node.gz + z, 3, 3, TILE.COLUMN);
             }
           }
         }
@@ -460,6 +461,17 @@ const LevelGenerator = {
       }
     }
 
+    // Checkpoint about halfway along the primary route.
+    let cpNode = null;
+    const mid = Math.max(2, Math.floor(dist[exitNode.id] * 0.5));
+    let best = 99;
+    for (let i = 0; i < MapGraph.nodes.length; i++) {
+      if (i === startNode.id || i === exitNode.id) continue;
+      const d = Math.abs(dist[i] - mid);
+      if (dist[i] < 9000 && d < best) { best = d; cpNode = MapGraph.nodes[i]; }
+    }
+    if (cpNode) cpNode.hasCheckpoint = true;
+
     function stampSpecial(node, kind) {
       const cx = node.gx + Math.floor(node.w / 2);
       const cz = node.gz + Math.floor(node.h / 2);
@@ -551,6 +563,7 @@ const LevelGenerator = {
     const exitCandidates = [];
     for (let i = 0; i < MapGraph.nodes.length; i++) {
       const n = MapGraph.nodes[i];
+      if (!n || n.id === startNode.id || n.id === exitNode.id || n.id === (cpNode ? cpNode.id : -1)) continue;
       if (n.deadEnd || n.type === "dead_end") continue;
       const cell = findSpecialCell(n);
       if (!cell) continue;
@@ -640,6 +653,9 @@ const LevelGenerator = {
       exitStamps.push(stamp);
     }
 
+    const cpStamp = cpNode ? stampSpecial(cpNode, TILE.CHECK) : null;
+    if (!cpStamp && cpNode) return null;
+
     // The primary exit must remain hidden from the starting area.
     function visibleLine(ax, az, bx, bz) {
       const steps = Math.max(Math.abs(bx - ax), Math.abs(bz - az));
@@ -686,6 +702,7 @@ const LevelGenerator = {
       startNode: startNode,
       exitNode: exitNode,
       exitNodes: exitNodes,
+      checkpointNode: cpNode,
       startStamp: startStamp,
       exitStamp: exitStamp,
       exitStamps: exitStamps,
@@ -1612,7 +1629,7 @@ const Level = {
       for (let x = 0; x < this.cols; x++) {
         if (this.getTile(x, z) !== TILE.COLUMN) continue;
         const w = this.tileToWorld(x, z);
-        const r = 0.43;
+        const r = 0.32;
         this.addBoxCollider(w.x - r, 0, w.z - r, w.x + r, H, w.z + r);
       }
     }
@@ -1787,6 +1804,15 @@ const Level = {
         if (t === TILE.START) {
           this.startPos.set(w.x, 0, w.z);
         }
+        if (t === TILE.CHECK) {
+          const pad = new THREE.Mesh(Geometries.box, Materials.checkpoint);
+          pad.scale.set(1.6, 0.06, 1.6);
+          pad.position.set(w.x, 0.03, w.z);
+          this.group.add(pad);
+          const cpId = "cp" + Checkpoints.list.filter((c) => c.id !== "start").length;
+          this.triggers.push({ type: "checkpoint", id: cpId, minx: w.x - 1.2, maxx: w.x + 1.2, minz: w.z - 1.2, maxz: w.z + 1.2 });
+          Checkpoints.register(cpId, new THREE.Vector3(w.x, 0, w.z), 0);
+        }
       }
     }
 
@@ -1828,7 +1854,7 @@ const Level = {
         if (duplicate) continue;
         usedLightTiles.push([tx, tz]);
         const w = this.tileToWorld(tx, tz);
-        const scale = profile === "BRIGHT" ? 1.22 : 0.98;
+        const scale = profile === "BRIGHT" ? 1.42 : 1.16;
         const withPoint = profile === "BRIGHT" && LightingSystem.lights.length < 34;
         LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, scale);
       }
@@ -1849,7 +1875,7 @@ const Level = {
     const darkFogMaterial = new THREE.MeshBasicMaterial({
       color: 0x17191c,
       transparent: true,
-      opacity: 0.15,
+      opacity: 0.23,
       depthWrite: false,
       side: THREE.DoubleSide
     });
@@ -1857,7 +1883,7 @@ const Level = {
     const darkFogEdgeMaterial = new THREE.MeshBasicMaterial({
       color: 0x2a2d30,
       transparent: true,
-      opacity: 0.075,
+      opacity: 0.11,
       depthWrite: false,
       side: THREE.DoubleSide
     });
@@ -1985,6 +2011,7 @@ const Level = {
       return this.buildProcedural(sceneRef, retry.seed);
     }
     GameState.seed = result.seed;
+    Checkpoints.reset();
     this.clear(sceneRef);
     // Level 1 deliberately removes scene.fog. Recreate the Level 0 fog
     // before loading meshes so DARK/NORMAL/BRIGHT modules work again after
