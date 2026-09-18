@@ -2,56 +2,6 @@
 
 let scene, renderer;
 
-
-const ScreenFx = {
-  target: null, scene: null, camera: null, mesh: null, enabled: true,
-  init() {
-    this.target = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
-      minFilter: THREE.LinearFilter, maxFilter: THREE.LinearFilter, depthBuffer: true, stencilBuffer: false
-    });
-    this.target.texture.colorSpace = THREE.SRGBColorSpace;
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: { tDiffuse: { value: this.target.texture }, amount: { value: 0.055 }, time: { value: 0 } },
-      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position,1.0); }`,
-      fragmentShader: `
-        uniform sampler2D tDiffuse; uniform float amount; uniform float time; varying vec2 vUv;
-        float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
-        vec2 barrel(vec2 uv){ vec2 p=uv*2.0-1.0; float r2=dot(p,p); p*=1.0-amount*r2; return p*0.5+0.5; }
-        void main(){
-          vec2 uv=barrel(vUv);
-          float edge=length(vUv-0.5)*1.4142;
-          float aberr=0.0015*edge*edge;
-          vec2 dir=normalize(vUv-0.5+vec2(0.00001));
-          vec3 col;
-          col.r=texture2D(tDiffuse, uv+dir*aberr).r;
-          col.g=texture2D(tDiffuse, uv).g;
-          col.b=texture2D(tDiffuse, uv-dir*aberr).b;
-          float scan=0.982+0.018*sin(vUv.y*900.0);
-          float vign=1.0-smoothstep(0.52,0.93,edge)*0.20;
-          float grain=(hash(vUv*vec2(1600.0,900.0)+time*0.7)-0.5)*0.028;
-          col=col*scan*vign+grain;
-          gl_FragColor=vec4(col,1.0);
-        }`
-    });
-    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2,2), mat);
-    this.scene.add(this.mesh);
-  },
-  resize() {
-    if (this.target) this.target.setSize(window.innerWidth, window.innerHeight);
-  },
-  render(world, cam) {
-    if (!this.enabled || !this.target) { renderer.render(world, cam); return; }
-    this.mesh.material.uniforms.time.value = performance.now()*0.001;
-    renderer.setRenderTarget(this.target);
-    renderer.clear();
-    renderer.render(world, cam);
-    renderer.setRenderTarget(null);
-    renderer.render(this.scene, this.camera);
-  }
-};
-
 const Game = {
   _nextFrame() { return new Promise(resolve => requestAnimationFrame(resolve)); },
   _setBoot(progress, status) {
@@ -113,10 +63,9 @@ const Game = {
     renderer.setPixelRatio(1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(CONFIG.fogColor);
-    ScreenFx.init();
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.28;
     document.body.appendChild(renderer.domElement);
 
     CameraRig.init();
@@ -172,7 +121,6 @@ const Game = {
     window.addEventListener("resize", () => {
       CameraRig.resize();
       renderer.setSize(window.innerWidth, window.innerHeight);
-      ScreenFx.resize();
     });
 
     if (typeof MenuSystem !== "undefined") MenuSystem.init();
@@ -232,6 +180,7 @@ const Game = {
     GameState.levelTimes = { 0: 0, 1: 0 };
     GameState.distance = 0;
     Player.resetToStart();
+    Checkpoints.respawn();
     AtmosphereSystem.reset();
     DarknessSystem.reset();
     EnvEventSystem.reset();
@@ -438,7 +387,7 @@ const Game = {
         GameState._fpsT = 0;
       }
     }
-    ScreenFx.render(scene, CameraRig.camera);
+    renderer.render(scene, CameraRig.camera);
   }
 };
 
