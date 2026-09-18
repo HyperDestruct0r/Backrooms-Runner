@@ -6,7 +6,7 @@
    collider / mesh / lighting pipeline.
    VERSION 4 entities can query MapGraph / Module records.
    ------------------------------------------------------------------ */
-const TILE = { WALL: 1, FLOOR: 0, START: 2, CHECK: 3, EXIT: 4, COLUMN: 5, DEAD: 6 };
+const TILE = { WALL: 1, FLOOR: 0, START: 2, EXIT: 4, COLUMN: 5, DEAD: 6 };
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -147,7 +147,6 @@ const LevelGenerator = {
         connections: [],
         deadEnd: type === "dead_end",
         hasExit: false,
-        hasCheckpoint: false,
         hasStart: type === "start",
         // Persistent per-module lighting profile.
         lightProfile: (function () {
@@ -461,17 +460,6 @@ const LevelGenerator = {
       }
     }
 
-    // Checkpoint about halfway along the primary route.
-    let cpNode = null;
-    const mid = Math.max(2, Math.floor(dist[exitNode.id] * 0.5));
-    let best = 99;
-    for (let i = 0; i < MapGraph.nodes.length; i++) {
-      if (i === startNode.id || i === exitNode.id) continue;
-      const d = Math.abs(dist[i] - mid);
-      if (dist[i] < 9000 && d < best) { best = d; cpNode = MapGraph.nodes[i]; }
-    }
-    if (cpNode) cpNode.hasCheckpoint = true;
-
     function stampSpecial(node, kind) {
       const cx = node.gx + Math.floor(node.w / 2);
       const cz = node.gz + Math.floor(node.h / 2);
@@ -563,7 +551,7 @@ const LevelGenerator = {
     const exitCandidates = [];
     for (let i = 0; i < MapGraph.nodes.length; i++) {
       const n = MapGraph.nodes[i];
-      if (!n || n.id === startNode.id || n.id === exitNode.id || n.id === (cpNode ? cpNode.id : -1)) continue;
+      if (!n || n.id === startNode.id || n.id === exitNode.id) continue;
       if (n.deadEnd || n.type === "dead_end") continue;
       const cell = findSpecialCell(n);
       if (!cell) continue;
@@ -653,8 +641,6 @@ const LevelGenerator = {
       exitStamps.push(stamp);
     }
 
-    const cpStamp = cpNode ? stampSpecial(cpNode, TILE.CHECK) : null;
-    if (!cpStamp && cpNode) return null;
 
     // The primary exit must remain hidden from the starting area.
     function visibleLine(ax, az, bx, bz) {
@@ -702,7 +688,6 @@ const LevelGenerator = {
       startNode: startNode,
       exitNode: exitNode,
       exitNodes: exitNodes,
-      checkpointNode: cpNode,
       startStamp: startStamp,
       exitStamp: exitStamp,
       exitStamps: exitStamps,
@@ -1804,15 +1789,6 @@ const Level = {
         if (t === TILE.START) {
           this.startPos.set(w.x, 0, w.z);
         }
-        if (t === TILE.CHECK) {
-          const pad = new THREE.Mesh(Geometries.box, Materials.checkpoint);
-          pad.scale.set(1.6, 0.06, 1.6);
-          pad.position.set(w.x, 0.03, w.z);
-          this.group.add(pad);
-          const cpId = "cp" + Checkpoints.list.filter((c) => c.id !== "start").length;
-          this.triggers.push({ type: "checkpoint", id: cpId, minx: w.x - 1.2, maxx: w.x + 1.2, minz: w.z - 1.2, maxz: w.z + 1.2 });
-          Checkpoints.register(cpId, new THREE.Vector3(w.x, 0, w.z), 0);
-        }
       }
     }
 
@@ -2005,13 +1981,12 @@ const Level = {
       const retry = LevelGenerator.generateValid(retrySeed, 160);
       if (!retry) {
         const startSeed = document.getElementById("start-seed");
-        if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — PRESS R TO RETRY";
+        if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — PRESS G TO RETRY";
         return false;
       }
       return this.buildProcedural(sceneRef, retry.seed);
     }
     GameState.seed = result.seed;
-    Checkpoints.reset();
     this.clear(sceneRef);
     // Level 1 deliberately removes scene.fog. Recreate the Level 0 fog
     // before loading meshes so DARK/NORMAL/BRIGHT modules work again after
