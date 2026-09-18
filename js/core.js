@@ -160,8 +160,7 @@ const CONFIG = {
     use: "KeyE",
     flashlight: "KeyF",
     nearestExit: "KeyN",
-    regenerate: "KeyG",
-    respawn: "KeyR"
+    regenerate: "KeyG"
   },
   flashlight: {
     // Deliberately powerful: Level 1 blackouts are nearly pitch black.
@@ -503,9 +502,6 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
   }
 
-  if (e.code === CONFIG.keys.respawn && GameState.phase === "playing") {
-    Checkpoints.respawn();
-  }
   if (e.code === CONFIG.keys.regenerate && GameState.ready && (GameState.phase === "playing" || GameState.phase === "complete" || GameState.phase === "start")) {
     if (e.repeat || GameState.regenerating) return;
     e.preventDefault();
