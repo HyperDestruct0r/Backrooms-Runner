@@ -196,11 +196,11 @@ const LevelGenerator = {
             if (z + 1 < node.h) openInternalEdge(node.gx + x, node.gz + z, node.gx + x, node.gz + z + 1);
           }
         }
-        if (node.type === "room_pillar" || (node.type === "room_large" && rng() > 0.35)) {
+        if (node.type === "room_pillar" || (node.type === "room_large" && rng() > 0.22)) {
           for (let z = 0; z < node.h; z++) {
             for (let x = 0; x < node.w; x++) {
               localFloor(node.gx + x, node.gz + z, 2, 2, TILE.COLUMN);
-              if (rng() > 0.45) localFloor(node.gx + x, node.gz + z, 3, 3, TILE.COLUMN);
+              if (rng() > 0.38) localFloor(node.gx + x, node.gz + z, 3, 3, TILE.COLUMN);
             }
           }
         }
@@ -1612,7 +1612,7 @@ const Level = {
       for (let x = 0; x < this.cols; x++) {
         if (this.getTile(x, z) !== TILE.COLUMN) continue;
         const w = this.tileToWorld(x, z);
-        const r = 0.32;
+        const r = 0.43;
         this.addBoxCollider(w.x - r, 0, w.z - r, w.x + r, H, w.z + r);
       }
     }
