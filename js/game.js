@@ -224,6 +224,24 @@ const Game = {
       document.exitPointerLock();
     }
 
+    // Fully tear down Level 1 when abandoning a run. This also invalidates
+    // any deferred Level 1 load that may still be waiting on a setTimeout.
+    if (typeof Stairwell !== "undefined" && Stairwell.cancelPendingTransition) {
+      Stairwell.cancelPendingTransition();
+    }
+    if (typeof Level1 !== "undefined") Level1.resetVisuals();
+    if (typeof Level !== "undefined") {
+      Level.colliders.length = 0;
+      Level.triggers.length = 0;
+      Level.group = null;
+      Level.tiles = [];
+      Level.cols = 0;
+      Level.rows = 0;
+      Level.worldMin.set(-Infinity, -2, -Infinity);
+      Level.worldMax.set(Infinity, 8, Infinity);
+      Level.startPos.set(0, 0, 0);
+    }
+
     const loadOverlay = document.getElementById("game-loading");
     if (loadOverlay) loadOverlay.style.display = "none";
     const completeOverlay = document.getElementById("complete-overlay");
