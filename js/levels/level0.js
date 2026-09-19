@@ -35,7 +35,9 @@ const MapGraph = {
     this.nodes = [];
     this.edges = [];
     this.cellOwner = [];
-  },
+  }
+
+,
   nodeAt(gx, gz) {
     if (!this.cellOwner[gz]) return null;
     const id = this.cellOwner[gz][gx];
@@ -236,9 +238,13 @@ const LevelGenerator = {
         if (incomingDir === 1 || incomingDir === 3) { w = len; h = 1; }
         else { w = 1; h = len; }
       } else if (type === "room_large" || type === "room_pillar") {
-        w = 2; h = 2;
-        if (rng() < 0.25) { w = 3; h = 2; }
-        if (rng() < 0.12) { w = 2; h = 3; }
+        // Larger modules create the broad, open-room feel seen in the menu
+        // wallpaper instead of turning the entire level into narrow corridors.
+        const r = rng();
+        if (r < 0.42) { w = 3; h = 3; }
+        else if (r < 0.68) { w = 4; h = 3; }
+        else if (r < 0.86) { w = 3; h = 2; }
+        else { w = 2; h = 3; }
       } else if (type === "room_small" && rng() < 0.2) {
         w = 2; h = 1;
       }
@@ -348,12 +354,12 @@ const LevelGenerator = {
 
       const roll = rng();
       let type = "corridor";
-      if (roll < 0.24) type = "corridor";
-      else if (roll < 0.38) type = "hall_long";
-      else if (roll < 0.50) type = "corner";
-      else if (roll < 0.66) type = "junction";
-      else if (roll < 0.79) type = "room_small";
-      else if (roll < 0.90) type = "room_large";
+      if (roll < 0.18) type = "corridor";
+      else if (roll < 0.27) type = "hall_long";
+      else if (roll < 0.35) type = "corner";
+      else if (roll < 0.48) type = "junction";
+      else if (roll < 0.58) type = "room_small";
+      else if (roll < 0.84) type = "room_large";
       else type = "room_pillar";
 
       const node = tryPlace(type, ngx, ngz, sock.dir);
@@ -542,10 +548,69 @@ const LevelGenerator = {
     // First exit remains the original long-route exit, preserving the
     // established 500–1000m objective. Additional exits are chosen from
     // other reachable branches and are separated by real walking distance.
-    const firstExitCell = findSpecialCell(exitNode);
-    if (!firstExitCell) return null;
-    const firstPathMeters = startDistances[firstExitCell.z][firstExitCell.x] * CONFIG.tile;
-    if (firstPathMeters < CONFIG.gen.minPath) return null;
+    function hasElevatorHallway(cell) {
+      if (!cell) return false;
+      const floorCell = (x,z) => {
+        if (x < 0 || z < 0 || x >= cols || z >= rows) return false;
+        const t = tiles[z][x];
+        return t !== TILE.WALL && t !== TILE.COLUMN;
+      };
+      const dirs = [
+        {fx:0,fz:-1,rx:1,rz:0},
+        {fx:1,fz:0,rx:0,rz:1},
+        {fx:0,fz:1,rx:-1,rz:0},
+        {fx:-1,fz:0,rx:0,rz:-1}
+      ];
+      for (const d of dirs) {
+        let straight=0, ok=true;
+        for (let n=1;n<=4;n++) {
+          const tx=cell.x-d.fx*n, tz=cell.z-d.fz*n;
+          if (!floorCell(tx,tz)) { ok=false; break; }
+          straight++;
+          for (const side of [-1,1]) {
+            if (!floorCell(tx+d.rx*side,tz+d.rz*side)) ok=false;
+          }
+        }
+        if (ok && straight >= 3) return true;
+      }
+      return false;
+    }
+
+    let firstExitCell = findSpecialCell(exitNode);
+    let firstPathMeters = firstExitCell ? startDistances[firstExitCell.z][firstExitCell.x] * CONFIG.tile : -1;
+    if (!firstExitCell || firstPathMeters < CONFIG.gen.minPath || !hasElevatorHallway(firstExitCell)) {
+      // The primary exit is required to be mounted in a real hallway. If the
+      // original spine endpoint is in a room, promote the nearest eligible
+      // spine node that still preserves the 500–1000m walking-distance goal.
+      let replacement=null;
+      // Prefer genuine corridor modules first. Their two-tile-wide passage is
+      // what the facade is designed to sit against.
+      const exitPool = spine.slice().reverse().concat(MapGraph.nodes.slice().reverse());
+      const seenExitIds=new Set();
+      for (const candidate of exitPool) {
+        if (!candidate || seenExitIds.has(candidate.id) || candidate.id===startNode.id || dist[candidate.id] < 0) continue;
+        seenExitIds.add(candidate.id);
+        if (candidate.type!=='corridor' && candidate.type!=='hall_long') continue;
+        const cell=findSpecialCell(candidate);
+        if (!cell || !hasElevatorHallway(cell)) continue;
+        const meters=startDistances[cell.z][cell.x] * CONFIG.tile;
+        if (meters >= CONFIG.gen.minPath && meters <= CONFIG.gen.maxPath) { replacement={candidate,cell,meters}; break; }
+      }
+      if (!replacement) {
+        // Last resort: any eligible module at or beyond the minimum distance.
+        for (const candidate of MapGraph.nodes.slice().reverse()) {
+          if (!candidate || candidate.id===startNode.id || dist[candidate.id] < 0) continue;
+          const cell=findSpecialCell(candidate);
+          if (!cell || !hasElevatorHallway(cell)) continue;
+          const meters=startDistances[cell.z][cell.x] * CONFIG.tile;
+          if (meters >= CONFIG.gen.minPath) { replacement={candidate,cell,meters}; break; }
+        }
+      }
+      if (!replacement) return null;
+      exitNode=replacement.candidate;
+      firstExitCell=replacement.cell;
+      firstPathMeters=replacement.meters;
+    }
 
     const exitNodes = [exitNode];
     const exitCandidates = [];
@@ -932,6 +997,8 @@ const Stairwell = {
   sequenceT: 0,
   sequenceDuration: 6.5,
   sequenceExitIndex: -1,
+  transitionToken: 0,
+  pendingTransitionTimer: null,
   cabGroups: [],
   avatarGroups: [],
   doorPairs: [],
@@ -955,59 +1022,83 @@ const Stairwell = {
     if (ov) ov.style.display = 'none';
   },
 
+  cancelPendingTransition() {
+    this.transitionToken++;
+    if (this.pendingTransitionTimer !== null) {
+      clearTimeout(this.pendingTransitionTimer);
+      this.pendingTransitionTimer = null;
+    }
+    this.sequenceActive = false;
+    this.sequenceT = 0;
+    this.sequenceExitIndex = -1;
+    this.reached = false;
+    GameState.exitReached = false;
+    GameState.cinematicCamera = false;
+    GameState.elevatorShake = 0;
+  },
+
   planOne(result, stamp, exitNode) {
     const ex = stamp.x, ez = stamp.z;
     const w = Level.tileToWorld(ex, ez);
-    const dirs = [
-      { fx: 0, fz: 1, rx: 1, rz: 0 },
-      { fx: 0, fz: -1, rx: -1, rz: 0 },
-      { fx: 1, fz: 0, rx: 0, rz: -1 },
-      { fx: -1, fz: 0, rx: 0, rz: 1 }
+    // The elevator is deliberately a wall-mounted facade, not a room/cab.
+    // A valid site must have a real two-tile-wide hallway directly in front
+    // of the doors. The door normal is derived from that hallway direction,
+    // so the elevator can never be rotated independently of its approach.
+    const candidates = [
+      { fx: 0, fz: -1, rx: 1, rz: 0 },
+      { fx: 1, fz: 0, rx: 0, rz: 1 },
+      { fx: 0, fz: 1, rx: -1, rz: 0 },
+      { fx: -1, fz: 0, rx: 0, rz: -1 }
     ];
-    let best = dirs[0], bestScore = -1e9;
-    // Face the direction the player approaches from. The exit stamp is in
-    // the center of a generated module, so this selects a broad open side
-    // rather than trying to extend a staircase into neighboring modules.
-    for (let i = 0; i < dirs.length; i++) {
-      const d = dirs[i];
-      let score = 0, behindRun = 0;
-      for (let ss = 1; ss <= 5; ss++) {
-        const tx = ex - Math.round(d.fx * ss), tz = ez - Math.round(d.fz * ss);
-        if (!Level.inBounds(tx, tz)) break;
-        const t = Level.getTile(tx, tz);
-        if (t === TILE.WALL || t === TILE.COLUMN) break;
-        behindRun++;
-      }
-      score += behindRun * 20;
-      if (exitNode && exitNode.connections) {
-        for (let c = 0; c < exitNode.connections.length; c++) {
-          const nb = MapGraph.nodes[exitNode.connections[c]];
-          if (!nb) continue;
-          const ndx = (exitNode.gx + exitNode.w * 0.5) - (nb.gx + nb.w * 0.5);
-          const ndz = (exitNode.gz + exitNode.h * 0.5) - (nb.gz + nb.h * 0.5);
-          const cx = Math.abs(ndx) >= Math.abs(ndz) ? (ndx >= 0 ? 1 : -1) : 0;
-          const cz = Math.abs(ndx) >= Math.abs(ndz) ? 0 : (ndz >= 0 ? 1 : -1);
-          if (cx === d.fx && cz === d.fz) score += 35;
+    const floor = (tx,tz) => Level.getTile(tx,tz) !== TILE.WALL && Level.getTile(tx,tz) !== TILE.COLUMN;
+    const scored = [];
+    for (const d of candidates) {
+      const frontX = -d.fx, frontZ = -d.fz;
+      let straight = 0;
+      let widthOK = true;
+      // Require a continuous approach lane and a full 2-tile hallway width.
+      for (let n=1;n<=4;n++) {
+        const tx=ex+frontX*n, tz=ez+frontZ*n;
+        if (!floor(tx,tz)) { widthOK=false; break; }
+        straight++;
+        for (const side of [-1,1]) {
+          const sx=tx+d.rx*side, sz=tz+d.rz*side;
+          if (!floor(sx,sz)) widthOK=false;
         }
       }
-      if (score > bestScore) { bestScore = score; best = d; }
+      if (!widthOK || straight<3) continue;
+      let score=straight*25;
+      if (exitNode && exitNode.connections) {
+        for (const id of exitNode.connections) {
+          const nb=MapGraph.nodes[id]; if(!nb) continue;
+          const ndx=(exitNode.gx+exitNode.w*.5)-(nb.gx+nb.w*.5);
+          const ndz=(exitNode.gz+exitNode.h*.5)-(nb.gz+nb.h*.5);
+          const cx=Math.abs(ndx)>=Math.abs(ndz)?(ndx>=0?1:-1):0;
+          const cz=Math.abs(ndx)>=Math.abs(ndz)?0:(ndz>=0?1:-1);
+          if(cx===frontX && cz===frontZ) score+=40;
+        }
+      }
+      scored.push({score,d});
     }
+    if (!scored.length) return null;
+    scored.sort((a,b)=>b.score-a.score);
+    const best=scored[0].d;
 
     const elevator = {
       fx: best.fx, fz: best.fz, rx: best.rx, rz: best.rz,
-      // Center the cab on the special tile. Its front doors face the
-      // approach direction (-fx,-fz), so the player enters straight ahead.
+      // Origin is the wall plane. The facade projects only a few inches into
+      // the hallway; there is no walkable shaft or floor hole behind it.
       origin: new THREE.Vector3(w.x, 0, w.z),
       hole: null,
-      minY: -10,
-      width: 4.6,
-      depth: 5.2,
+      minY: 0,
+      width: 3.2,
+      depth: 0.50,
       height: 3.2,
       steps: 0,
       rise: 0,
       run: 0,
       landingAfter: 0,
-      landingLen: 3.8,
+      landingLen: 0,
       exitStamp: stamp,
       exitNode: exitNode,
       local(side, along) {
@@ -1015,18 +1106,6 @@ const Stairwell = {
                  z: this.origin.z + this.rz * side + this.fz * along };
       }
     };
-    const half = elevator.width * 0.5;
-    const halfD = elevator.depth * 0.5;
-    // Cut only the elevator shaft footprint from the Level 0 floor. The
-    // cabin floor covers it before descent and moves down with the cab.
-    const corners = [
-      elevator.local(-half, -halfD), elevator.local(half, -halfD),
-      elevator.local(-half, halfD), elevator.local(half, halfD)
-    ];
-    let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
-    for (const c of corners) { minx=Math.min(minx,c.x); maxx=Math.max(maxx,c.x); minz=Math.min(minz,c.z); maxz=Math.max(maxz,c.z); }
-    elevator.hole = {minx:minx-0.10,maxx:maxx+0.10,minz:minz-0.10,maxz:maxz+0.10};
-    elevator.minY = -11;
     return elevator;
   },
 
@@ -1034,6 +1113,7 @@ const Stairwell = {
     this.reset();
     if (!result || !result.exitStamps || !result.exitStamps.length) return;
     const nodes = result.exitNodes || [];
+    // Only promote exits that actually have a hallway-facing facade site.
     for (let i=0;i<result.exitStamps.length;i++) {
       const st=this.planOne(result,result.exitStamps[i],nodes[i]||result.exitNode);
       if(st) this.exits.push(st);
@@ -1052,268 +1132,105 @@ const Stairwell = {
   },
 
   containsWorld(x,z){
-    for(const st of this.exits){const h=st.hole;if(h&&x>=h.minx&&x<=h.maxx&&z>=h.minz&&z<=h.maxz)return true;}
+    // Kept for compatibility with the rest of Level 0. The new facade has no
+    // shaft footprint, so there is deliberately no special floor hole.
     return false;
   },
   nearConcrete(x,z){
     for(const st of this.exits){
-      const h=st.hole;if(!h||!st.origin)continue;
-      const pad=2.4;
-      if(x>=h.minx-pad&&x<=h.maxx+pad&&z>=h.minz-pad&&z<=h.maxz+pad)return true;
+      if(!st||!st.origin)continue;
+      const frontX=-st.fx, frontZ=-st.fz;
+      const dx=x-(st.origin.x+frontX*0.35), dz=z-(st.origin.z+frontZ*0.35);
+      const along=dx*frontX+dz*frontZ;
+      const side=dx*st.rx+dz*st.rz;
+      if(along>=-0.35&&along<=2.5&&Math.abs(side)<=st.width*0.7)return true;
     }
     return false;
   },
-  playerInside(){
-    for(const st of this.exits){const h=st.hole;if(h&&Player.position.x>=h.minx&&Player.position.x<=h.maxx&&Player.position.z>=h.minz&&Player.position.z<=h.maxz)return true;}
-    return false;
-  },
+  playerInside(){ return false; },
   addBox(group,mat,cx,cy,cz,sx,sy,sz){const m=new THREE.Mesh(Geometries.box,mat);m.scale.set(sx,sy,sz);m.position.set(cx,cy,cz);group.add(m);return m;},
   addCol(minx,miny,minz,maxx,maxy,maxz){Level.addBoxCollider(minx,miny,minz,maxx,maxy,maxz);},
   span(st,along,across){return{x:Math.abs(st.rx)*across+Math.abs(st.fx)*along,z:Math.abs(st.rz)*across+Math.abs(st.fz)*along};},
   slab(group,st,mat,side,along,y,alongLen,across,thick){const p=st.local(side,along),sz=this.span(st,alongLen,across);this.addBox(group,mat,p.x,y,p.z,sz.x,thick,sz.z);return p;},
 
   buildOne(sceneRef,st,index){
-    const g=new THREE.Group();
-    g.name='ConcreteElevator_'+index;
-
-    // A deliberately realistic industrial elevator: concrete shaft/lobby,
-    // recessed metal doors, concrete wall panels, a proper cab ceiling,
-    // control panel, handrail, floor threshold and practical lighting.
-    const concrete = Materials.concrete;
-    const concreteDark = Materials.concreteDark;
-    const concreteLight = new THREE.MeshStandardMaterial({
-      map: Materials.concrete.map || null,
-      color: 0xc2c2bd,
-      emissive: 0x161716, emissiveIntensity: 0.22,
-      roughness: 0.91,
-      metalness: 0.02
+    const g=new THREE.Group(); g.name='ConcreteElevatorFacade_'+index;
+    const concrete=Materials.concrete;
+    const concreteDark=Materials.concreteDark;
+    const concreteLight=new THREE.MeshStandardMaterial({
+      map:Materials.concrete.map||null,color:0xb7b8b3,emissive:0x111212,emissiveIntensity:0.16,roughness:0.92,metalness:0.02
     });
-    const concreteEdge = new THREE.MeshStandardMaterial({
-      map: Materials.concrete.map || null,
-      color: 0x94948f,
-      emissive: 0x0a0b0a, emissiveIntensity: 0.10,
-      roughness: 0.96,
-      metalness: 0.02
+    const concreteEdge=new THREE.MeshStandardMaterial({
+      map:Materials.concrete.map||null,color:0x7e817e,emissive:0x080909,emissiveIntensity:0.08,roughness:0.96,metalness:0.02
     });
-    const steel = new THREE.MeshStandardMaterial({
-      color: 0x777a78,
-      roughness: 0.62,
-      metalness: 0.58
-    });
-    const steelDark = new THREE.MeshStandardMaterial({
-      color: 0x343735,
-      roughness: 0.72,
-      metalness: 0.5
-    });
-    const brushed = new THREE.MeshStandardMaterial({
-      color: 0x9a9d99,
-      roughness: 0.42,
-      metalness: 0.78
-    });
-    const black = new THREE.MeshStandardMaterial({
-      color: 0x161817,
-      roughness: 0.8,
-      metalness: 0.18
-    });
-    const panelMat = new THREE.MeshStandardMaterial({
-      color: 0x696b68,
-      roughness: 0.76,
-      metalness: 0.25
-    });
-    const buttonMat = new THREE.MeshStandardMaterial({
-      color: 0xb7b8b3,
-      roughness: 0.32,
-      metalness: 0.72
-    });
-    const indicatorMat = new THREE.MeshStandardMaterial({
-      color: 0xd7ddd7,
-      emissive: 0x6f7b73,
-      emissiveIntensity: 0.7,
-      roughness: 0.25,
-      metalness: 0.1
-    });
-
-    const W=st.width, D=st.depth, H=st.height, half=W/2, halfD=D/2;
+    const steel=new THREE.MeshStandardMaterial({color:0x686b69,roughness:0.56,metalness:0.68});
+    const steelDark=new THREE.MeshStandardMaterial({color:0x292c2b,roughness:0.78,metalness:0.42});
+    const W=st.width,H=st.height,half=W/2;
     const p=st.origin;
     const L=(side,along)=>st.local(side,along);
     const sref=sceneRef||scene;
+    const front=-0.10;
+    const doorH=2.42;
+    const doorW=(W-0.18)/2;
 
-    // ---------- Concrete shaft / exterior frame ----------
-    // Keep the shaft visually substantial but leave the actual entrance open.
-    const shaftDepth = D + 1.25;
-    const shaftBottom = -12;
-    const wallT = 0.34;
-    // Keep the shaft walls behind the elevator face. They must not project
-    // several metres into the Level 0 approach corridor.
-    const shaftAlongCenter = (0.70);
+    // Solid concrete backing: this is a visual imprint in the wall, not an
+    // opening. The player can approach the doors but can never walk into them.
+    const back=L(0,0.16); const backSz=this.span(st,0.52,W+0.34);
+    this.addBox(g,concreteDark,back.x,H/2,back.z,backSz.x,H,backSz.z);
+
+    // Shallow concrete surround, kept inside the normal 2-tile hallway width.
     for(const side of [-1,1]){
-      const q=L(side*(half+wallT*0.5),shaftAlongCenter);
-      const sz=this.span(st,shaftDepth,wallT);
-      this.addBox(g,concreteEdge,q.x,(shaftBottom+H)/2,q.z,sz.x,H-shaftBottom,sz.z);
+      const q=L(side*(half+0.16),front+0.02); const sz=this.span(st,0.34,0.32);
+      this.addBox(g,concreteLight,q.x,H/2,q.z,sz.x,H,sz.z);
     }
-    const back=L(0,halfD+0.55);
-    const backSz=this.span(st,wallT,W+wallT*2);
-    this.addBox(g,concreteEdge,back.x,(shaftBottom+H)/2,back.z,backSz.x,H-shaftBottom,backSz.z);
+    const lint=L(0,front+0.02); const lintSz=this.span(st,0.34,W+0.32);
+    this.addBox(g,concreteLight,lint.x,H-0.22,lint.z,lintSz.x,0.44,lintSz.z);
 
-    // Large concrete entrance surround, intentionally lighter than the shaft.
-    const jambW=0.48, lintelH=0.42;
-    for(const side of [-1,1]){
-      const q=L(side*(half+jambW*0.5-0.04),-halfD+0.18);
-      const sz=this.span(st,0.55,jambW);
-      this.addBox(g,concreteLight,q.x,H*0.5,q.z,sz.x,H,sz.z);
-    }
-    const ql=L(0,-halfD+0.18);
-    const qls=this.span(st,0.55,W+jambW*2-0.08);
-    this.addBox(g,concreteLight,ql.x,H-lintelH*0.5,ql.z,qls.x,lintelH,qls.z);
+    // Recessed dark door pocket.
+    const pocket=L(0,front+0.02); const pocketSz=this.span(st,0.18,W-0.18);
+    this.addBox(g,steelDark,pocket.x,doorH*0.5,pocket.z,pocketSz.x,doorH,pocketSz.z);
 
-    // Concrete panel seams on the exterior surround — subtle, not decorative.
-    for(const side of [-1,1]){
-      for(const yy of [0.92,1.86,2.78]){
-        const q=L(side*(half+0.012),-halfD+0.22);
-        const sz=this.span(st,0.07,0.24);
-        this.addBox(g,concreteEdge,q.x,yy,q.z,sz.x,0.028,sz.z);
-      }
-    }
-    const topSeam=L(0,-halfD+0.205);
-    const topSeamSz=this.span(st,0.07,W-0.9);
-    this.addBox(g,concreteEdge,topSeam.x,2.48,topSeam.z,topSeamSz.x,0.025,topSeamSz.z);
-
-    // ---------- Elevator cab ----------
-    // The cabin floor sits at Level 0 until the sequence begins, then the
-    // whole group descends. This keeps the exit self-contained.
-    this.addBox(g,concreteLight,p.x,-0.08,p.z,W,0.16,D);
-    this.addBox(g,concreteEdge,p.x,-0.17,p.z,W+0.08,0.12,D+0.08);
-
-    // Back wall with large concrete panels and central seam.
-    const backCab=L(0,halfD-0.08);
-    const backCabSz=this.span(st,0.20,W);
-    this.addBox(g,concreteLight,backCab.x,H*0.5,backCab.z,backCabSz.x,H,backCabSz.z);
-    const backSeam=L(0,halfD-0.185);
-    const seamSz=this.span(st,0.025,0.035);
-    this.addBox(g,concreteEdge,backSeam.x,1.65,backSeam.z,seamSz.x,3.0,seamSz.z);
-
-    // Side walls, with shallow panel strips.
-    for(const side of [-1,1]){
-      const q=L(side*(half-0.12),0);
-      const sz=this.span(st,D-0.24,0.24);
-      this.addBox(g,concreteLight,q.x,H*0.5,q.z,sz.x,H,sz.z);
-      for(const along of [-1.35,0,1.35]){
-        const sq=L(side*(half-0.245),along);
-        const ssz=this.span(st,0.028,0.035);
-        this.addBox(g,concreteEdge,sq.x,1.62,sq.z,ssz.x,2.82,ssz.z);
-      }
-    }
-
-    // Ceiling recess and practical fluorescent light.
-    this.addBox(g,concreteEdge,p.x,H-0.08,p.z,W,0.16,D);
-    const ceilingInset=L(0,0.12);
-    const csz=this.span(st,2.25,0.44);
-    this.addBox(g,black,ceilingInset.x,H-0.18,ceilingInset.z,csz.x,0.08,csz.z);
-    const lsz=this.span(st,1.95,0.16);
-    this.addBox(g,Materials.light,ceilingInset.x,H-0.12,ceilingInset.z,lsz.x,0.055,lsz.z);
-
-    // Recessed metal door pocket around the front opening.
-    const doorH=2.46;
-    const doorW=(W-0.34)/2;
-    const pocketY=doorH*0.5;
-    const pocketL=L(-half+0.17+doorW*0.5,-halfD+0.19);
-    const pocketR=L(half-0.17-doorW*0.5,-halfD+0.19);
-    const doorSize=this.span(st,0.12,doorW);
-    const dl=this.addBox(g,brushed,pocketL.x,pocketY,pocketL.z,doorSize.x,doorH,doorSize.z);
-    const dr=this.addBox(g,brushed,pocketR.x,pocketY,pocketR.z,doorSize.x,doorH,doorSize.z);
-    dl.userData.elevatorDoor=true;
-    dr.userData.elevatorDoor=true;
-    const pair={left:dl,right:dr,openLeft:pocketL.x,openRight:pocketR.x,st:st,doorW:doorW,doorH:doorH};
+    // Sliding doors. Start closed; the approach trigger opens them visually,
+    // but the solid backing remains directly behind them.
+    const leftClosed=L(-doorW*0.5,front); const rightClosed=L(doorW*0.5,front);
+    const doorSize=this.span(st,0.10,doorW);
+    const dl=this.addBox(g,steel,leftClosed.x,doorH*0.5,leftClosed.z,doorSize.x,doorH,doorSize.z);
+    const dr=this.addBox(g,steel,rightClosed.x,doorH*0.5,rightClosed.z,doorSize.x,doorH,doorSize.z);
+    const openOffset=0.34;
+    const leftOpen=L(-doorW*0.5-openOffset,front), rightOpen=L(doorW*0.5+openOffset,front);
+    const pair={left:dl,right:dr,closedL:leftClosed,closedR:rightClosed,openL:leftOpen,openR:rightOpen,st:st,doorW:doorW,doorH:doorH,openT:0,opening:false};
     this.doorPairs[index]=pair;
 
-    // Door seams and top/bottom tracks.
-    const center=L(0,-halfD+0.13);
-    const seamSize=this.span(st,0.10,0.032);
-    this.addBox(g,steelDark,center.x,doorH/2,center.z,seamSize.x,doorH,seamSize.z);
-    const track=this.span(st,0.34,W-0.46);
-    this.addBox(g,steelDark,center.x,0.105,center.z,track.x,0.06,track.z);
-    this.addBox(g,steelDark,center.x,doorH+0.015,center.z,track.x,0.05,track.z);
+    const seam=L(0,front-0.01); const seamSz=this.span(st,0.12,0.028);
+    this.addBox(g,steelDark,seam.x,doorH/2,seam.z,seamSz.x,doorH,seamSz.z);
+    const top=L(0,front+0.02); const topSz=this.span(st,0.20,W-0.28);
+    this.addBox(g,steelDark,top.x,doorH+0.03,top.z,topSz.x,0.06,topSz.z);
 
-    // ---------- Real elevator controls ----------
-    const cp=L(-half+0.34,0.08);
-    // Panel stands slightly proud of the concrete wall.
-    const cps=this.span(st,0.46,0.46);
-    this.addBox(g,panelMat,cp.x,1.30,cp.z,cps.x,1.00,cps.z);
-    const screen=L(-half+0.34,0.08);
-    const ss=this.span(st,0.06,0.25);
-    this.addBox(g,black,screen.x,1.68,screen.z,ss.x,0.18,ss.z);
-    this.addBox(g,indicatorMat,screen.x,1.68,screen.z,ss.x*0.72,0.045,ss.z*0.62);
-    for(let i=0;i<3;i++){
-      const b=L(-half+0.34,0.95+i*0.18);
-      const bs=this.span(st,0.05,0.07);
-      this.addBox(g,buttonMat,b.x,1.38-i*0.18,b.z,bs.x,0.075,bs.z);
-    }
+    // Small indicator and call button to sell the elevator as part of the wall.
+    const indicator=new THREE.MeshStandardMaterial({color:0xd2d7d2,emissive:0x8a958c,emissiveIntensity:0.55,roughness:0.3,metalness:0.15});
+    const sign=L(-half-0.24,front-0.02); const signSz=this.span(st,0.08,0.16);
+    this.addBox(g,indicator,sign.x,2.02,sign.z,signSz.x,0.06,signSz.z);
+    const button=L(half+0.22,front-0.02); const buttonSz=this.span(st,0.08,0.11);
+    this.addBox(g,indicator,button.x,1.28,button.z,buttonSz.x,0.10,buttonSz.z);
 
-    // Handrail on the back wall: unmistakably elevator-like, but industrial.
-    const railMat=brushed;
-    const railY=0.92;
-    const railL=L(-half+0.48,halfD-0.28);
-    const railR=L(half-0.48,halfD-0.28);
-    const railSpan=this.span(st,0.10,W-0.96);
-    this.addBox(g,railMat, p.x,railY,railL.z,railSpan.x,0.075,railSpan.z);
-    for(const side of [-1,1]){
-      const rq=L(side*(half-0.52),halfD-0.28);
-      const rs=this.span(st,0.10,0.045);
-      this.addBox(g,railMat,rq.x,railY*0.65,rq.z,rs.x,0.50,rs.z);
-    }
-
-    // Threshold at the entrance.
-    const threshold=L(0,-halfD+0.02);
-    const ths=this.span(st,0.24,W-0.26);
-    this.addBox(g,brushed,threshold.x,0.075,threshold.z,ths.x,0.10,ths.z);
-
-    // Small warning/maintenance plate above the doors.
-    const plate=L(0,-halfD+0.03);
-    const ps=this.span(st,0.04,0.44);
-    this.addBox(g,steelDark,plate.x,2.68,plate.z,ps.x,0.16,ps.z);
-    const ptxt=L(0,-halfD+0.055);
-    const pts=this.span(st,0.02,0.27);
-    this.addBox(g,indicatorMat,ptxt.x,2.68,ptxt.z,pts.x,0.035,pts.z);
-
-    // Lighting: a strong cabin ceiling light + softer shaft/lobby light.
+    // A very small pool of light makes the recess readable without creating a
+    // bright room around the exit.
     if(sref){
-      const cabLight=new THREE.PointLight(0xfff3d7,2.4,8.0,1.5);
-      cabLight.position.set(ceilingInset.x,H-0.30,ceilingInset.z);
-      sref.add(cabLight); LightingSystem.lights.push(cabLight);
-      const lobbyLight=new THREE.PointLight(0xe6e8e2,1.65,8.5,1.55);
-      const lp=L(0,-halfD-0.55);
-      lobbyLight.position.set(lp.x,2.65,lp.z);
-      sref.add(lobbyLight); LightingSystem.lights.push(lobbyLight);
-      const facadeL=L(-half-0.55,-halfD-0.45);
-      const facadeR=L(half+0.55,-halfD-0.45);
-      const fl=new THREE.PointLight(0xf0ead2,1.15,5.5,1.8); fl.position.set(facadeL.x,2.0,facadeL.z);
-      const fr=new THREE.PointLight(0xf0ead2,1.15,5.5,1.8); fr.position.set(facadeR.x,2.0,facadeR.z);
-      sref.add(fl,fr); LightingSystem.lights.push(fl,fr);
+      const Lg=new THREE.PointLight(0xe9eee8,0.72,4.5,1.8);
+      const lp=L(0,front-0.35); Lg.position.set(lp.x,1.75,lp.z); sref.add(Lg); LightingSystem.lights.push(Lg);
     }
 
-    // Simple visible player avatar for the descent cinematic. It is intentionally
-    // stylized and neutral so the first-person player can see their own body.
-    const avatar=new THREE.Group(); avatar.name='PlayerCinematicAvatar';
-    const suit=new THREE.MeshStandardMaterial({color:0x60645f,roughness:0.82,metalness:0.04});
-    const skin=new THREE.MeshStandardMaterial({color:0xb59a80,roughness:0.9,metalness:0});
-    const torso=new THREE.Mesh(Geometries.box,suit); torso.scale.set(0.42,0.92,0.25); torso.position.y=1.08;
-    const head=new THREE.Mesh(Geometries.box,skin); head.scale.set(0.30,0.34,0.28); head.position.y=1.72;
-    const legL=new THREE.Mesh(Geometries.box,suit); legL.scale.set(0.15,0.68,0.16); legL.position.set(-0.12,0.34,0);
-    const legR=new THREE.Mesh(Geometries.box,suit); legR.scale.set(0.15,0.68,0.16); legR.position.set(0.12,0.34,0);
-    avatar.add(torso,head,legL,legR); avatar.position.set(p.x,p.y+0.02,p.z); avatar.rotation.y=Math.atan2(-st.fx,-st.fz); g.add(avatar);
-    this.avatarGroups=this.avatarGroups||[]; this.avatarGroups[index]=avatar;
+    sceneRef.add(g); this.cabGroups[index]=g;
 
-    sceneRef.add(g);
-    this.cabGroups[index]=g;
+    // Solid backing collider; there is intentionally no floor collider/hole.
+    const wallCenter=L(0,0.20); const wallSz=this.span(st,0.40,W+0.40);
+    this.addCol(wallCenter.x- wallSz.x/2,0.0,wallCenter.z-wallSz.z/2,wallCenter.x+wallSz.x/2,H,wallCenter.z+wallSz.z/2);
 
-    // Static floor collider lets the player stand inside before descent.
-    const h=st.hole;
-    this.addCol(h.minx+0.08,-0.02,h.minz+0.08,h.maxx-0.08,0.04,h.maxz-0.08);
-
-    // Enter only from the intended front-facing corridor.
-    const trCenter=L(0,-halfD*0.72);
-    const trW=W*0.74, trD=1.05;
-    const a=L(-trW/2,-halfD-trD/2), b=L(trW/2,-halfD+trD/2);
+    // Trigger sits in the hallway before the player can reach the wall.
+    const frontX=-st.fx, frontZ=-st.fz;
+    const center=L(0,-0.95);
+    const trW=W*0.78, trD=1.0;
+    const a=L(-trW/2,-1.55), b=L(trW/2,-0.55);
     Level.triggers.push({type:'exit',exitIndex:index,minx:Math.min(a.x,b.x),maxx:Math.max(a.x,b.x),minz:Math.min(a.z,b.z),maxz:Math.max(a.z,b.z)});
   },
 
@@ -1324,23 +1241,23 @@ const Stairwell = {
 
   startSequence(index){
     if(this.sequenceActive||GameState.phase!=='playing')return;
-    this.sequenceActive=true; this.sequenceT=0; this.sequenceExitIndex=index|0; this.reached=true; GameState.exitReached=true; GameState.cinematicCamera=true;
-    clearInput();
-    const pair=this.doorPairs[this.sequenceExitIndex];
-    if(pair){
-      // Capture the initial world-space door positions in the elevator's
-      // local frame. The group itself remains at the cab origin.
-      pair.startL=pair.left.position.clone(); pair.startR=pair.right.position.clone();
-      const c=pair.startL.clone().add(pair.startR).multiplyScalar(0.5);
-      pair.closeL=c.clone().add(new THREE.Vector3(pair.st.rx*0.012,0,pair.st.rz*0.012));
-      pair.closeR=c.clone().add(new THREE.Vector3(-pair.st.rx*0.012,0,-pair.st.rz*0.012));
+    const pair=this.doorPairs[index|0];
+    if(!pair)return;
+    this.transitionToken++;
+    if (this.pendingTransitionTimer !== null) {
+      clearTimeout(this.pendingTransitionTimer);
+      this.pendingTransitionTimer = null;
     }
+    const transitionToken = this.transitionToken;
+    this.sequenceActive=true; this.sequenceT=0; this.sequenceExitIndex=index|0; this.reached=true; GameState.exitReached=true;
+    clearInput();
+    pair.opening=true; pair.openT=0;
     const ov=document.getElementById('elevator-sequence');
-    if(ov)ov.style.display='flex';
-    setPauseOverlay(false);
-    const status=document.getElementById('elevator-status');
-    if(status)status.textContent='DOORS CLOSING';
+    if(ov){ ov.style.display='flex'; ov.style.background='rgba(3,4,5,.05)'; }
+    const title=document.getElementById('elevator-status'); if(title)title.textContent='ELEVATOR DOORS OPENING';
     const bar=document.getElementById('elevator-fill'); if(bar)bar.style.width='0%';
+    const floor=document.getElementById('elevator-floor'); if(floor)floor.textContent='LOADING LEVEL 1';
+    setPauseOverlay(false);
     if(document.pointerLockElement)document.exitPointerLock();
     AudioSystem._tone&&AudioSystem._tone(72,'sine',0.18,0.05,'events');
   },
@@ -1348,71 +1265,60 @@ const Stairwell = {
   update(dt){
     if(!this.sequenceActive)return;
     this.sequenceT+=dt;
-    const t=this.sequenceT, dur=this.sequenceDuration;
+    const t=this.sequenceT;
     const pair=this.doorPairs[this.sequenceExitIndex];
-    const g=this.cabGroups[this.sequenceExitIndex];
-    const st=this.exits[this.sequenceExitIndex];
-    const openPhase=0.8, closePhase=1.6;
     if(pair){
-      const q=Math.min(1,Math.max(0,(t-openPhase)/(closePhase-openPhase)));
-      // Doors slide toward the center seam.
-      pair.left.position.lerpVectors(pair.startL,pair.closeL,q);
-      pair.right.position.lerpVectors(pair.startR,pair.closeR,q);
+      const openT=Math.min(1,Math.max(0,(t-0.05)/0.75));
+      const eased=1-Math.pow(1-openT,3);
+      pair.left.position.lerpVectors(pair.closedL,pair.openL,eased);
+      pair.right.position.lerpVectors(pair.closedR,pair.openR,eased);
     }
-    let descend=0;
-    if(t>=1.6) descend=Math.min(10.5, (t-1.6)/(dur-1.6)*10.5);
-    if(g)g.position.y=-descend;
-    if(st){
-      Player.position.x=st.origin.x; Player.position.z=st.origin.z; Player.position.y=-descend;
-      Player.velocity.set(0,0,0); Player.onGround=true;
-      Player.yaw=Math.atan2(-st.fx,-st.fz);
-      Player.pitch*=0.96;
+    // Let the doors open briefly, then replace the cinematic with the normal
+    // loading screen. There is no elevator ride and no player teleport inside
+    // an elevator cabin anymore.
+    if(t>=0.85){
+      const status=document.getElementById('elevator-status'); if(status)status.textContent='GENERATING LEVEL 1';
+      const bar=document.getElementById('elevator-fill'); if(bar)bar.style.width='22%';
+      if(ov)ov.style.background='rgba(3,4,5,.78)';
     }
-    GameState.elevatorShake = t>1.55 ? Math.min(1,0.35+0.65*Math.sin(t*9)*Math.sin(t*3.1)) : 0;
-    const status=document.getElementById('elevator-status');
-    const bar=document.getElementById('elevator-fill');
-    if(t<1.6){if(status)status.textContent='DOORS CLOSING';}
-    else if(t<2.4){if(status)status.textContent='ELEVATOR DEPARTING';}
-    else if(t<5.7){if(status)status.textContent='DESCENDING — LEVEL 1';}
-    else if(status)status.textContent='ARRIVING';
-    if(bar)bar.style.width=Math.min(100,(t/dur)*100).toFixed(1)+'%';
-    const floor=document.getElementById('elevator-floor');
-    if(floor){const depth=Math.min(10.5,Math.max(0,descend));floor.textContent='DEPTH  −'+depth.toFixed(1)+' m';}
-    // Keep the avatar centered in the cab while the cabin descends.
-    const avatar=this.avatarGroups&&this.avatarGroups[this.sequenceExitIndex];
-    if(avatar){avatar.position.y=0.02; avatar.rotation.y=Math.atan2(-st.fx,-st.fz);}
-    if(t>=dur){
-      if(status)status.textContent='LEVEL 1 — DOORS OPENING';
-      const openT=Math.min(1,(t-dur)/1.25);
-      if(pair){
-        const eased=1-Math.pow(1-openT,3);
-        const far=pair.doorW*0.92;
-        pair.left.position.x=pair.startL.x + (pair.startL.x < pair.startR.x ? -far : far)*eased;
-        pair.right.position.x=pair.startR.x + (pair.startR.x > pair.startL.x ? far : -far)*eased;
+    if(t<1.0)return;
+    const elapsed=GameState.elapsed;
+    this.sequenceActive=false;
+    GameState.cinematicCamera=false; GameState.elevatorShake=0;
+    const exitState=this.exits[this.sequenceExitIndex];
+    const exitSeed=((GameState.seed^0x51f15e5d)>>>0)||1;
+    // Yield one frame so the loading overlay is actually painted before the
+    // synchronous Level 1 build/stream work begins.
+    this.pendingTransitionTimer=setTimeout(()=>{
+      this.pendingTransitionTimer=null;
+      if (transitionToken !== this.transitionToken || GameState.phase !== 'playing') return;
+      try{
+        if(typeof Level1!=='undefined') Level1.enter(exitSeed,exitState);
+        if (GameState.phase !== 'playing' || transitionToken !== this.transitionToken) return;
+        const level1Floor = (typeof Level1 !== 'undefined') ? Level1.baseY : 0;
+        Player.position.set(exitState.origin.x-0.95*exitState.fx,level1Floor,exitState.origin.z-0.95*exitState.fz);
+        Player.velocity.set(0,0,0); Player.onGround=true;
+        Player.yaw=Math.atan2(-exitState.fx,-exitState.fz); Player.pitch=0;
+        GameState.elapsed=elapsed; GameState.distance=0; GameState.exitReached=false;
+        const bar=document.getElementById('elevator-fill'); if(bar)bar.style.width='100%';
+        const status=document.getElementById('elevator-status'); if(status)status.textContent='LEVEL 1 READY';
+        const floor=document.getElementById('elevator-floor'); if(floor)floor.textContent='ENTERING LEVEL 1';
+        setTimeout(()=>{
+          const ov=document.getElementById('elevator-sequence'); if(ov)ov.style.display='none';
+          const obj=document.getElementById('hud-obj'); if(obj)obj.textContent='Objective: explore Level 1';
+          const lvl=document.getElementById('hud-level-label'); if(lvl)lvl.textContent='LEVEL 1';
+          if(window.MobileControls&&window.MobileControls.isMobile) Input.locked=true;
+          else renderer.domElement.requestPointerLock();
+        },80);
+      }catch(err){
+        console.error('LEVEL 1 TRANSITION FAILED',err);
+        const status=document.getElementById('elevator-status'); if(status)status.textContent='LEVEL 1 LOAD FAILED';
+        setTimeout(()=>{const ov=document.getElementById('elevator-sequence');if(ov)ov.style.display='none';},900);
       }
-      if(openT>=1){
-        this.sequenceActive=false;
-        GameState.elevatorShake=0;
-        GameState.cinematicCamera=false;
-        if(g)g.visible=false;
-        if(this.avatarGroups&&this.avatarGroups[this.sequenceExitIndex]) this.avatarGroups[this.sequenceExitIndex]=null;
-        const exitSeed=((GameState.seed^0x51f15e5d)>>>0)||1;
-        Level1.enter(exitSeed, st);
-        const exitForward=new THREE.Vector3(st.fx,0,st.fz);
-        Player.position.set(st.origin.x + exitForward.x*3.2, st.minY||-10.5, st.origin.z + exitForward.z*3.2);
-        Player.yaw=Math.atan2(-st.fx,-st.fz); Player.pitch=0;
-        /* Preserve total run time across the Level 0 → Level 1 transition. */
-        GameState.distance=0; GameState.exitReached=false;
-        GameState.elevatorShake=0;
-        const ov=document.getElementById('elevator-sequence');if(ov)ov.style.display='none';
-        if(document.getElementById('hud-obj'))document.getElementById('hud-obj').textContent='Objective: explore Level 1';
-        const lvlLabel=document.getElementById('hud-level-label'); if(lvlLabel)lvlLabel.textContent='LEVEL 1';
-        if (window.MobileControls && window.MobileControls.isMobile) Input.locked = true;
-        else renderer.domElement.requestPointerLock();
-      }
-    }
+    },40);
   }
 };
+
 
 /* ------------------------------------------------------------------
    LEVEL / MAP — consumes generated tiles
