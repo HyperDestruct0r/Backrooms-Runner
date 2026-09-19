@@ -65,10 +65,11 @@ const Physics = {
       vel.y = 0;
     }
 
-    // current level's start position.
-    if (pos.y < -12) {
+    // Current level's start position. Level 1 uses its own floor height.
+    const levelFloor = (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
+    if (pos.y < levelFloor - 12) {
       Player.position.copy(Level.startPos);
-      Player.position.y = 0;
+      Player.position.y = levelFloor;
       Player.velocity.set(0, 0, 0);
       Player.yaw = 0;
       Player.pitch = 0;
@@ -129,7 +130,7 @@ const Player = {
 
   resetToStart() {
     this.position.copy(Level.startPos);
-    this.position.y = 0;
+    this.position.y = (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
     this.velocity.set(0, 0, 0);
     this.yaw = 0;
     this.pitch = 0;
