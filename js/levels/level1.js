@@ -15,6 +15,7 @@ const Level1 = {
     for(const L of this.lights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
     for(const L of this.ambientLights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
     this.chunks.clear(); this.colliders.length=0; this.triggers.length=0;
+    this.active=false; this.exitMacro=null; this.exitPosition=null;
     this.lights.length=0; this.ambientLights.length=0; this.puddles.length=0;
     if(typeof PickupSystem!=='undefined' && PickupSystem.group){ PickupSystem.reset(); }
     this.group=null; this.active=false; this.lastMCX=999999; this.lastMCZ=999999; this.resourceRegions=Object.create(null);
@@ -662,13 +663,13 @@ const Level1 = {
     PickupSystem.reset();
     this.build(seed,origin);
     Level.cols=Infinity; Level.rows=Infinity; Level.tiles=[]; Level.colliders=this.colliders; Level.triggers=this.triggers; Level.group=this.group;
-    Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
-    Level.startPos.set(origin.x,0,origin.z); GameState.level=1;
+    Level.worldMin.set(-Infinity,this.baseY-2,-Infinity); Level.worldMax.set(Infinity,this.baseY+8,Infinity);
+    Level.startPos.set(origin.x,this.baseY,origin.z); GameState.level=1;
     const obj=document.getElementById('hud-obj');if(obj)obj.textContent='Objective: explore Level 1';
     const lvl=document.getElementById('hud-level-label');if(lvl)lvl.textContent='LEVEL 1';
     const seedEl=document.getElementById('hud-seed-val');if(seedEl)seedEl.textContent=String(this.seed);
     const title=document.getElementById('start-seed');if(title)title.textContent='LEVEL 1 · SEED '+this.seed;
-    Player.position.set(origin.x,0,origin.z); Player.velocity.set(0,0,0); Player.onGround=true;
+    Player.position.set(origin.x,this.baseY,origin.z); Player.velocity.set(0,0,0); Player.onGround=true;
     EntitySystem.despawn(); EncounterManager.reset(); DebugPath.hide(); DarknessSystem.reset(); AtmosphereSystem.reset(); EnvEventSystem.reset(); Flashlight.reset();
     if(typeof SmilerSystem!=="undefined") SmilerSystem.reset();
     if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
@@ -682,7 +683,7 @@ const Level1 = {
     }
     this.streamTimer+=dt; if(this.streamTimer>0.18){this.streamTimer=0;this.stream(false);}
     this.updateBlackout(dt); this.updatePuddleVisibility(); if(typeof SmilerSystem!=="undefined") SmilerSystem.update(dt); if(typeof ExitLocator!=="undefined") ExitLocator.update();
-    Level.worldMin.set(-Infinity,-2,-Infinity); Level.worldMax.set(Infinity,8,Infinity);
+    Level.worldMin.set(-Infinity,this.baseY-2,-Infinity); Level.worldMax.set(Infinity,this.baseY+8,Infinity);
   }
 };
 
