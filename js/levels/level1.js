@@ -14,6 +14,11 @@ const Level1 = {
     if(this.group && scene) scene.remove(this.group);
     for(const L of this.lights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
     for(const L of this.ambientLights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
+    // Level.enter() aliases Level.colliders/triggers to these arrays. Detach
+    // those aliases before clearing so a Level 1 teardown can never erase a
+    // freshly rebuilt Level 0 collision/trigger set.
+    if(typeof Level!=='undefined' && Level.colliders===this.colliders) Level.colliders=[];
+    if(typeof Level!=='undefined' && Level.triggers===this.triggers) Level.triggers=[];
     this.chunks.clear(); this.colliders.length=0; this.triggers.length=0;
     this.active=false; this.exitMacro=null; this.exitPosition=null;
     this.lights.length=0; this.ambientLights.length=0; this.puddles.length=0;
