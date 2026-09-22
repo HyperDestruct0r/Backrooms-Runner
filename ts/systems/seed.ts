@@ -1,5 +1,6 @@
 export type SeedMode = "random" | "custom";
 
+
 export interface SeedSelection {
   mode: SeedMode;
   seed?: number;
