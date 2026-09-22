@@ -150,3 +150,15 @@ See the repository for the latest source code and project information.
 
 **Backrooms Runner**
 *You weren't supposed to find this place.*
+
+
+## Seed selection and TypeScript
+
+The Play menu now offers **Random Seed** and **Custom Seed**.
+
+- Random Seed chooses a new seed only when Random Seed is selected.
+- Custom Seed accepts an unsigned 32-bit integer and deterministically starts the Level 0 generation process from that value.
+- If the selected seed cannot produce a valid map within the generator's validation budget, the run is rejected and the player can try another custom seed.
+- Level generation is no longer performed during boot, so a failed run seed cannot make the main menu inaccessible.
+
+`ts/systems/seed.ts` is the typed TypeScript source for seed utilities, while `js/systems/seed.js` is the browser runtime counterpart. `tsconfig.json` is included for static type-checking the TypeScript source.
