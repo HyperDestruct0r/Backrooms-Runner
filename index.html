@@ -57,10 +57,10 @@
   </div>
   <div id="elevator-sequence">
     <div id="elevator-card">
-      <h2>CONCRETE ELEVATOR</h2>
-      <div id="elevator-status">DOORS CLOSING</div>
+      <h2>LEVEL 1</h2>
+      <div id="elevator-status">ELEVATOR DOORS OPENING</div>
       <div id="elevator-track"><div id="elevator-fill"></div></div>
-      <div id="elevator-floor">DEPTH  −0.0 m</div>
+      <div id="elevator-floor">LOADING LEVEL 1</div>
     </div>
   </div>
   <div id="screen-atmosphere"></div>
@@ -127,6 +127,29 @@
         </div>
         <div class="menu-footer">W/S OR ARROWS TO SELECT · ENTER TO CONFIRM</div>
       </div>
+
+      <section id="menu-page-play-select" class="menu-page play-select-page" aria-label="Play options">
+        <div class="menu-page-inner">
+          <button id="menu-back-play-select" class="menu-back" type="button">← BACK</button>
+          <h2>START RUN</h2>
+          <p class="page-desc">Choose how the Level 0 seed is selected.</p>
+          <div class="play-choice-grid">
+            <button id="menu-random-seed" class="play-choice" type="button">
+              <strong>RANDOM SEED</strong>
+              <small>Generate a new random seed for this run.</small>
+            </button>
+            <div class="play-choice custom-seed-choice">
+              <strong>CUSTOM SEED</strong>
+              <small>Enter a seed from 0 to 4,294,967,295.</small>
+              <div class="custom-seed-row">
+                <input id="custom-seed-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Enter seed">
+                <button id="menu-custom-seed" type="button">START</button>
+              </div>
+              <div id="custom-seed-error" class="seed-message" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section id="menu-page-settings" class="menu-page" aria-label="Settings">
         <div class="menu-page-inner">
@@ -245,6 +268,7 @@
 <script src="js/systems/player.js"></script>
 <script src="js/systems/atmosphere.js"></script>
 <script src="js/systems/auth.js"></script>
+<script src="js/systems/seed.js"></script>
 <script src="js/systems/menu.js"></script>
 <script src="js/game.js"></script>
 </body>
