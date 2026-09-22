@@ -1915,6 +1915,9 @@ const Level = {
     this.loadGenerated(result);
     Stairwell.planFrom(result);
     this.buildColliders();
+    if (!this.colliders.length) {
+      throw new Error("Level 0 built without collision geometry.");
+    }
     this.buildMeshes(sceneRef);
     Stairwell.build(sceneRef);
     SpawnManager.apply(result);
