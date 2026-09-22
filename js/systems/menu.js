@@ -19,6 +19,7 @@ const MenuSystem = {
   ],
   menuIndex: 0,
   menuItems: ["play", "settings", "controls", "credits"],
+  playPage: "play-select",
   rebinding: null,
   settingsKey: "backroomsRunner.settings.v1",
   bindingsKey: "backroomsRunner.bindings.v1",
@@ -66,6 +67,24 @@ const MenuSystem = {
     });
     document.querySelectorAll("[data-menu-index]").forEach(btn => {
       btn.addEventListener("mouseenter", () => this.selectMain(Number(btn.dataset.menuIndex)));
+    });
+
+    const randomSeed = document.getElementById("menu-random-seed");
+    if (randomSeed) randomSeed.addEventListener("click", () => {
+      this.startRandomRun();
+    });
+
+    const customSeed = document.getElementById("menu-custom-seed");
+    if (customSeed) customSeed.addEventListener("click", () => {
+      this.startCustomRun();
+    });
+
+    const customInput = document.getElementById("custom-seed-input");
+    if (customInput) customInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.startCustomRun();
+      }
     });
 
     document.querySelectorAll(".menu-back").forEach(back => {
@@ -126,11 +145,47 @@ const MenuSystem = {
 
   activate(action) {
     if (action === "play") {
-      if (typeof Game !== "undefined") Game.start();
+      this.showPage(this.playPage);
       return;
     }
     if (action === "settings" || action === "controls" || action === "credits") {
       this.showPage(action);
+    }
+  },
+
+  startRandomRun() {
+    this.clearSeedError();
+    if (typeof Game !== "undefined") Game.start("random");
+  },
+
+  startCustomRun() {
+    const input = document.getElementById("custom-seed-input");
+    const raw = input ? input.value : "";
+    const seed = (typeof SeedSystem !== "undefined") ? SeedSystem.parseCustom(raw) : null;
+
+    if (seed === null) {
+      this.showSeedError("Invalid seed. Enter a whole number from 0 to 4,294,967,295.");
+      if (input) input.focus();
+      return;
+    }
+
+    this.clearSeedError();
+    if (typeof Game !== "undefined") Game.start("custom", seed);
+  },
+
+  showSeedError(message) {
+    const el = document.getElementById("custom-seed-error");
+    if (el) {
+      el.textContent = message;
+      el.className = "seed-message error";
+    }
+  },
+
+  clearSeedError() {
+    const el = document.getElementById("custom-seed-error");
+    if (el) {
+      el.textContent = "";
+      el.className = "seed-message";
     }
   },
 
