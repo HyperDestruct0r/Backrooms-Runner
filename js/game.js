@@ -21,28 +21,25 @@ const Game = {
     if (st) st.textContent = status;
   },
   _newRunSeed() {
-    // Prefer the browser's secure RNG so leaving a run and starting again
-    // cannot accidentally reuse the previous Level 0 seed.
-    try {
-      const buf = new Uint32Array(1);
-      if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(buf);
-      const seed = buf[0] >>> 0;
-      if (seed) return seed;
-    } catch (err) {}
-    const seed = ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0);
-    return seed || 483921;
+    return (typeof SeedSystem !== "undefined")
+      ? SeedSystem.random()
+      : ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0);
   },
-  _restoreLevel0ForNewRun() {
+  _restoreLevel0ForNewRun(seed, strictSeed) {
     // Level 1 replaces Level.group/colliders with its streaming world. A new
     // run must explicitly tear that world down and rebuild Level 0 before the
-    // player is reset, otherwise collision checks can use stale Level 1 state.
+    // player is reset.
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level !== "undefined" && typeof Level.buildProcedural === "function") {
-      const seed = this._newRunSeed();
-      const built = !!Level.buildProcedural(scene, seed);
-      if (!built) throw new Error("Level 0 could not be rebuilt for the new run.");
-      GameState.seed = (LevelGenerator.last && LevelGenerator.last.seed)
-        ? LevelGenerator.last.seed : GameState.seed;
+      const requestedSeed = (seed >>> 0);
+      const built = !!Level.buildProcedural(scene, requestedSeed, { strictSeed: !!strictSeed });
+      if (!built) {
+        throw new Error(strictSeed
+          ? "The selected seed could not generate a valid Level 0."
+          : "Level 0 could not be generated from the selected random seed.");
+      }
+      GameState.seed = (LevelGenerator.last && LevelGenerator.last.seed != null)
+        ? LevelGenerator.last.seed : requestedSeed;
     }
     GameState.level = 0;
     GameState.exitReached = false;
@@ -73,43 +70,12 @@ const Game = {
     this._setBoot(40, "INITIALIZING CAMERA...");
     await this._nextFrame();
     Flashlight.init();
+    // Do not choose or generate a run seed during boot. The main menu must
+    // remain usable even if a particular seed later fails validation.
     GameState.level = 0;
-    GameState.seed = ((Date.now() ^ (Math.floor(Math.random() * 0x7fffffff))) >>> 0) || 483921;
-    this._setBoot(52, "GENERATING LEVEL 0... BUILDING WORLD...");
-    // Give the browser a frame to actually paint the loading screen before
-    // entering the synchronous procedural-generation step. Generation is
-    // CPU-bound, so without this frame the UI can appear frozen at 52%.
+    GameState.seed = 0;
+    this._setBoot(72, "READYING MAIN MENU...");
     await this._nextFrame();
-    let level0Built = false;
-    try {
-      level0Built = !!Level.buildProcedural(scene, GameState.seed);
-    } catch (err) {
-      console.error("Level 0 generation exception:", err);
-      const st = document.getElementById("boot-status");
-      if (st) st.textContent = "LEVEL 0 ERROR: " + (err && err.message ? err.message : String(err));
-      level0Built = false;
-    }
-    if (!level0Built) {
-      // One deterministic fallback attempt. This keeps a transient bad
-      // procedural seed from producing a blank yellow page.
-      const fallbackSeed = 483921;
-      try {
-        level0Built = !!Level.buildProcedural(scene, fallbackSeed);
-      } catch (err) {
-        console.error("Level 0 fallback generation exception:", err);
-        const st = document.getElementById("boot-status");
-        if (st) st.textContent = "LEVEL 0 FALLBACK ERROR: " + (err && err.message ? err.message : String(err));
-        level0Built = false;
-      }
-    }
-    if (!level0Built) {
-      const st = document.getElementById("boot-status");
-      if (st) st.textContent = "LEVEL 0 GENERATION FAILED — PRESS G TO RETRY";
-      throw new Error("Level 0 could not be generated after fallback attempts.");
-    }
-    this._setBoot(72, "BUILDING LEVEL 0 GEOMETRY...");
-    await this._nextFrame();
-    Player.resetToStart();
     this._setBoot(80, "PLACING EXIT AND NAVIGATION...");
     await this._nextFrame();
     HUD.init();
@@ -152,7 +118,7 @@ const Game = {
     this.loop();
   },
 
-  async start() {
+  async start(mode = "random", customSeed = null) {
     if (!GameState.ready || GameState.phase === "loading") return;
     const startOverlay = document.getElementById("start-overlay");
     const loadOverlay = document.getElementById("game-loading");
@@ -167,16 +133,37 @@ const Game = {
     document.getElementById("complete-overlay").style.display = "none";
     const go = document.getElementById("gameover-overlay");
     if (go) go.style.display = "none";
-    // Every Play action starts a genuinely new run. If the previous run was
-    // in Level 1, restore the complete Level 0 world before placing the player.
+    // Seed selection happens only after the player explicitly chooses
+    // Random Seed or Custom Seed from the Play menu.
+    const isCustom = mode === "custom";
+    const selectedSeed = isCustom
+      ? (customSeed >>> 0)
+      : this._newRunSeed();
+
     try {
-      this._restoreLevel0ForNewRun();
+      this._restoreLevel0ForNewRun(selectedSeed, isCustom);
     } catch (err) {
-      console.error("Could not restore Level 0 for new run:", err);
+      console.error("Could not generate Level 0 for new run:", err);
       GameState.phase = "start";
       if (loadOverlay) loadOverlay.style.display = "none";
-      HUD.toast("LEVEL 0 COULD NOT BE RESTORED");
-      if (typeof MenuSystem !== "undefined") MenuSystem.showMain();
+
+      if (typeof MenuSystem !== "undefined") {
+        if (isCustom) {
+          MenuSystem.showPage("play-select");
+          MenuSystem.showSeedError(
+            "Seed " + selectedSeed + " failed to generate a valid Level 0. Try another seed."
+          );
+          const input = document.getElementById("custom-seed-input");
+          if (input) {
+            input.value = String(selectedSeed);
+            input.focus();
+            input.select();
+          }
+        } else {
+          MenuSystem.showMain();
+          HUD.toast("RANDOM SEED FAILED — CHOOSE RANDOM SEED TO TRY AGAIN");
+        }
+      }
       return;
     }
     GameState.phase = "playing";
