@@ -23,6 +23,33 @@
 .menu-page .page-desc { color:#9e967b; margin:0 0 30px; }
 .menu-back { position:absolute; right:0; top:0; border:1px solid #635d49; background:transparent; color:#c8c09e; padding:9px 16px; cursor:pointer; letter-spacing:.1em; }
 .menu-back:hover { background:rgba(255,255,255,.06); color:white; }
+
+
+.play-choice-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; max-width:900px; }
+.play-choice {
+  border:1px solid #4a4433; background:rgba(255,255,255,.025); color:#eee6c7;
+  text-align:left; padding:22px; min-height:170px; cursor:pointer; transition:.16s;
+}
+.play-choice:hover { border-color:#968b53; background:rgba(216,201,105,.08); transform:translateY(-2px); }
+.play-choice strong { display:block; font-size:18px; letter-spacing:.12em; }
+.play-choice small { display:block; color:#8f8874; margin-top:10px; line-height:1.5; }
+.custom-seed-choice { cursor:default; }
+.custom-seed-choice:hover { transform:none; }
+.custom-seed-row { display:flex; gap:8px; margin-top:22px; }
+.custom-seed-row input {
+  flex:1; min-width:0; border:1px solid #5a5442; background:#17140e; color:#f3eacb;
+  padding:11px 12px; font:inherit; outline:none;
+}
+.custom-seed-row input:focus { border-color:#d8c969; box-shadow:0 0 0 2px rgba(216,201,105,.12); }
+.custom-seed-row button {
+  border:1px solid #6d654b; background:#2a2519; color:#f2e9c6;
+  padding:10px 16px; cursor:pointer; font-weight:700; letter-spacing:.08em;
+}
+.custom-seed-row button:hover { background:#3a3322; }
+.seed-message { min-height:18px; margin-top:9px; font-size:11px; color:#8e8877; }
+.seed-message.error { color:#e19a80; }
+@media(max-width:700px){ .play-choice-grid{grid-template-columns:1fr}.play-choice{min-height:auto} }
+
 .settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .setting-card,.mode-card { border:1px solid #403b2d; background:rgba(255,255,255,.025); padding:18px; }
 .setting-card label { display:flex; justify-content:space-between; gap:18px; margin-bottom:12px; color:#ddd4b5; letter-spacing:.08em; }
