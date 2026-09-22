@@ -1879,18 +1879,29 @@ const Level = {
     this.buildProcedural(sceneRef, GameState.seed || 483921);
   },
 
-  buildProcedural(sceneRef, seed) {
-    const result = LevelGenerator.generateValid(seed, 160);
+  buildProcedural(sceneRef, seed, options) {
+    const strictSeed = !!(options && options.strictSeed);
+    // Both modes use the same deterministic validity checks. For Custom Seed,
+    // the entered number is the starting point of the deterministic search;
+    // the game never silently switches to an unrelated random seed.
+    const result = LevelGenerator.generateValid(seed >>> 0, 160);
+
     if (!result) {
-      console.warn("Procedural generation failed; retrying with a fresh seed");
+      if (strictSeed) {
+        const startSeed = document.getElementById("start-seed");
+        if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — TRY ANOTHER SEED";
+        return false;
+      }
+
+      console.warn("Procedural generation failed; retrying with a fresh random seed");
       const retrySeed = ((seed ^ 0x9e3779b9) >>> 0);
       const retry = LevelGenerator.generateValid(retrySeed, 160);
       if (!retry) {
         const startSeed = document.getElementById("start-seed");
-        if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — PRESS G TO RETRY";
+        if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — CHOOSE ANOTHER RANDOM SEED";
         return false;
       }
-      return this.buildProcedural(sceneRef, retry.seed);
+      return this.buildProcedural(sceneRef, retry.seed, options);
     }
     GameState.seed = result.seed;
     this.clear(sceneRef);
