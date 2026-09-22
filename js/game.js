@@ -181,7 +181,10 @@ const Game = {
     GameState.exitReached = false;
     GameState.level = 0;
     GameState.cinematicCamera = false;
-    if (typeof Level1 !== 'undefined') Level1.resetVisuals();
+    // Level1 was already fully reset before Level 0 was rebuilt. Do not call
+    // resetVisuals() here: Level1.enter() aliases Level.colliders/triggers to
+    // its streaming arrays, so resetting it after Level 0 is built would wipe
+    // the freshly generated Level 0 collision state and scene atmosphere.
     this._setGameLoading(78, "STARTING ATMOSPHERE...");
     await this._nextFrame();
     AudioSystem.resume();
