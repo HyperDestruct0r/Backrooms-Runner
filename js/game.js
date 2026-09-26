@@ -122,6 +122,17 @@ const Game = {
     if (!GameState.ready || GameState.phase === "loading") return;
     const startOverlay = document.getElementById("start-overlay");
     const loadOverlay = document.getElementById("game-loading");
+
+    // A new run must invalidate any transition state left by a previous run
+    // before Level 0 is rebuilt. This is intentionally done even when the
+    // previous run ended through a non-standard path (restart/game-over).
+    if (typeof Stairwell !== "undefined" && Stairwell.cancelPendingTransition) {
+      Stairwell.cancelPendingTransition();
+    }
+    if (typeof Level1 !== "undefined" && Level1.active) {
+      Level1.resetVisuals();
+    }
+
     GameState.phase = "loading";
     const runId = ++GameState.runId;
     if (startOverlay) startOverlay.style.display = "none";
