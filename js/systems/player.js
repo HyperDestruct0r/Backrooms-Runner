@@ -432,11 +432,22 @@ const Player = {
     }
 
     // Triggers
+    // IMPORTANT: triggers are spatial volumes. The old code iterated through
+    // the trigger list and activated the first matching type without checking
+    // the player's position, which meant the Level 0 elevator transition
+    // fired immediately when a run started.
     const activeTriggers = (typeof Level1 !== "undefined" && Level1.active) ? Level1.triggers : Level.triggers;
+    const px = this.position.x;
+    const pz = this.position.z;
     for (let ti = 0; ti < activeTriggers.length; ti++) {
       const t = activeTriggers[ti];
+      const inside = Number.isFinite(t.minx) && Number.isFinite(t.maxx) &&
+        Number.isFinite(t.minz) && Number.isFinite(t.maxz) &&
+        px >= t.minx && px <= t.maxx && pz >= t.minz && pz <= t.maxz;
+      if (!inside) continue;
+
       if (t.type === "exit") {
-        if (!GameState.exitReached) {
+        if (!GameState.exitReached && GameState.level === 0) {
           GameState.exitReached = true;
           Stairwell.reached = true;
           HUD.toast("ELEVATOR_ENTERED");
