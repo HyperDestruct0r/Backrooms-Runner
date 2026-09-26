@@ -23,7 +23,7 @@ function resolveAxis(pos, radius, height, axis) {
   const min = new THREE.Vector3(pos.x - radius, pos.y, pos.z - radius);
   const max = new THREE.Vector3(pos.x + radius, pos.y + height, pos.z + radius);
   let pushed = 0;
-  const boxes = Level.colliders;
+  const boxes = (typeof Level1 !== "undefined" && Level1.active) ? Level1.colliders : Level.colliders;
   for (let i = 0; i < boxes.length; i++) {
     const b = boxes[i];
     if (!aabbOverlap(min, max, b.min, b.max)) continue;
@@ -432,7 +432,9 @@ const Player = {
     }
 
     // Triggers
-    Level.queryTriggers(this.position.x, this.position.z, (t) => {
+    const activeTriggers = (typeof Level1 !== "undefined" && Level1.active) ? Level1.triggers : Level.triggers;
+    for (let ti = 0; ti < activeTriggers.length; ti++) {
+      const t = activeTriggers[ti];
       if (t.type === "exit") {
         if (!GameState.exitReached) {
           GameState.exitReached = true;
@@ -447,7 +449,7 @@ const Player = {
           Game.complete();
         }
       }
-    });
+    }
     this.tickSanity(dt);
   }
 };
