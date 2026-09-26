@@ -1283,6 +1283,7 @@ const Stairwell = {
     }
     if(t<1.0)return;
     const elapsed=GameState.elapsed;
+    const runId = GameState.runId;
     this.sequenceActive=false;
     GameState.cinematicCamera=false; GameState.elevatorShake=0;
     const exitState=this.exits[this.sequenceExitIndex];
@@ -1291,10 +1292,10 @@ const Stairwell = {
     // synchronous Level 1 build/stream work begins.
     this.pendingTransitionTimer=setTimeout(()=>{
       this.pendingTransitionTimer=null;
-      if (transitionToken !== this.transitionToken || GameState.phase !== 'playing') return;
+      if (transitionToken !== this.transitionToken || GameState.phase !== 'playing' || runId !== GameState.runId) return;
       try{
         if(typeof Level1!=='undefined') Level1.enter(exitSeed,exitState);
-        if (GameState.phase !== 'playing' || transitionToken !== this.transitionToken) return;
+        if (GameState.phase !== 'playing' || transitionToken !== this.transitionToken || runId !== GameState.runId) return;
         const level1Floor = (typeof Level1 !== 'undefined') ? Level1.baseY : 0;
         Player.position.set(exitState.origin.x-0.95*exitState.fx,level1Floor,exitState.origin.z-0.95*exitState.fz);
         Player.velocity.set(0,0,0); Player.onGround=true;
@@ -1304,6 +1305,7 @@ const Stairwell = {
         const status=document.getElementById('elevator-status'); if(status)status.textContent='LEVEL 1 READY';
         const floor=document.getElementById('elevator-floor'); if(floor)floor.textContent='ENTERING LEVEL 1';
         setTimeout(()=>{
+          if (runId !== GameState.runId || GameState.phase !== 'playing') return;
           const ov=document.getElementById('elevator-sequence'); if(ov)ov.style.display='none';
           const obj=document.getElementById('hud-obj'); if(obj)obj.textContent='Objective: explore Level 1';
           const lvl=document.getElementById('hud-level-label'); if(lvl)lvl.textContent='LEVEL 1';
@@ -1313,7 +1315,10 @@ const Stairwell = {
       }catch(err){
         console.error('LEVEL 1 TRANSITION FAILED',err);
         const status=document.getElementById('elevator-status'); if(status)status.textContent='LEVEL 1 LOAD FAILED';
-        setTimeout(()=>{const ov=document.getElementById('elevator-sequence');if(ov)ov.style.display='none';},900);
+        setTimeout(()=>{
+          if (runId !== GameState.runId) return;
+          const ov=document.getElementById('elevator-sequence');if(ov)ov.style.display='none';
+        },900);
       }
     },40);
   }
@@ -1408,8 +1413,19 @@ const Level = {
   clear(sceneRef) {
     const s = sceneRef || scene;
     LightingSystem.clear(s);
-    if (this.group && s) {
-      this.group.traverse((obj) => {
+    const disposeMaterial = (mat) => {
+      if (!mat || !mat.dispose) return;
+      const texKeys = ["map","alphaMap","aoMap","bumpMap","normalMap","roughnessMap","metalnessMap","emissiveMap"];
+      for (const key of texKeys) {
+        const tex = mat[key];
+        if (tex && tex.dispose) tex.dispose();
+      }
+      mat.dispose();
+    };
+    const protectedMaterials = new Set(Object.values(Materials).filter(v => v && v.isMaterial));
+    const disposeObjectResources = (root) => {
+      if (!root) return;
+      root.traverse((obj) => {
         if (obj.geometry && obj.geometry.dispose) {
           const shared = obj.geometry === Geometries.box ||
             obj.geometry === Geometries.lightPanel ||
@@ -1419,13 +1435,18 @@ const Level = {
             obj.geometry === Geometries.beam;
           if (!shared) obj.geometry.dispose();
         }
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        for (const mat of mats) {
+          if (mat && mat.isMaterial && !protectedMaterials.has(mat)) disposeMaterial(mat);
+        }
       });
+    };
+    if (this.group && s) {
+      disposeObjectResources(this.group);
       s.remove(this.group);
     }
     if (this.darkFogGroup && s) {
-      this.darkFogGroup.traverse((obj) => {
-        if (obj.geometry && obj.geometry.dispose) obj.geometry.dispose();
-      });
+      disposeObjectResources(this.darkFogGroup);
       s.remove(this.darkFogGroup);
     }
     this.group = null;
@@ -1737,7 +1758,7 @@ const Level = {
         usedLightTiles.push([tx, tz]);
         const w = this.tileToWorld(tx, tz);
         const scale = profile === "BRIGHT" ? 1.42 : 1.16;
-        const withPoint = profile === "BRIGHT" && LightingSystem.lights.length < 34;
+        const withPoint = profile !== "DARK" && LightingSystem.lights.length < 42;
         LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, scale);
       }
     }
