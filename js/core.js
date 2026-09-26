@@ -217,6 +217,7 @@ const GameState = {
   level: 0,
   cinematicCamera: false,
   regenerating: false,
+  runId: 0,
   levelTimes: { 0: 0, 1: 0 }
 };
 
@@ -799,9 +800,9 @@ const LightingSystem = {
   clusterUntil: 0,
   init(scene) {
     // Soft fill only — fixtures do the real illumination (VERSION 3 can retune)
-    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.52);
+    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.56);
     scene.add(this.hemi);
-    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.43);
+    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.46);
     scene.add(this.ambient);
     scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
     scene.background = new THREE.Color(CONFIG.fogColor);
@@ -830,7 +831,10 @@ const LightingSystem = {
     let light = null;
     const base = (intensityScale == null ? 1 : intensityScale) * 2.25;
     if (withPoint && state !== "BROKEN") {
-      light = new THREE.PointLight(0xfff1c4, state === "DIM" ? base * 0.45 : base, 25, 1.55);
+      // A longer inverse-square falloff avoids the hard-looking 25m light
+      // cutoff visible on walls. The fixture should fade into neighboring
+      // pools of light rather than changing wall color abruptly.
+      light = new THREE.PointLight(0xfff1c4, state === "DIM" ? base * 0.42 : base, 42, 2.0);
       light.position.set(x, y - 0.28, z);
       scene.add(light);
       this.lights.push(light);
@@ -955,8 +959,20 @@ const LightingSystem = {
   clear(sceneRef) {
     const s = sceneRef || scene;
     if (!s) return;
-    for (let i = 0; i < this.lights.length; i++) s.remove(this.lights[i]);
-    for (let i = 0; i < this.fixtures.length; i++) s.remove(this.fixtures[i]);
+    for (let i = 0; i < this.lights.length; i++) {
+      const light = this.lights[i];
+      if (light && light.shadow && light.shadow.dispose) light.shadow.dispose();
+      s.remove(light);
+    }
+    for (let i = 0; i < this.fixtures.length; i++) {
+      const fixture = this.fixtures[i];
+      // Fixture panel materials are cloned per generated run. Their texture
+      // map is shared with Materials.light, so dispose only the clone.
+      if (fixture && fixture.material && fixture.material !== Materials.light && fixture.material.dispose) {
+        fixture.material.dispose();
+      }
+      s.remove(fixture);
+    }
     this.lights.length = 0;
     this.fixtures.length = 0;
     this.units.length = 0;
