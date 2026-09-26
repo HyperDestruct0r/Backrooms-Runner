@@ -123,13 +123,16 @@ const Game = {
     const startOverlay = document.getElementById("start-overlay");
     const loadOverlay = document.getElementById("game-loading");
     GameState.phase = "loading";
+    const runId = ++GameState.runId;
     if (startOverlay) startOverlay.style.display = "none";
     setPauseOverlay(false);
     if (loadOverlay) loadOverlay.style.display = "flex";
     this._setGameLoading(8, "LOADING PLAYER STATE...");
     await this._nextFrame();
+    if (runId !== GameState.runId || GameState.phase !== "loading") return;
     this._setGameLoading(65, "INITIALIZING RUN...");
     await this._nextFrame();
+    if (runId !== GameState.runId || GameState.phase !== "loading") return;
     document.getElementById("complete-overlay").style.display = "none";
     const go = document.getElementById("gameover-overlay");
     if (go) go.style.display = "none";
@@ -202,7 +205,8 @@ const Game = {
     if (GameState.phase !== "playing") return;
 
     // Abandoning a run deliberately does not call AuthSystem.recordRun().
-    // The run is discarded when the player returns to the main menu.
+    // Invalidate every callback owned by this run before tearing its state down.
+    GameState.runId++;
     GameState.phase = "start";
     GameState.inventoryOpen = false;
     GameState.cinematicCamera = false;
@@ -221,9 +225,12 @@ const Game = {
     }
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level !== "undefined") {
-      Level.colliders.length = 0;
-      Level.triggers.length = 0;
-      Level.group = null;
+      // IMPORTANT: do not merely null Level.group here. Level.clear() removes
+      // the old Level 0 meshes/lights from the scene and disposes the per-run
+      // GPU resources. Leaving the old group attached was the main cause of
+      // second/third-run visual corruption and also made the player appear to
+      // clip through walls that had no matching collider anymore.
+      Level.clear(scene);
       Level.tiles = [];
       Level.cols = 0;
       Level.rows = 0;
@@ -251,6 +258,10 @@ const Game = {
   regenerate() {
     if (GameState.regenerating) return;
     GameState.regenerating = true;
+    // Tear down Level 1 before rebuilding Level 0. Level 1 owns separate
+    // collision/trigger arrays, so no Level 0 state can be invalidated after
+    // the new map has been built.
+    if (typeof Level1 !== 'undefined') Level1.resetVisuals();
     const next = (Math.imul((GameState.seed || 1) ^ 0x9E3779B9, 1664525) + 1013904223 + (performance.now() | 0)) >>> 0;
     const newSeed = next || 483921;
     let built = false;
@@ -285,7 +296,6 @@ const Game = {
     GameState.exitReached = false;
     GameState.level = 0;
     GameState.cinematicCamera = false;
-    if (typeof Level1 !== 'undefined') Level1.resetVisuals();
     AudioSystem.resume();
     AudioSystem.ambientHumStart();
     GameState.regenerating = false;
