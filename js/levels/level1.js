@@ -14,11 +14,10 @@ const Level1 = {
     if(this.group && scene) scene.remove(this.group);
     for(const L of this.lights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
     for(const L of this.ambientLights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
-    // Level.enter() aliases Level.colliders/triggers to these arrays. Detach
-    // those aliases before clearing so a Level 1 teardown can never erase a
-    // freshly rebuilt Level 0 collision/trigger set.
-    if(typeof Level!=='undefined' && Level.colliders===this.colliders) Level.colliders=[];
-    if(typeof Level!=='undefined' && Level.triggers===this.triggers) Level.triggers=[];
+    // Level 1 owns its own collision/trigger arrays. Never alias them onto
+    // Level.colliders/Level.triggers: doing so lets a Level 1 teardown replace
+    // or erase the freshly generated Level 0 collision state on the next run.
+    for (const rec of this.chunks.values()) this.disposeChunkResources(rec);
     this.chunks.clear(); this.colliders.length=0; this.triggers.length=0;
     this.active=false; this.exitMacro=null; this.exitPosition=null;
     this.lights.length=0; this.ambientLights.length=0; this.puddles.length=0;
@@ -30,7 +29,8 @@ const Level1 = {
     if(typeof SmilerSystem!=="undefined") SmilerSystem.reset();
     if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
     if(typeof ExitLocator!=="undefined") ExitLocator.hide();
-    if(scene){ scene.fog=null; scene.background && scene.background.setHex(0x202321); }
+    // Do not modify global scene fog/background here. The caller may be
+    // tearing Level 1 down immediately before rebuilding Level 0.
     if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
     if(CameraRig.camera){ CameraRig.camera.far=CONFIG.cameraFar; CameraRig.camera.updateProjectionMatrix(); }
   },
@@ -363,6 +363,22 @@ const Level1 = {
     }
   },
 
+  disposeChunkResources(rec){
+    if(!rec || !rec.group) return;
+    const protectedMaterials = new Set(Object.values(this.shared).filter(v => v && v.isMaterial));
+    rec.group.traverse(obj=>{
+      if(obj.geometry && obj.geometry.dispose && obj.geometry !== Geometries.box && obj.geometry !== Geometries.lightPanel && obj.geometry !== Geometries.lightHousing){
+        obj.geometry.dispose();
+      }
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for(const mat of mats){
+        if(!mat || protectedMaterials.has(mat) || !mat.dispose) continue;
+        const texKeys=['map','alphaMap','aoMap','bumpMap','normalMap','roughnessMap','metalnessMap','emissiveMap'];
+        for(const key of texKeys){ const tex=mat[key]; if(tex && tex.dispose) tex.dispose(); }
+        mat.dispose();
+      }
+    });
+  },
   buildChunk(cx,cz){
     const key=cx+','+cz; if(this.chunks.has(key)) return;
     const rng=this.rngFor(cx,cz,101), g=new THREE.Group(); g.name='L1_chunk_'+key;
@@ -441,6 +457,7 @@ const Level1 = {
     for(const [key,rec] of this.chunks){
       if(Math.max(Math.abs(rec.cx-cx),Math.abs(rec.cz-cz))>this.activeRadius){
         if(rec.group.parent) rec.group.parent.remove(rec.group);
+        this.disposeChunkResources(rec);
         this.chunks.delete(key);
       }
     }
@@ -667,7 +684,7 @@ const Level1 = {
     const origin=elevatorState?{x:elevatorState.origin.x,z:elevatorState.origin.z}:{x:0,z:0};
     PickupSystem.reset();
     this.build(seed,origin);
-    Level.cols=Infinity; Level.rows=Infinity; Level.tiles=[]; Level.colliders=this.colliders; Level.triggers=this.triggers; Level.group=this.group;
+    Level.cols=Infinity; Level.rows=Infinity; Level.tiles=[]; Level.group=this.group;
     Level.worldMin.set(-Infinity,this.baseY-2,-Infinity); Level.worldMax.set(Infinity,this.baseY+8,Infinity);
     Level.startPos.set(origin.x,this.baseY,origin.z); GameState.level=1;
     const obj=document.getElementById('hud-obj');if(obj)obj.textContent='Objective: explore Level 1';
