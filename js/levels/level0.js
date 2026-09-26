@@ -1240,7 +1240,8 @@ const Stairwell = {
   },
 
   startSequence(index){
-    if(this.sequenceActive||GameState.phase!=='playing')return;
+    // Level 1 may only begin from an actual Level 0 exit trigger.
+    if(this.sequenceActive || GameState.phase!=='playing' || GameState.level!==0 || !this.reached) return;
     const pair=this.doorPairs[index|0];
     if(!pair)return;
     this.transitionToken++;
