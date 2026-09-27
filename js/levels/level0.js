@@ -1742,43 +1742,93 @@ const Level = {
     // Older revisions created a fluorescent fixture for roughly every
     // third walkable tile. In a 48x40 module world that can mean thousands
     // of THREE.Mesh objects, making startup appear frozen at 52%.
-    // Lighting is now generated once per procedural module instead.
-    // DARK modules receive no overhead fixtures at all.
-    for (let ni = 0; ni < MapGraph.nodes.length; ni++) {
-      const mod = MapGraph.nodes[ni];
-      if (!mod) continue;
-      const profile = mod.lightProfile || "NORMAL";
-      if (profile === "DARK") continue;
+    // Standard generation still uses one or a few fixtures per module.
+    // TEST BETA is different: its architectural mask is a continuous
+    // 250x250 tile field, so it needs its own sparse ceiling-light sampler.
+    // This samples actual walkable tiles, guaranteeing fixtures land on the
+    // generated carpet instead of relying on module coordinates that may be
+    // occupied by a wall.
+    if (LevelGenerator.last && LevelGenerator.last.beta) {
+      const beta = LevelGenerator.last;
+      const arch = beta.architectural || {};
+      const zones = arch.zones || [];
+      const usedBetaLights = [];
+      const spacing = 9; // 18m between fixtures on the 2m beta grid.
+      const maxFixtures = 72;
 
-      const centerX = Math.floor(mod.gx + mod.w * 0.5) * LevelGenerator.CELL + 2;
-      const centerZ = Math.floor(mod.gz + mod.h * 0.5) * LevelGenerator.CELL + 2;
-      const candidates = [];
-
-      // Use the module center and, for larger/bright modules, one or two
-      // additional positions. Find actual walkable tiles before placing.
-      candidates.push([centerX, centerZ]);
-      if (profile === "BRIGHT" && (mod.w * mod.h >= 2)) {
-        candidates.push([mod.gx * LevelGenerator.CELL + 2, mod.gz * LevelGenerator.CELL + 2]);
-        if (mod.w * mod.h >= 4) {
-          candidates.push([(mod.gx + mod.w - 1) * LevelGenerator.CELL + 3,
-                           (mod.gz + mod.h - 1) * LevelGenerator.CELL + 3]);
+      function nearestBetaZone(tx, tz) {
+        let best = null, bd = Infinity;
+        for (let zi = 0; zi < zones.length; zi++) {
+          const z = zones[zi];
+          const dx = tx - z.cx, dz = tz - z.cy;
+          const d = dx * dx + dz * dz;
+          if (d < bd) { bd = d; best = z; }
         }
+        return best;
       }
 
-      const usedLightTiles = [];
-      for (let ci = 0; ci < candidates.length; ci++) {
-        const tx = candidates[ci][0], tz = candidates[ci][1];
-        if (!this.inBounds(tx, tz) || this.getTile(tx, tz) === TILE.WALL || this.getTile(tx, tz) === TILE.COLUMN) continue;
-        let duplicate = false;
-        for (let ui = 0; ui < usedLightTiles.length; ui++) {
-          if (usedLightTiles[ui][0] === tx && usedLightTiles[ui][1] === tz) { duplicate = true; break; }
+      for (let z = 4; z < this.rows - 4 && usedBetaLights.length < maxFixtures; z += spacing) {
+        for (let x = 4; x < this.cols - 4 && usedBetaLights.length < maxFixtures; x += spacing) {
+          if (this.getTile(x, z) === TILE.WALL || this.getTile(x, z) === TILE.COLUMN) continue;
+
+          const zone = nearestBetaZone(x, z);
+          if (zone && zone.type && zone.type.name === "alcoves" && ((x + z) % 4 === 0)) {
+            // BRIGHT zone: keep the denser sampling.
+          }
+
+          let duplicate = false;
+          for (let i = 0; i < usedBetaLights.length; i++) {
+            const dx = usedBetaLights[i][0] - x, dz = usedBetaLights[i][1] - z;
+            if (dx * dx + dz * dz < 36) { duplicate = true; break; }
+          }
+          if (duplicate) continue;
+          usedBetaLights.push([x, z]);
+
+          const w = this.tileToWorld(x, z);
+          const bright = zone && zone.type && zone.type.name === "alcoves";
+          LightingSystem.addFluorescent(
+            scene, w.x, H - 0.06, w.z,
+            LightingSystem.lights.length < 42,
+            bright ? 1.42 : 1.16
+          );
         }
-        if (duplicate) continue;
-        usedLightTiles.push([tx, tz]);
-        const w = this.tileToWorld(tx, tz);
-        const scale = profile === "BRIGHT" ? 1.42 : 1.16;
-        const withPoint = profile !== "DARK" && LightingSystem.lights.length < 42;
-        LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, scale);
+      }
+    } else {
+      // Standard module-based lighting.
+      for (let ni = 0; ni < MapGraph.nodes.length; ni++) {
+        const mod = MapGraph.nodes[ni];
+        if (!mod) continue;
+        const profile = mod.lightProfile || "NORMAL";
+        if (profile === "DARK") continue;
+
+        const centerX = Math.floor(mod.gx + mod.w * 0.5) * LevelGenerator.CELL + 2;
+        const centerZ = Math.floor(mod.gz + mod.h * 0.5) * LevelGenerator.CELL + 2;
+        const candidates = [];
+
+        candidates.push([centerX, centerZ]);
+        if (profile === "BRIGHT" && (mod.w * mod.h >= 2)) {
+          candidates.push([mod.gx * LevelGenerator.CELL + 2, mod.gz * LevelGenerator.CELL + 2]);
+          if (mod.w * mod.h >= 4) {
+            candidates.push([(mod.gx + mod.w - 1) * LevelGenerator.CELL + 3,
+                             (mod.gz + mod.h - 1) * LevelGenerator.CELL + 3]);
+          }
+        }
+
+        const usedLightTiles = [];
+        for (let ci = 0; ci < candidates.length; ci++) {
+          const tx = candidates[ci][0], tz = candidates[ci][1];
+          if (!this.inBounds(tx, tz) || this.getTile(tx, tz) === TILE.WALL || this.getTile(tx, tz) === TILE.COLUMN) continue;
+          let duplicate = false;
+          for (let ui = 0; ui < usedLightTiles.length; ui++) {
+            if (usedLightTiles[ui][0] === tx && usedLightTiles[ui][1] === tz) { duplicate = true; break; }
+          }
+          if (duplicate) continue;
+          usedLightTiles.push([tx, tz]);
+          const w = this.tileToWorld(tx, tz);
+          const scale = profile === "BRIGHT" ? 1.42 : 1.16;
+          const withPoint = profile !== "DARK" && LightingSystem.lights.length < 42;
+          LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, scale);
+        }
       }
     }
 
