@@ -22,9 +22,13 @@ const DEFAULTS = {
   regionLacunarity: 2,
   regionThresholds: [0.15, 0.40, 0.75, 0.95],
   regionMaxClearCells: [15, 12, 9, 6, 4],
-  regionMajorMultiplier: [0.76, 0.90, 1.00, 1.18, 1.34],
-  regionSecondaryMultiplier: [0.74, 0.88, 1.00, 1.18, 1.30],
-  regionMajorSizeMultiplier: [1.15, 1.06, 1.00, 0.90, 0.78],
+  // Region profiles deliberately change both quantity and architectural vocabulary.
+  // The last two bands are not merely "more walls": Dense favors attached/intersecting
+  // structures while Maze switches to short, turn-heavy chains and pocket-like frames.
+  regionMajorMultiplier: [0.72, 0.88, 1.00, 1.30, 1.48],
+  regionSecondaryMultiplier: [0.55, 0.78, 1.00, 1.48, 1.90],
+  regionMajorSizeMultiplier: [1.22, 1.10, 1.00, 0.82, 0.58],
+  regionMinStructureSpacingByBand: [18, 15, 11, 6, 3],
   regionInfillAttempts: 72,
   regionMinStructureSpacing: 12,
   denseZoneThreshold: 0.46,
@@ -274,7 +278,30 @@ function generate(seed,opts={}){
     {name:'alcoves',weights:{L:4,T:2,U:3,bar:1,frame:2}},
     {name:'mixed',weights:{L:3,T:3,U:2,bar:2,frame:2}}
   ];
-  const regionProfile=(band)=>({name:regionName(band),majorMultiplier:p.regionMajorMultiplier[band]||1,secondaryMultiplier:p.regionSecondaryMultiplier[band]||1,sizeMultiplier:p.regionMajorSizeMultiplier[band]||1,maxClearCells:p.regionMaxClearCells[band]||9});
+  const regionProfile=(band)=>({
+    name:regionName(band),
+    majorMultiplier:p.regionMajorMultiplier[band]||1,
+    secondaryMultiplier:p.regionSecondaryMultiplier[band]||1,
+    sizeMultiplier:p.regionMajorSizeMultiplier[band]||1,
+    minSpacing:(p.regionMinStructureSpacingByBand&&p.regionMinStructureSpacingByBand[band])||p.regionMinStructureSpacing||12,
+    // Architectural vocabulary. These weights are intentionally different from
+    // the global zone vocabulary so Dense and Maze actually read differently.
+    majorWeights:[
+      {L:2,T:2,U:3,bar:1,frame:4},
+      {L:2,T:2,U:3,bar:2,frame:3},
+      {L:3,T:3,U:2,bar:2,frame:2},
+      {L:2,T:4,U:4,bar:1,frame:3},
+      {L:4,T:5,U:2,bar:1,frame:1}
+    ][band] || {L:3,T:3,U:2,bar:2,frame:2},
+    secondaryTypes:[
+      ['L','bar','T','U'],
+      ['L','T','U','bar'],
+      ['L','bar','T','U'],
+      ['T','U','L','bar','frame'],
+      ['L','T','T','L','frame']
+    ][band] || ['L','bar','T','U'],
+    maxClearCells:p.regionMaxClearCells[band]||9
+  });
   const cellW=w/p.zoneCols,cellH=h/p.zoneRows;
   for(let zy=0;zy<p.zoneRows;zy++)for(let zx=0;zx<p.zoneCols;zx++){
     const zi=zy*p.zoneCols+zx;
@@ -310,6 +337,14 @@ function generate(seed,opts={}){
     const e=Object.entries(z.type.weights);let total=0;for(const [,v] of e)total+=v;
     let q=r()*total;for(const [k,v] of e){q-=v;if(q<=0)return k;}return e[e.length-1][0];
   }
+  function weightedRegionType(profile){
+    const e=Object.entries(profile.majorWeights);let total=0;for(const [,v] of e)total+=v;
+    let q=r()*total;for(const [k,v] of e){q-=v;if(q<=0)return k;}return e[e.length-1][0];
+  }
+  function regionSecondaryType(profile){
+    const list=profile.secondaryTypes||['L','bar','T','U'];
+    return list[Math.floor(r()*list.length)];
+  }
   function placeMajor(z){
     for(let attempt=0;attempt<p.maxPlacementAttempts;attempt++){
       const a=r()*Math.PI*2,rad=Math.pow(r(),1.8)*z.radius;
@@ -317,11 +352,13 @@ function generate(seed,opts={}){
       if(cx<12||cx>w-13||cy<12||cy>h-13)continue;
       const field=broad[cy*w+cx],localBand=regionBand(regionField[cy*w+cx],p),localProfile=regionProfile(localBand);
       if(field<.26&&localBand<2&&r()<.42)continue;
+      // Dense and Maze are allowed to place closer to neighboring architecture;
+      // Expanse/Open deliberately keep larger breathing room.
       const rawSize=p.majorMin+Math.floor(r()*(p.majorMax-p.majorMin+1));
       const size=Math.max(p.majorMin,Math.min(p.majorMax,Math.round(rawSize*localProfile.sizeMultiplier)));
-      const type=weightedType(z),before=walls.slice();
+      const type=localBand>=3 ? weightedRegionType(localProfile) : weightedType(z),before=walls.slice();
       const sh=makeShape(walls,w,h,cx,cy,type,size,r,p.majorThickness),bb=bbox(sh);
-      if(bb.minX<3||bb.maxX>w-4||bb.minY<3||bb.maxY>h-4||placed.some(o=>intersects(bb,o.bb,1))){walls.set(before);continue;}
+      if(bb.minX<3||bb.maxX>w-4||bb.minY<3||bb.maxY>h-4||placed.some(o=>intersects(bb,o.bb,localProfile.minSpacing/2))){walls.set(before);continue;}
       placed.push({bb,kind:'major',isMajor:true,cx,cy,type,zoneId:z.id});
       structures.push({kind:'major',isMajor:true,cx,cy,type,size,zoneId:z.id});z.majorPlaced++;return true;
     }
@@ -334,29 +371,174 @@ function generate(seed,opts={}){
     let guard=0;while(z.majorPlaced<z.majorTarget&&guard++<p.maxPlacementAttempts)placeMajor(z);
   }
 
-  // Secondary structures are attached to a major structure in the same zone.
+  // Secondary structures are attached to major structures in the same zone.
+  // Dense gets many more attachments and tighter offsets; Maze gets even more,
+  // but they are deliberately short and turn-heavy instead of simply being larger.
   const secondaryTotal=Math.round(p.majorCount*p.secondaryPerMajor*p.zoneSecondaryMultiplier*1.02);
   const majors=()=>placed.filter(o=>o.isMajor);
   for(let i=0;i<secondaryTotal;i++){
     const ms=majors();if(!ms.length)break;
-    const m=ms[Math.floor(r()*ms.length)],z=zones[m.zoneId];let ok=false;
-    for(let attempt=0;attempt<20&&!ok;attempt++){
-      const side=Math.floor(r()*4),dist=3+Math.floor(r()*10);let cx=m.cx,cy=m.cy;
+    const m=ms[Math.floor(r()*ms.length)],z=zones[m.zoneId];
+    const localBand=regionBand(regionField[Math.max(1,Math.min(h-2,m.cy))*w+Math.max(1,Math.min(w-2,m.cx))],p);
+    const profile=regionProfile(localBand);let ok=false;
+    const attempts=localBand>=3?34:20;
+    for(let attempt=0;attempt<attempts&&!ok;attempt++){
+      const side=Math.floor(r()*4);
+      const maxDist=localBand===4?6:(localBand===3?8:10);
+      const dist=2+Math.floor(r()*maxDist);let cx=m.cx,cy=m.cy;
       if(side===0)cy=m.bb.minY-dist;if(side===1)cy=m.bb.maxY+dist;if(side===2)cx=m.bb.minX-dist;if(side===3)cx=m.bb.maxX+dist;
-      const dx=cx-z.cx,dy=cy-z.cy,d=Math.hypot(dx,dy);if(d>z.radius*1.08){const k=z.radius*1.08/d;cx=z.cx+dx*k;cy=z.cy+dy*k;}
+      const dx=cx-z.cx,dy=cy-z.cy,d=Math.hypot(dx,dy);if(d>z.radius*1.10){const k=z.radius*1.10/d;cx=z.cx+dx*k;cy=z.cy+dy*k;}
       cx=Math.max(5,Math.min(w-6,Math.round(cx)));cy=Math.max(5,Math.min(h-6,Math.round(cy)));
-      const size=p.secondaryMin+Math.floor(r()*(p.secondaryMax-p.secondaryMin+1)),type=['L','bar','T','U'][Math.floor(r()*4)],before=walls.slice();
-      const sh=makeShape(walls,w,h,cx,cy,type,size,r,p.secondaryThickness),bb=bbox(sh);
-      if(bb.minX>=3&&bb.maxX<=w-4&&bb.minY>=3&&bb.maxY<=h-4&&!placed.some(o=>intersects(bb,o.bb,1))){
-        placed.push({bb,kind:'secondary',isMajor:false,cx,cy,type,zoneId:m.zoneId});structures.push({kind:'secondary',isMajor:false,cx,cy,type,size,zoneId:m.zoneId});ok=true;
+      const sizeBase=p.secondaryMin+Math.floor(r()*(p.secondaryMax-p.secondaryMin+1));
+      const size=Math.max(6,Math.round(sizeBase*(localBand===4?.52:localBand===3?.72:1)));
+      const type=localBand>=3?regionSecondaryType(profile):['L','bar','T','U'][Math.floor(r()*4)];
+      const before=walls.slice();
+      const sh=makeShape(walls,w,h,cx,cy,type,size,r,localBand===4?1:p.secondaryThickness),bb=bbox(sh);
+      if(bb.minX>=3&&bb.maxX<=w-4&&bb.minY>=3&&bb.maxY<=h-4&&!placed.some(o=>intersects(bb,o.bb,profile.minSpacing/2))){
+        placed.push({bb,kind:'secondary',isMajor:false,cx,cy,type,zoneId:m.zoneId,region:profile.name});
+        structures.push({kind:'secondary',isMajor:false,cx,cy,type,size,zoneId:m.zoneId,region:profile.name});ok=true;
       }else walls.set(before);
+    }
+  }
+
+  // Dense-only attachment pass: add short crossbars/frames between nearby
+  // structures. This produces visual occlusion and intersections that Normal
+  // does not receive, without turning the entire map into a maze.
+  for(const z of zones){
+    if(z.band!==3)continue;
+    const localMajors=placed.filter(o=>o.isMajor&&o.zoneId===z.id);
+    for(let i=0;i<Math.min(4,Math.floor(localMajors.length*.7));i++){
+      const m=localMajors[Math.floor(r()*localMajors.length)];
+      const angle=r()<.5?0:Math.PI/2;
+      const len=7+Math.floor(r()*10);
+      const cx=Math.round(m.cx+(r()-.5)*8),cy=Math.round(m.cy+(r()-.5)*8);
+      const type=r()<.55?'T':'frame',before=walls.slice();
+      const sh=makeShape(walls,w,h,cx,cy,type,len,r,1),bb=bbox(sh);
+      if(bb.minX<3||bb.maxX>w-4||bb.minY<3||bb.maxY>h-4||placed.some(o=>intersects(bb,o.bb,2.5))){walls.set(before);continue;}
+      placed.push({bb,kind:'denseAttachment',isMajor:false,cx,cy,type,zoneId:z.id,region:'dense'});
+      structures.push({kind:'denseAttachment',isMajor:false,cx,cy,type,size:len,zoneId:z.id,region:'dense'});
+    }
+  }
+
+  // Maze-only pass: build short, chained turns. Each chain is intentionally
+  // local, producing pockets and repeated T/L turns rather than long straight
+  // walls. Connectivity repair later guarantees that the whole floor remains
+  // reachable even when several chains overlap.
+  for(const z of zones){
+    if(z.band!==4)continue;
+    const chains=2+Math.floor(r()*3);
+    for(let c=0;c<chains;c++){
+      let cx=Math.round(z.cx+(r()-.5)*z.radius*.8),cy=Math.round(z.cy+(r()-.5)*z.radius*.8);
+      let dir=Math.floor(r()*4);
+      const links=3+Math.floor(r()*3);
+      for(let k=0;k<links;k++){
+        const len=5+Math.floor(r()*6);
+        const type=(k%3===1)?'T':'L';
+        const before=walls.slice();
+        const sh=makeShape(walls,w,h,cx,cy,type,len,r,1),bb=bbox(sh);
+        if(bb.minX<3||bb.maxX>w-4||bb.minY<3||bb.maxY>h-4){walls.set(before);break;}
+        // In the Maze band we permit very close/attached pieces; reject only
+        // if this would make a giant solid clump.
+        let localWall=0,localFloor=0;
+        for(let yy=Math.max(1,cy-6);yy<=Math.min(h-2,cy+6);yy++)for(let xx=Math.max(1,cx-6);xx<=Math.min(w-2,cx+6);xx++){
+          if(walls[yy*w+xx])localWall++;else localFloor++;
+        }
+        if(localWall>localFloor*2.8){walls.set(before);break;}
+        placed.push({bb,kind:'mazeChain',isMajor:false,cx,cy,type,zoneId:z.id,region:'maze'});
+        structures.push({kind:'mazeChain',isMajor:false,cx,cy,type,size:len,zoneId:z.id,region:'maze'});
+        const step=Math.max(3,Math.floor(len*.65));
+        const turn=r()<.8?(r()<.5?1:3):0;
+        dir=(dir+turn)%4;
+        const dx=[1,0,-1,0][dir],dy=[0,1,0,-1][dir];
+        cx=Math.max(5,Math.min(w-6,cx+dx*step));cy=Math.max(5,Math.min(h-6,cy+dy*step));
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // REGION-SPECIFIC ARCHITECTURAL PASS
+  // -------------------------------------------------------------------------
+  // The earlier zone pass is deliberately broad: a structure can be biased by
+  // a region without being entirely contained by it. That is useful for
+  // transitions, but it also means the 5% Maze band can end up under-built.
+  // This pass samples cells that are actually inside Dense/Maze regions and
+  // gives those bands their own architectural vocabulary.
+  function regionalCandidates(band){
+    const out=[];
+    for(let y=6;y<h-6;y++)for(let x=6;x<w-6;x++){
+      const idx=y*w+x;
+      if(regionBand(regionField[idx],p)!==band || walls[idx])continue;
+      if(broad[idx]<.18 && band===3)continue;
+      out.push({x,y,idx});
+    }
+    return out;
+  }
+  function placeRegionalShape(c,band){
+    const profile=regionProfile(band);
+    const before=walls.slice();
+    let type,size;
+    if(band===3){
+      // Dense: medium-short T/U/L pieces and partial frames create
+      // intersections and occlusion without becoming corridor spam.
+      type=r()<.42?'T':(r()<.55?'U':(r()<.72?'L':'frame'));
+      size=8+Math.floor(r()*10);
+    }else{
+      // Maze: short pieces with lots of turns. Frames are rare because the
+      // dominant read should be a connected sequence of bends and pockets.
+      type=r()<.50?'L':(r()<.88?'T':'frame');
+      size=5+Math.floor(r()*6);
+    }
+    const sh=makeShape(walls,w,h,c.x,c.y,type,size,r,band===4?1:2),bb=bbox(sh);
+    if(bb.minX<3||bb.maxX>w-4||bb.minY<3||bb.maxY>h-4){walls.set(before);return false;}
+    // Keep the new architecture mostly in its intended region. A small spill
+    // is allowed so region transitions don't look like hard borders.
+    let inside=0,total=0;
+    for(let yy=Math.max(1,bb.minY);yy<=Math.min(h-2,bb.maxY);yy++)for(let xx=Math.max(1,bb.minX);xx<=Math.min(w-2,bb.maxX);xx++){
+      total++;
+      if(regionBand(regionField[yy*w+xx],p)===band)inside++;
+    }
+    if(total && inside/total < (band===4?.68:.58)){walls.set(before);return false;}
+    // Don't turn a pocket into a solid block. Maze gets a little more
+    // tolerance because its defining feature is compression of walkable space.
+    let localWall=0,localFloor=0;
+    const rr=band===4?7:8;
+    for(let yy=Math.max(1,c.y-rr);yy<=Math.min(h-2,c.y+rr);yy++)for(let xx=Math.max(1,c.x-rr);xx<=Math.min(w-2,c.x+rr);xx++){
+      if(walls[yy*w+xx])localWall++;else localFloor++;
+    }
+    if(localWall>localFloor*(band===4?3.6:2.5)){walls.set(before);return false;}
+    structures.push({kind:band===4?'mazeRegional':'denseRegional',isMajor:false,cx:c.x,cy:c.y,type,size,zoneId:-1,region:profile.name});
+    return true;
+  }
+
+  {
+    const dense=regionalCandidates(3),maze=regionalCandidates(4);
+    // Deterministic shuffle through the generator RNG.
+    for(let i=dense.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[dense[i],dense[j]]=[dense[j],dense[i]];}
+    for(let i=maze.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[maze[i],maze[j]]=[maze[j],maze[i]];}
+
+    // Dense gets a moderate number of true regional structures. Maze gets a
+    // much stronger intervention, but remains only ~5% of the world.
+    const denseTarget=Math.max(8,Math.round(dense.length/230));
+    const mazeTarget=Math.max(10,Math.round(maze.length/78));
+    let placedDense=0,placedMaze=0;
+    for(const c of dense){
+      if(placedDense>=denseTarget)break;
+      if(placeRegionalShape(c,3))placedDense++;
+    }
+    for(const c of maze){
+      if(placedMaze>=mazeTarget)break;
+      if(placeRegionalShape(c,4))placedMaze++;
     }
   }
 
   // Sparse pillars are assigned to zones so even the detail layer has local
   // clustering rather than uniform random sprinkling.
   for(let i=0;i<p.pillarCount;i++){
-    const z=zones[Math.floor(r()*zones.length)];
+    const z=zones[Math.floor(r()*zones.length)],profile=z.profile;
+    // Maze gets very few free-standing pillars; its claustrophobia should come
+    // from connected architecture. Dense gets more, while Expanse/Open remain sparse.
+    const pillarChance=profile.name==='maze'?.22:profile.name==='dense'?1.65:profile.name==='normal'?1:profile.name==='open'?.70:.42;
+    if(r()>Math.min(1,pillarChance))continue;
     for(let attempt=0;attempt<30;attempt++){
       const a=r()*Math.PI*2,rad=Math.sqrt(r())*z.radius*.9;
       const x=Math.max(4,Math.min(w-5,Math.round(z.cx+Math.cos(a)*rad)));
@@ -472,7 +654,7 @@ function generate(seed,opts={}){
   const afterRegions=floodRegions(walls,w,h);let carved=0;for(let i=0;i<walls.length;i++)if(before[i]&&!walls[i])carved++;
   const wallCells=wallCount(walls),floorCells=walls.length-wallCells,reachable=afterRegions[0]?.length||0;
   const regionCounts={expanse:0,open:0,normal:0,dense:0,maze:0};for(const v of regionField)regionCounts[regionName(regionBand(v,p))]++;
-  return {seed:s,width:w,height:h,cellMeters:p.cellMeters,walls,before,broad,detail,fine,regionField,zones,structures,stats:{wallPct:wallCells/walls.length,floorPct:floorCells/walls.length,regionsBefore:beforeRegions.length,regionsAfter:afterRegions.length,connectors,carvedCells:carved,carvePct:carved/Math.max(1,wallCount(before)),reachable,floorCells,majorStructures:structures.filter(x=>x.isMajor).length,secondaryStructures:structures.filter(x=>!x.isMajor).length,regionCounts,regionThresholds:p.regionThresholds,maxClearCells:p.regionMaxClearCells}};
+  return {seed:s,width:w,height:h,cellMeters:p.cellMeters,walls,before,broad,detail,fine,regionField,zones,structures,stats:{wallPct:wallCells/walls.length,floorPct:floorCells/walls.length,regionsBefore:beforeRegions.length,regionsAfter:afterRegions.length,connectors,carvedCells:carved,carvePct:carved/Math.max(1,wallCount(before)),reachable,floorCells,majorStructures:structures.filter(x=>x.isMajor).length,secondaryStructures:structures.filter(x=>!x.isMajor).length,regionCounts,regionThresholds:p.regionThresholds,maxClearCells:p.regionMaxClearCells,regionProfiles:{major:p.regionMajorMultiplier,secondary:p.regionSecondaryMultiplier,size:p.regionMajorSizeMultiplier,minSpacing:p.regionMinStructureSpacingByBand}}};
 }
 if(typeof module!=="undefined")module.exports={generate,DEFAULTS,fbm};
 if(typeof window!=="undefined")window.NoiseArchitectural={generate,DEFAULTS,fbm};
