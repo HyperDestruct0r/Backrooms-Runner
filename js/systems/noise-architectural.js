@@ -16,11 +16,22 @@ const DEFAULTS = {
   broadFreq: 0.006,
   detailFreq: 0.018,
   fineFreq: 0.060,
+  regionFreq: 0.0032,
+  regionOctaves: 2,
+  regionPersistence: 0.55,
+  regionLacunarity: 2,
+  regionThresholds: [0.15, 0.40, 0.75, 0.95],
+  regionMaxClearCells: [15, 12, 9, 6, 4],
+  regionMajorMultiplier: [0.76, 0.90, 1.00, 1.18, 1.34],
+  regionSecondaryMultiplier: [0.74, 0.88, 1.00, 1.18, 1.30],
+  regionMajorSizeMultiplier: [1.15, 1.06, 1.00, 0.90, 0.78],
+  regionInfillAttempts: 72,
+  regionMinStructureSpacing: 12,
   denseZoneThreshold: 0.46,
   maxPlacementAttempts: 90,
   smoothingPasses: 1,
   connectorWidth: 1,
-  maxConnectors: 64,
+  maxConnectors: 128,
   zoneRows: 3,
   zoneCols: 3,
   zoneJitter: 0.12,
@@ -102,6 +113,39 @@ function floodRegions(mask,w,h){
   regions.sort((a,b)=>b.length-a.length);return regions;
 }
 function wallCount(mask){let n=0;for(const v of mask)n+=v;return n;}
+
+function regionBand(v,p){
+  const t=p.regionThresholds||[0.16,0.36,0.66,0.86];
+  if(v<t[0])return 0;
+  if(v<t[1])return 1;
+  if(v<t[2])return 2;
+  if(v<t[3])return 3;
+  return 4;
+}
+
+function regionName(b){
+  return ['expanse','open','normal','dense','maze'][b]||'normal';
+}
+
+function distanceField(mask,w,h){
+  const total=w*h,dist=new Int32Array(total);dist.fill(-1);
+  const q=new Int32Array(total);let head=0,tail=0;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=y*w+x;
+    if(mask[i]){dist[i]=0;q[tail++]=i;}
+  }
+  while(head<tail){
+    const i=q[head++],x=i%w,y=(i/w)|0,d=dist[i]+1;
+    const ns=[i-1,i+1,i-w,i+w];
+    for(const n of ns){
+      if(n<0||n>=total||dist[n]>=0)continue;
+      const nx=n%w,ny=(n/w)|0;
+      if(nx<0||nx>=w||ny<0||ny>=h)continue;
+      dist[n]=d;q[tail++]=n;
+    }
+  }
+  return dist;
+}
 function bbox(shape){return shape.bbox;}
 function intersects(a,b,pad){return !(a.maxX+pad<b.minX||b.maxX+pad<a.minX||a.maxY+pad<b.minY||b.maxY+pad<a.minY);}
 function drawCell(mask,w,h,x,y,t=1){
@@ -208,6 +252,18 @@ function generate(seed,opts={}){
   const broad=fbm(s,w,h,p.broadFreq,4,.55,2,0xA1B2C3);
   const detail=fbm(s,w,h,p.detailFreq,4,.52,2,0xD4E5F6);
   const fine=fbm(s,w,h,p.fineFreq,2,.50,2,0x778899);
+  const regionNoise=fbm(s,w,h,p.regionFreq,p.regionOctaves,p.regionPersistence,p.regionLacunarity,0x13579BDF);
+  const regionField=new Float32Array(w*h);
+  for(let i=0;i<regionField.length;i++) regionField[i]=regionNoise[i]*0.78+broad[i]*0.14+detail[i]*0.08;
+  // Convert the raw region field into a percentile field. This keeps the
+  // spatial character of the low-frequency noise while making the five
+  // architectural regions occur at controlled proportions instead of letting
+  // a particular seed accidentally become almost entirely 'Normal'.
+  const hist=new Uint32Array(256);
+  for(const v of regionField)hist[Math.max(0,Math.min(255,Math.floor(v*255)))]++;
+  let cumulative=0;const cdf=new Float32Array(256);
+  for(let i=0;i<256;i++){cdf[i]=(cumulative+hist[i]*0.5)/Math.max(1,w*h);cumulative+=hist[i];}
+  for(let i=0;i<regionField.length;i++){const b=Math.max(0,Math.min(255,Math.floor(regionField[i]*255)));regionField[i]=cdf[b];}
   const walls=new Uint8Array(w*h),structures=[],placed=[];
   // Architectural zones: higher-level neighborhoods that cluster related
   // structures. Noise biases the zones, but does not independently place walls.
@@ -218,6 +274,7 @@ function generate(seed,opts={}){
     {name:'alcoves',weights:{L:4,T:2,U:3,bar:1,frame:2}},
     {name:'mixed',weights:{L:3,T:3,U:2,bar:2,frame:2}}
   ];
+  const regionProfile=(band)=>({name:regionName(band),majorMultiplier:p.regionMajorMultiplier[band]||1,secondaryMultiplier:p.regionSecondaryMultiplier[band]||1,sizeMultiplier:p.regionMajorSizeMultiplier[band]||1,maxClearCells:p.regionMaxClearCells[band]||9});
   const cellW=w/p.zoneCols,cellH=h/p.zoneRows;
   for(let zy=0;zy<p.zoneRows;zy++)for(let zx=0;zx<p.zoneCols;zx++){
     const zi=zy*p.zoneCols+zx;
@@ -226,17 +283,28 @@ function generate(seed,opts={}){
     const radius=Math.min(cellW,cellH)*p.zoneRadius*.5;
     const type=zoneTypes[zi%zoneTypes.length];
     const sx=Math.max(0,Math.min(w-1,Math.floor(cx))),sy=Math.max(0,Math.min(h-1,Math.floor(cy)));
-    const field=broad[sy*w+sx],density=.82+field*.38;
-    zones.push({id:zi,cx,cy,radius,type,field,density,majorTarget:0,majorPlaced:0});
+    const field=broad[sy*w+sx],regionValue=regionField[sy*w+sx],band=regionBand(regionValue,p),profile=regionProfile(band);
+    const density=(.78+field*.34)*profile.majorMultiplier;
+    zones.push({id:zi,cx,cy,radius,type,field,regionValue,band,region:profile.name,profile,density,majorTarget:0,majorPlaced:0});
   }
-  let remaining=p.majorCount;
   for(const z of zones){
     z.majorTarget=Math.max(p.zoneMinMajor,Math.min(p.zoneMaxMajor,
-      Math.round((p.majorCount/zones.length)*z.density+(r()-.5)*1.2)));
-    remaining-=z.majorTarget;
+      Math.round((p.majorCount/zones.length)*z.density+(r()-.5)*1.4)));
   }
-  while(remaining>0){const z=zones[Math.floor(r()*zones.length)];if(z.majorTarget<p.zoneMaxMajor){z.majorTarget++;remaining--;}}
-  while(remaining<0){const a=zones.filter(z=>z.majorTarget>p.zoneMinMajor);if(!a.length)break;a[Math.floor(r()*a.length)].majorTarget--;remaining++;}
+  // Preserve the intended global scale without erasing regional differences.
+  // We only nudge the least/most dense zones when the total drifts too far.
+  let targetTotal=Math.round(p.majorCount*1.12),currentTotal=zones.reduce((a,z)=>a+z.majorTarget,0);
+  let guard=0;
+  while(currentTotal<targetTotal&&guard++<500){
+    const candidates=zones.filter(z=>z.majorTarget<p.zoneMaxMajor);if(!candidates.length)break;
+    candidates.sort((a,b)=>a.profile.majorMultiplier-b.profile.majorMultiplier);
+    const z=candidates[Math.floor(r()*Math.min(3,candidates.length))];z.majorTarget++;currentTotal++;
+  }
+  while(currentTotal>targetTotal&&guard++<1000){
+    const candidates=zones.filter(z=>z.majorTarget>p.zoneMinMajor);if(!candidates.length)break;
+    candidates.sort((a,b)=>b.profile.majorMultiplier-a.profile.majorMultiplier);
+    const z=candidates[Math.floor(r()*Math.min(3,candidates.length))];z.majorTarget--;currentTotal--;
+  }
 
   function weightedType(z){
     const e=Object.entries(z.type.weights);let total=0;for(const [,v] of e)total+=v;
@@ -247,8 +315,10 @@ function generate(seed,opts={}){
       const a=r()*Math.PI*2,rad=Math.pow(r(),1.8)*z.radius;
       const cx=Math.round(z.cx+Math.cos(a)*rad),cy=Math.round(z.cy+Math.sin(a)*rad);
       if(cx<12||cx>w-13||cy<12||cy>h-13)continue;
-      const field=broad[cy*w+cx];if(field<.30&&r()<.55)continue;
-      const size=p.majorMin+Math.floor(r()*(p.majorMax-p.majorMin+1));
+      const field=broad[cy*w+cx],localBand=regionBand(regionField[cy*w+cx],p),localProfile=regionProfile(localBand);
+      if(field<.26&&localBand<2&&r()<.42)continue;
+      const rawSize=p.majorMin+Math.floor(r()*(p.majorMax-p.majorMin+1));
+      const size=Math.max(p.majorMin,Math.min(p.majorMax,Math.round(rawSize*localProfile.sizeMultiplier)));
       const type=weightedType(z),before=walls.slice();
       const sh=makeShape(walls,w,h,cx,cy,type,size,r,p.majorThickness),bb=bbox(sh);
       if(bb.minX<3||bb.maxX>w-4||bb.minY<3||bb.maxY>h-4||placed.some(o=>intersects(bb,o.bb,1))){walls.set(before);continue;}
@@ -265,7 +335,7 @@ function generate(seed,opts={}){
   }
 
   // Secondary structures are attached to a major structure in the same zone.
-  const secondaryTotal=Math.round(p.majorCount*p.secondaryPerMajor*p.zoneSecondaryMultiplier);
+  const secondaryTotal=Math.round(p.majorCount*p.secondaryPerMajor*p.zoneSecondaryMultiplier*1.02);
   const majors=()=>placed.filter(o=>o.isMajor);
   for(let i=0;i<secondaryTotal;i++){
     const ms=majors();if(!ms.length)break;
@@ -324,6 +394,55 @@ function generate(seed,opts={}){
     if(q>0.955 && r()<0.045){drawCell(walls,w,h,x,y,1);}
   }
   // Boundary wall gives the prototype a finite 500m test region.
+  // Regional clear-span pass. The five architectural regions are not just
+  // labels: they control how close the player should generally be to structure.
+  // Expanse is still genuinely open, but a hard 30m ceiling prevents the
+  // enormous empty carpet fields seen in earlier Beta builds. Dense/Maze
+  // regions get progressively tighter spatial envelopes.
+  {
+    const dist=distanceField(walls,w,h);
+    const candidates=[];
+    for(let y=2;y<h-2;y++)for(let x=2;x<w-2;x++){
+      const idx=y*w+x;if(walls[idx])continue;
+      const band=regionBand(regionField[idx],p),limit=(p.regionMaxClearCells[band]||9);
+      // Expanse is the only hard clear-span guarantee. The other region types
+      // already get their density from the architecture rules above; this pass
+      // mainly guarantees that an Expanse can never become an enormous empty
+      // carpet field.
+      if(band===0 && dist[idx]>limit)candidates.push({idx,x,y,d:dist[idx],band});
+    }
+    candidates.sort((a,b)=>b.d-a.d);
+    const infill=[];
+    for(const c of candidates){
+      if(infill.length>=p.regionInfillAttempts)break;
+      let tooClose=false;
+      for(const q of infill){if(Math.abs(c.x-q.x)+Math.abs(c.y-q.y)<p.regionMinStructureSpacing){tooClose=true;break;}}
+      if(tooClose)continue;
+      const profile=regionProfile(c.band);
+      const sizeBase=c.band===0?Math.round((p.majorMin+p.majorMax)*.54):c.band===1?Math.round((p.majorMin+p.majorMax)*.47):c.band===2?Math.round((p.majorMin+p.majorMax)*.40):c.band===3?Math.round((p.majorMin+p.majorMax)*.34):Math.round((p.majorMin+p.majorMax)*.28);
+      const size=Math.max(8,Math.min(p.majorMax,Math.round(sizeBase*profile.sizeMultiplier)));
+      const type=c.band===0?(r()<.68?'bar':(r()<.58?'L':'T'))
+        :c.band===1?(r()<.45?'L':(r()<.55?'T':'U'))
+        :c.band===2?weightedType({type:zoneTypes[(c.x+c.y)%zoneTypes.length]})
+        :c.band===3?(r()<.45?'T':(r()<.7?'U':'L'))
+        :(r()<.50?'L':(r()<.8?'T':'U'));
+      const beforeInfill=walls.slice();
+      const sh=makeShape(walls,w,h,c.x,c.y,type,size,r,Math.max(2,Math.min(3,p.majorThickness)));
+      const bb=bbox(sh);
+      if(bb.minX<3||bb.maxX>w-4||bb.minY<3||bb.maxY>h-4){walls.set(beforeInfill);continue;}
+      // Reject a structure that would swallow a large amount of nearby carpet.
+      // We want architecture to subdivide empty space, not fill it solid.
+      let localFloor=0,localWall=0;
+      const rr=8;
+      for(let yy=Math.max(1,c.y-rr);yy<=Math.min(h-2,c.y+rr);yy++)for(let xx=Math.max(1,c.x-rr);xx<=Math.min(w-2,c.x+rr);xx++){
+        if(walls[yy*w+xx])localWall++;else localFloor++;
+      }
+      if(localWall>localFloor*1.8){walls.set(beforeInfill);continue;}
+      infill.push(c);
+      structures.push({kind:'regional',isMajor:true,cx:c.x,cy:c.y,type,size,zoneId:-1,region:profile.name});
+    }
+  }
+  // Boundary wall gives the prototype a finite 500m test region.
   for(let x=0;x<w;x++){walls[x]=1;walls[(h-1)*w+x]=1;}
   for(let y=0;y<h;y++){walls[y*w]=1;walls[y*w+w-1]=1;}
   const before=walls.slice();
@@ -352,7 +471,8 @@ function generate(seed,opts={}){
   }
   const afterRegions=floodRegions(walls,w,h);let carved=0;for(let i=0;i<walls.length;i++)if(before[i]&&!walls[i])carved++;
   const wallCells=wallCount(walls),floorCells=walls.length-wallCells,reachable=afterRegions[0]?.length||0;
-  return {seed:s,width:w,height:h,cellMeters:p.cellMeters,walls,before,broad,detail,fine,zones,structures,stats:{wallPct:wallCells/walls.length,floorPct:floorCells/walls.length,regionsBefore:beforeRegions.length,regionsAfter:afterRegions.length,connectors,carvedCells:carved,carvePct:carved/Math.max(1,wallCount(before)),reachable,floorCells,majorStructures:structures.filter(x=>x.isMajor).length,secondaryStructures:structures.filter(x=>!x.isMajor).length}};
+  const regionCounts={expanse:0,open:0,normal:0,dense:0,maze:0};for(const v of regionField)regionCounts[regionName(regionBand(v,p))]++;
+  return {seed:s,width:w,height:h,cellMeters:p.cellMeters,walls,before,broad,detail,fine,regionField,zones,structures,stats:{wallPct:wallCells/walls.length,floorPct:floorCells/walls.length,regionsBefore:beforeRegions.length,regionsAfter:afterRegions.length,connectors,carvedCells:carved,carvePct:carved/Math.max(1,wallCount(before)),reachable,floorCells,majorStructures:structures.filter(x=>x.isMajor).length,secondaryStructures:structures.filter(x=>!x.isMajor).length,regionCounts,regionThresholds:p.regionThresholds,maxClearCells:p.regionMaxClearCells}};
 }
 if(typeof module!=="undefined")module.exports={generate,DEFAULTS,fbm};
 if(typeof window!=="undefined")window.NoiseArchitectural={generate,DEFAULTS,fbm};
@@ -420,16 +540,23 @@ if (NoiseArchitecturalAPI) {
     }
     let exit=null,best=-1;
     const preferredMin=Math.floor(500/p.cellMeters);
-    let fallback=null,fallbackBest=-1;
+    const preferredMax=Math.floor(1000/p.cellMeters);
+    let fallback=null,fallbackBest=-1,overMax=null,overMaxBest=-1;
     for(let idx=0;idx<total;idx++){
       if(dist[idx]<0) continue;
       const x=idx%w,z=(idx/w)|0;
       const d=elevatorDir(x,z);
       if(!d) continue;
       if(dist[idx]>fallbackBest){fallbackBest=dist[idx];fallback={x,z,dir:d};}
-      if(dist[idx]>=preferredMin && dist[idx]>best){best=dist[idx];exit={x,z,dir:d};}
+      if(dist[idx]>=preferredMin && dist[idx]<=preferredMax && dist[idx]>best){best=dist[idx];exit={x,z,dir:d};}
+      if(dist[idx]>preferredMax && dist[idx]>overMaxBest){overMaxBest=dist[idx];overMax={x,z,dir:d};}
     }
-    if(!exit){ exit=fallback; best=fallbackBest; }
+    if(!exit){
+      // Preserve the old 500m+ behavior if a particular architecture has no
+      // valid elevator site inside the preferred 500-1000m band.
+      if(overMax){exit=overMax;best=overMaxBest;}
+      else {exit=fallback;best=fallbackBest;}
+    }
     if(!exit) return null;
 
     tiles[start.z][start.x]=2;
@@ -439,7 +566,7 @@ if (NoiseArchitecturalAPI) {
       MapGraph.reset();
       for(const z of zones){
         const gx=Math.max(0,Math.round(z.cx-5)), gz=Math.max(0,Math.round(z.cy-5));
-        MapGraph.nodes.push({id:MapGraph.nodes.length,type:'beta_zone',gx,gz,w:10,h:10,connections:[],deadEnd:false,hasExit:false,hasStart:false,lightProfile:(z.type&&z.type.name==='alcoves')?'BRIGHT':'NORMAL',dark:false,skipLights:false,anomaly:null,extra:{zoneId:z.id}});
+        MapGraph.nodes.push({id:MapGraph.nodes.length,type:'beta_zone',gx,gz,w:10,h:10,connections:[],deadEnd:false,hasExit:false,hasStart:false,lightProfile:(z.type&&z.type.name==='alcoves')?'BRIGHT':'NORMAL',dark:false,skipLights:false,anomaly:null,extra:{zoneId:z.id,region:z.region,regionBand:z.band,regionValue:z.regionValue}});
       }
     }
     const exitStamp={x:exit.x,z:exit.z};
