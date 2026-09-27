@@ -249,9 +249,15 @@ const Player = {
     // virtual stick. Horizontal input rotates yaw, vertical input rotates pitch.
     if (DeviceMode.mobile) {
       const stick = MobileControls;
-      const lookGain = CONFIG.lookSens * 18 * stick.lookSensitivity / 0.055;
-      this.yaw -= stick.lookX * lookGain * dt * 60;
-      this.pitch -= stick.lookY * lookGain * dt * 60;
+      if (stick.lookMode === "swipe") {
+        const swipe = stick.consumeSwipe();
+        this.yaw -= swipe.dx * CONFIG.lookSens;
+        this.pitch -= swipe.dy * CONFIG.lookSens;
+      } else {
+        const lookGain = CONFIG.lookSens * 18 * stick.lookSensitivity / 0.055;
+        this.yaw -= stick.lookX * lookGain * dt * 60;
+        this.pitch -= stick.lookY * lookGain * dt * 60;
+      }
     } else {
       this.yaw -= Input.mouseDX * CONFIG.lookSens;
       this.pitch -= Input.mouseDY * CONFIG.lookSens;
