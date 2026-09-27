@@ -297,6 +297,12 @@ const MobileControls = {
   moveY: 0,
   lookX: 0,
   lookY: 0,
+  lookDX: 0,
+  lookDY: 0,
+  swipeId: null,
+  swipeLastX: 0,
+  swipeLastY: 0,
+  lookMode: "joystick",
   maxRadius: 56,
   lookSensitivity: 0.055,
   initialized: false,
@@ -381,14 +387,87 @@ const MobileControls = {
       zone.addEventListener('touchcancel', touchEnd, {passive:true});
     }
   },
+  setLookMode(mode) {
+    this.lookMode = mode === "swipe" ? "swipe" : "joystick";
+    const zone = document.getElementById("mobile-look-zone");
+    if (zone) zone.classList.toggle("swipe-mode", this.lookMode === "swipe");
+    if (this.lookMode === "swipe") {
+      this.lookX = this.lookY = 0;
+      const k = zone && zone.querySelector('.mobile-stick-knob');
+      if (k) k.style.transform = 'translate3d(0,0,0)';
+    }
+  },
+  consumeSwipe() {
+    const dx = this.lookDX, dy = this.lookDY;
+    this.lookDX = this.lookDY = 0;
+    return { dx, dy };
+  },
+  _swipeBlocked(target) {
+    return !!(target && target.closest && target.closest('#mobile-actions, #mobile-pause, #mobile-move-zone, button, input, select, a'));
+  },
+  _initSwipe() {
+    const state = this;
+    const down = e => {
+      if (!DeviceMode.mobile || state.lookMode !== "swipe" || (e.pointerType && e.pointerType === "mouse")) return;
+      if (state._swipeBlocked(e.target)) return;
+      if (e.clientX < window.innerWidth * 0.34) return;
+      e.preventDefault();
+      DeviceMode.onPointerType('touch');
+      state.swipeId = e.pointerId;
+      state.swipeLastX = e.clientX;
+      state.swipeLastY = e.clientY;
+    };
+    const move = e => {
+      if (state.swipeId === null || e.pointerId !== state.swipeId || state.lookMode !== "swipe") return;
+      e.preventDefault();
+      state.lookDX += e.clientX - state.swipeLastX;
+      state.lookDY += e.clientY - state.swipeLastY;
+      state.swipeLastX = e.clientX;
+      state.swipeLastY = e.clientY;
+    };
+    const end = e => {
+      if (state.swipeId !== null && e.pointerId === state.swipeId) state.swipeId = null;
+    };
+    window.addEventListener('pointerdown', down, {passive:false});
+    window.addEventListener('pointermove', move, {passive:false});
+    ['pointerup','pointercancel'].forEach(ev => window.addEventListener(ev, end, {passive:true}));
+    if (!window.PointerEvent) {
+      window.addEventListener('touchstart', e => {
+        if (!DeviceMode.mobile || state.lookMode !== "swipe" || state.swipeId !== null) return;
+        const t = Array.from(e.changedTouches).find(t => t.clientX >= window.innerWidth * 0.34);
+        if (!t) return;
+        const target = document.elementFromPoint(t.clientX, t.clientY);
+        if (state._swipeBlocked(target)) return;
+        e.preventDefault(); DeviceMode.onPointerType('touch');
+        state.swipeId = 't' + t.identifier; state.swipeLastX = t.clientX; state.swipeLastY = t.clientY;
+      }, {passive:false});
+      window.addEventListener('touchmove', e => {
+        if (!state.swipeId || state.swipeId[0] !== 't') return;
+        const wanted = Number(state.swipeId.slice(1));
+        for (const t of e.changedTouches) if (t.identifier === wanted) {
+          e.preventDefault();
+          state.lookDX += t.clientX - state.swipeLastX;
+          state.lookDY += t.clientY - state.swipeLastY;
+          state.swipeLastX = t.clientX; state.swipeLastY = t.clientY;
+          break;
+        }
+      }, {passive:false});
+      ['touchend','touchcancel'].forEach(ev => window.addEventListener(ev, e => {
+        if (!state.swipeId || state.swipeId[0] !== 't') return;
+        const wanted = Number(state.swipeId.slice(1));
+        for (const t of e.changedTouches) if (t.identifier === wanted) { state.swipeId = null; break; }
+      }, {passive:true}));
+    }
+  },
   init() {
     if (this.initialized) return;
     this.initialized = true;
     this._stick('mobile-move-zone', 'move');
     this._stick('mobile-look-zone', 'look');
+    this._initSwipe();
     document.querySelectorAll('[data-mobile-action]').forEach(btn => {
       const action = btn.dataset.mobileAction;
-      const code = {jump:'Space', sprint:'ShiftLeft', crouch:'ControlLeft'}[action];
+      const code = {jump:'Space', sprint:'ShiftLeft', crouch:'KeyC'}[action];
       if (code) {
         const down = e => {
           if (e.pointerType === 'mouse') return;
