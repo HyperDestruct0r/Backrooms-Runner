@@ -168,6 +168,7 @@
             <div class="setting-card"><label>FOOTSTEPS <span id="setting-footsteps-value">22%</span></label><input class="menu-range" data-setting="footsteps" type="range" min="0" max="1" step="0.01" value="0.22"></div>
             <div class="setting-card"><label>EVENTS <span id="setting-events-value">18%</span></label><input class="menu-range" data-setting="events" type="range" min="0" max="1" step="0.01" value="0.18"></div>
             <div class="setting-card"><label>MOUSE SENSITIVITY <span id="setting-sensitivity-value">0.002</span></label><input id="setting-sensitivity" type="range" min="0.0005" max="0.005" step="0.00005" value="0.00215"></div>
+            <div class="setting-card mobile-look-setting"><label>MOBILE LOOK</label><select id="setting-mobile-look"><option value="joystick">RIGHT JOYSTICK</option><option value="swipe">SWIPE SCREEN</option></select><div class="setting-note">Choose whether mobile camera control uses the right look joystick or a swipe gesture on the right side of the screen.</div></div>
             <div class="setting-card"><div class="switch"><span>FULLSCREEN</span><input id="setting-fullscreen" type="checkbox"></div><div class="setting-note">Uses your browser's fullscreen permission.</div></div>
           </div>
           <h3>GAME MODES</h3>
@@ -245,21 +246,21 @@
   </div>
 
   <div id="mobile-controls" aria-hidden="true">
-    <div id="mobile-move-zone" class="mobile-stick-zone">
-      <div class="mobile-stick-label">MOVE</div>
+    <div id="mobile-move-zone" class="mobile-stick-zone" aria-label="Move">
+      <div class="mobile-stick-symbol" aria-hidden="true">✣</div>
       <div id="mobile-move-stick" class="mobile-stick"><div class="mobile-stick-knob"></div></div>
     </div>
-    <div id="mobile-look-zone" class="mobile-stick-zone">
-      <div class="mobile-stick-label">LOOK</div>
+    <div id="mobile-look-zone" class="mobile-stick-zone" aria-label="Look">
+      <div class="mobile-stick-symbol mobile-look-symbol" aria-hidden="true">◉</div>
       <div id="mobile-look-stick" class="mobile-stick"><div class="mobile-stick-knob"></div></div>
     </div>
-    <div id="mobile-actions">
-      <button type="button" data-mobile-action="jump">JUMP</button>
-      <button type="button" data-mobile-action="sprint">RUN</button>
-      <button type="button" data-mobile-action="crouch">CROUCH</button>
-      <button type="button" data-mobile-action="flashlight">LIGHT</button>
-      <button type="button" data-mobile-action="inventory">INV</button>
-      <button type="button" data-mobile-action="use">USE</button>
+    <div id="mobile-actions" aria-label="Mobile actions">
+      <button type="button" data-mobile-action="jump" aria-label="Jump"><span class="mobile-action-icon">↑</span><span>JUMP</span></button>
+      <button type="button" data-mobile-action="sprint" aria-label="Sprint"><span class="mobile-action-icon">»</span><span>SPRINT</span></button>
+      <button type="button" data-mobile-action="crouch" aria-label="Crouch"><span class="mobile-action-icon">⌄</span><span>CROUCH</span></button>
+      <button type="button" data-mobile-action="flashlight" aria-label="Flashlight"><span class="mobile-action-icon">☼</span><span>LIGHT</span></button>
+      <button type="button" data-mobile-action="inventory" aria-label="Inventory"><span class="mobile-action-icon">▦</span><span>INV</span></button>
+      <button type="button" data-mobile-action="use" aria-label="Use"><span class="mobile-action-icon">✋</span><span>USE</span></button>
     </div>
     <button id="mobile-pause" type="button" aria-label="Pause">Ⅱ</button>
   </div>
