@@ -25,14 +25,14 @@ const Game = {
       ? SeedSystem.random()
       : ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0);
   },
-  _restoreLevel0ForNewRun(seed, strictSeed) {
+  _restoreLevel0ForNewRun(seed, strictSeed, testBeta) {
     // Level 1 replaces Level.group/colliders with its streaming world. A new
     // run must explicitly tear that world down and rebuild Level 0 before the
     // player is reset.
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level !== "undefined" && typeof Level.buildProcedural === "function") {
       const requestedSeed = (seed >>> 0);
-      const built = !!Level.buildProcedural(scene, requestedSeed, { strictSeed: !!strictSeed });
+      const built = !!Level.buildProcedural(scene, requestedSeed, { strictSeed: !!strictSeed, testBeta: !!testBeta });
       if (!built) {
         throw new Error(strictSeed
           ? "The selected seed could not generate a valid Level 0."
@@ -120,6 +120,7 @@ const Game = {
 
   async start(mode = "random", customSeed = null) {
     if (!GameState.ready || GameState.phase === "loading") return;
+    const testBeta = mode === "beta";
     const startOverlay = document.getElementById("start-overlay");
     const loadOverlay = document.getElementById("game-loading");
 
@@ -153,12 +154,19 @@ const Game = {
     const selectedSeed = isCustom
       ? (customSeed >>> 0)
       : this._newRunSeed();
+    if (testBeta) this._setGameLoading(65, "INITIALIZING TEST BETA...");
 
     try {
-      this._restoreLevel0ForNewRun(selectedSeed, isCustom);
+      GameState.testBeta = testBeta;
+      this._restoreLevel0ForNewRun(selectedSeed, isCustom, testBeta);
+      const betaBanner = document.getElementById("beta-run-warning");
+      if (betaBanner) betaBanner.style.display = testBeta ? "block" : "none";
     } catch (err) {
       console.error("Could not generate Level 0 for new run:", err);
       GameState.phase = "start";
+      GameState.testBeta = false;
+      const betaBanner = document.getElementById("beta-run-warning");
+      if (betaBanner) betaBanner.style.display = "none";
       if (loadOverlay) loadOverlay.style.display = "none";
 
       if (typeof MenuSystem !== "undefined") {
@@ -194,6 +202,9 @@ const Game = {
     Flashlight.reset();
     GameState.exitReached = false;
     GameState.level = 0;
+    GameState.testBeta = false;
+    const betaBanner = document.getElementById("beta-run-warning");
+    if (betaBanner) betaBanner.style.display = "none";
     GameState.cinematicCamera = false;
     // Level1 was already fully reset before Level 0 was rebuilt. Do not call
     // resetVisuals() here: Level1.enter() aliases Level.colliders/triggers to
@@ -219,6 +230,9 @@ const Game = {
     // Invalidate every callback owned by this run before tearing its state down.
     GameState.runId++;
     GameState.phase = "start";
+    GameState.testBeta = false;
+    const betaBanner = document.getElementById("beta-run-warning");
+    if (betaBanner) betaBanner.style.display = "none";
     GameState.inventoryOpen = false;
     GameState.cinematicCamera = false;
     setPauseOverlay(false);
