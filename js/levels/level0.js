@@ -1091,8 +1091,8 @@ const Stairwell = {
       origin: new THREE.Vector3(w.x, 0, w.z),
       hole: null,
       minY: 0,
-      width: 3.2,
-      depth: 0.50,
+      width: 4.6,
+      depth: 5.2,
       height: 3.2,
       steps: 0,
       rise: 0,
@@ -1173,12 +1173,28 @@ const Stairwell = {
     const doorH=2.42;
     const doorW=(W-0.18)/2;
 
-    // Solid concrete backing: this is a visual imprint in the wall, not an
-    // opening. The player can approach the doors but can never walk into them.
-    const back=L(0,0.16); const backSz=this.span(st,0.52,W+0.34);
-    this.addBox(g,concreteDark,back.x,H/2,back.z,backSz.x,H,backSz.z);
+    // Full-depth elevator cabin. Earlier revisions were effectively a thin
+    // wall sandwich: the facade only projected a few inches into the hall.
+    // Keep the elevator non-enterable for now, but make it read as a real
+    // box with visible depth: floor, ceiling, rear wall, side walls, and a
+    // recessed doorway.
+    const cabinFront=front;
+    const cabinBack=front+W*0+st.depth;
+    const rear=L(0,cabinBack);
+    const rearSz=this.span(st,0.28,W+0.12);
+    this.addBox(g,concreteDark,rear.x,H/2,rear.z,rearSz.x,H,rearSz.z);
+    const floor=L(0,(cabinFront+cabinBack)*0.5);
+    const floorSz=this.span(st,st.depth,W);
+    this.addBox(g,steelDark,floor.x,0.035,floor.z,floorSz.x,0.07,floorSz.z);
+    const ceil=L(0,(cabinFront+cabinBack)*0.5);
+    this.addBox(g,concreteDark,ceil.x,H-0.05,ceil.z,floorSz.x,0.10,floorSz.z);
+    for(const side of [-1,1]){
+      const q=L(side*(half-0.06),(cabinFront+cabinBack)*0.5);
+      const sz=this.span(st,st.depth,0.14);
+      this.addBox(g,concreteLight,q.x,H/2,q.z,sz.x,H,sz.z);
+    }
 
-    // Shallow concrete surround, kept inside the normal 2-tile hallway width.
+    // Concrete exterior surround around the full-height doorway.
     for(const side of [-1,1]){
       const q=L(side*(half+0.16),front+0.02); const sz=this.span(st,0.34,0.32);
       this.addBox(g,concreteLight,q.x,H/2,q.z,sz.x,H,sz.z);
@@ -1186,8 +1202,8 @@ const Stairwell = {
     const lint=L(0,front+0.02); const lintSz=this.span(st,0.34,W+0.32);
     this.addBox(g,concreteLight,lint.x,H-0.22,lint.z,lintSz.x,0.44,lintSz.z);
 
-    // Recessed dark door pocket.
-    const pocket=L(0,front+0.02); const pocketSz=this.span(st,0.18,W-0.18);
+    // Recessed dark door pocket at the front of the cabin.
+    const pocket=L(0,front+0.08); const pocketSz=this.span(st,0.16,W-0.18);
     this.addBox(g,steelDark,pocket.x,doorH*0.5,pocket.z,pocketSz.x,doorH,pocketSz.z);
 
     // Sliding doors. Start closed; the approach trigger opens them visually,
@@ -1222,8 +1238,9 @@ const Stairwell = {
 
     sceneRef.add(g); this.cabGroups[index]=g;
 
-    // Solid backing collider; there is intentionally no floor collider/hole.
-    const wallCenter=L(0,0.20); const wallSz=this.span(st,0.40,W+0.40);
+    // Solid rear collider; the cabin remains a visual box rather than a
+    // walkable room until we add a real elevator ride.
+    const wallCenter=L(0,cabinBack); const wallSz=this.span(st,0.40,W+0.40);
     this.addCol(wallCenter.x- wallSz.x/2,0.0,wallCenter.z-wallSz.z/2,wallCenter.x+wallSz.x/2,H,wallCenter.z+wallSz.z/2);
 
     // Trigger sits in the hallway before the player can reach the wall.
@@ -1296,6 +1313,7 @@ const Stairwell = {
       if (transitionToken !== this.transitionToken || GameState.phase !== 'playing' || runId !== GameState.runId) return;
       try{
         if(typeof Level1!=='undefined') Level1.enter(exitSeed,exitState);
+        if(typeof Level1==='undefined' || !Level1.active) throw new Error('Level1.enter() completed without activating Level 1');
         if (GameState.phase !== 'playing' || transitionToken !== this.transitionToken || runId !== GameState.runId) return;
         const level1Floor = (typeof Level1 !== 'undefined') ? Level1.baseY : 0;
         Player.position.set(exitState.origin.x-0.95*exitState.fx,level1Floor,exitState.origin.z-0.95*exitState.fz);
@@ -1903,6 +1921,37 @@ const Level = {
 
   buildProcedural(sceneRef, seed, options) {
     const strictSeed = !!(options && options.strictSeed);
+    const testBeta = !!(options && options.testBeta);
+    if (testBeta) {
+      const beta = (typeof NoiseArchitectural !== "undefined")
+        ? NoiseArchitectural.generatePlayable(seed >>> 0)
+        : null;
+      if (!beta) {
+        const startSeed = document.getElementById("start-seed");
+        if (startSeed) startSeed.textContent = "TEST BETA GENERATION FAILED — TRY ANOTHER SEED";
+        return false;
+      }
+      GameState.seed = beta.seed;
+      this.clear(sceneRef);
+      if (sceneRef) {
+        sceneRef.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
+        sceneRef.background = new THREE.Color(CONFIG.fogColor);
+      }
+      this.loadGenerated(beta);
+      LevelGenerator.last = beta;
+      Stairwell.planFrom(beta);
+      this.buildColliders();
+      if (!this.colliders.length) throw new Error("Test Beta built without collision geometry.");
+      this.buildMeshes(sceneRef);
+      Stairwell.build(sceneRef);
+      SpawnManager.apply(beta);
+      PickupSystem.generate(beta.seed);
+      const seedEl = document.getElementById("hud-seed-val");
+      if (seedEl) seedEl.textContent = String(beta.seed);
+      const startSeed = document.getElementById("start-seed");
+      if (startSeed) startSeed.textContent = "LEVEL 0 · TEST BETA · SEED " + beta.seed;
+      return true;
+    }
     // Both modes use the same deterministic validity checks. For Custom Seed,
     // the entered number is the starting point of the deterministic search;
     // the game never silently switches to an unrelated random seed.
