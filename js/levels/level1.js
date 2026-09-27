@@ -684,6 +684,8 @@ const Level1 = {
     const origin=elevatorState?{x:elevatorState.origin.x,z:elevatorState.origin.z}:{x:0,z:0};
     PickupSystem.reset();
     this.build(seed,origin);
+    if(!this.active || !this.group) throw new Error('Level 1 world failed to initialize');
+    this.levelTime=0;
     Level.cols=Infinity; Level.rows=Infinity; Level.tiles=[]; Level.group=this.group;
     Level.worldMin.set(-Infinity,this.baseY-2,-Infinity); Level.worldMax.set(Infinity,this.baseY+8,Infinity);
     Level.startPos.set(origin.x,this.baseY,origin.z); GameState.level=1;
