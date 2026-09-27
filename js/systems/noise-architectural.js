@@ -299,6 +299,22 @@ function generate(seed,opts={}){
       drawCell(walls,w,h,x,y,2);structures.push({kind:'pillar',isMajor:false,cx:x,cy:y,type:'pillar',size:2,zoneId:z.id});break;
     }
   }
+  // Wall thickening pass: expand existing architectural walls into nearby
+  // floor cells. This makes the structures substantially more substantial
+  // without introducing independent noisy wall pixels.
+  // It is deliberately applied before the connectivity repair below.
+  for(let pass=0;pass<2;pass++){
+    const src=walls.slice();
+    for(let y=2;y<h-2;y++)for(let x=2;x<w-2;x++){
+      const idx=y*w+x;if(src[idx])continue;
+      let n=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(dx===0&&dy===0)continue;
+        n+=src[(y+dy)*w+(x+dx)];
+      }
+      if(n>=3 || (pass===1 && n>=2 && broad[idx]>.55)) walls[idx]=1;
+    }
+  }
   // Fine noise is used only to roughen a small fraction of architectural
   // edges, never to turn the whole map into cellular noise.
   for(let y=2;y<h-2;y++)for(let x=2;x<w-2;x++){
