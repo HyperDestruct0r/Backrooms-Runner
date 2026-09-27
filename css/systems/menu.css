@@ -31,6 +31,8 @@
   text-align:left; padding:22px; min-height:170px; cursor:pointer; transition:.16s;
 }
 .play-choice:hover { border-color:#968b53; background:rgba(216,201,105,.08); transform:translateY(-2px); }
+.beta-choice { border-color:#6d6040; background:rgba(118,96,38,.08); }
+.beta-warning { display:block; margin-top:16px; color:#e0b06d; font-size:10px; font-weight:800; letter-spacing:.08em; line-height:1.45; }
 .play-choice strong { display:block; font-size:18px; letter-spacing:.12em; }
 .play-choice small { display:block; color:#8f8874; margin-top:10px; line-height:1.5; }
 .custom-seed-choice { cursor:default; }
