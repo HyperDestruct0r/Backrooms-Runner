@@ -74,6 +74,11 @@ const MenuSystem = {
       this.startRandomRun();
     });
 
+    const testBeta = document.getElementById("menu-test-beta");
+    if (testBeta) testBeta.addEventListener("click", () => {
+      this.startBetaRun();
+    });
+
     const customSeed = document.getElementById("menu-custom-seed");
     if (customSeed) customSeed.addEventListener("click", () => {
       this.startCustomRun();
@@ -156,6 +161,11 @@ const MenuSystem = {
   startRandomRun() {
     this.clearSeedError();
     if (typeof Game !== "undefined") Game.start("random");
+  },
+
+  startBetaRun() {
+    this.clearSeedError();
+    if (typeof Game !== "undefined") Game.start("beta");
   },
 
   startCustomRun() {
