@@ -334,3 +334,10 @@ html.mobile-input #inv-close { display:block; }
   background:radial-gradient(ellipse at center, rgba(255,255,255,0) 42%, rgba(20,18,9,.06) 68%, rgba(5,5,3,.34) 100%);
   mix-blend-mode:multiply;
 }
+
+#beta-run-warning {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 40;
+  padding: 6px 12px; border: 1px solid rgba(224,176,109,.48);
+  background: rgba(24,18,10,.72); color: #e0b06d; font: 800 10px/1.2 Arial,Helvetica,sans-serif;
+  letter-spacing: .08em; text-align: center; pointer-events: none;
+}
