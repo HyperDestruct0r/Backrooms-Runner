@@ -210,6 +210,7 @@ const GameState = {
   debugViz: false,
   seed: 0,
   level0Seed: 0,
+  testBeta: false,
   inventoryOpen: false,
   fps: 0,
   exitReached: false,
