@@ -83,6 +83,7 @@
       </div>
     </div>
     <div id="hud-obj">Objective: find the exit</div>
+    <div id="beta-run-warning" style="display:none">TEST BETA · PLAY AT YOUR OWN RISK · EXPERIMENTAL GENERATOR</div>
     <div id="hud-seed"><span id="hud-level-label">LEVEL 0</span> · SEED <span id="hud-seed-val">—</span></div>
     <div id="debug-panel"></div>
     <div id="toast-note"></div>
@@ -137,6 +138,11 @@
             <button id="menu-random-seed" class="play-choice" type="button">
               <strong>RANDOM SEED</strong>
               <small>Generate a new random seed for this run.</small>
+            </button>
+            <button id="menu-test-beta" class="play-choice beta-choice" type="button">
+              <strong>TEST BETA</strong>
+              <small>Experimental architectural Level 0 generator. Deterministic, connected, and still under development.</small>
+              <span class="beta-warning">⚠ PLAY AT YOUR OWN RISK — EXPERIMENTAL BUILD</span>
             </button>
             <div class="play-choice custom-seed-choice">
               <strong>CUSTOM SEED</strong>
@@ -269,6 +275,7 @@
 <script src="js/systems/atmosphere.js"></script>
 <script src="js/systems/auth.js"></script>
 <script src="js/systems/seed.js"></script>
+<script src="js/systems/noise-architectural.js"></script>
 <script src="js/systems/menu.js"></script>
 <script src="js/game.js"></script>
 </body>
