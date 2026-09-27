@@ -31,6 +31,9 @@ const MenuSystem = {
     this.bindButtons();
     this.applyAudio();
     this.updateSensitivity();
+    if (typeof MobileControls !== "undefined" && MobileControls.setLookMode) {
+      MobileControls.setLookMode(this.settings.mobileLook === "swipe" ? "swipe" : "joystick");
+    }
     this.selectMain(0);
   },
 
@@ -124,6 +127,15 @@ const MenuSystem = {
       this.setFullscreen(fullscreen.checked);
     });
 
+    const mobileLook = document.getElementById("setting-mobile-look");
+    if (mobileLook) mobileLook.addEventListener("change", () => {
+      this.settings.mobileLook = mobileLook.value === "swipe" ? "swipe" : "joystick";
+      if (typeof MobileControls !== "undefined" && MobileControls.setLookMode) {
+        MobileControls.setLookMode(this.settings.mobileLook);
+      }
+      this.saveSettings();
+    });
+
     window.addEventListener("keydown", e => {
       if (this.rebinding) {
         e.preventDefault();
@@ -207,7 +219,7 @@ const MenuSystem = {
   },
 
   defaultSettings() {
-    return { master: 0.55, ambient: 0.028, footsteps: 0.22, events: 0.18, sensitivity: 0.00215, fullscreen: false };
+    return { master: 0.55, ambient: 0.028, footsteps: 0.22, events: 0.18, sensitivity: 0.00215, fullscreen: false, mobileLook: "joystick" };
   },
 
   settings: {},
@@ -231,6 +243,8 @@ const MenuSystem = {
     if (sout) sout.textContent = Number(this.settings.sensitivity).toFixed(3);
     const fs = document.getElementById("setting-fullscreen");
     if (fs) fs.checked = !!this.settings.fullscreen;
+    const mobileLook = document.getElementById("setting-mobile-look");
+    if (mobileLook) mobileLook.value = this.settings.mobileLook === "swipe" ? "swipe" : "joystick";
   },
 
   saveSettings() {
