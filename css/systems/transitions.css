@@ -29,7 +29,7 @@
       box-shadow: 0 18px 70px rgba(0,0,0,.55), inset 0 0 35px rgba(255,235,140,.025);
       backdrop-filter: blur(3px);
     }
-    .loading-title { font-size: 25px; letter-spacing: .24em; text-transform: uppercase; margin-bottom: 7px; }
+    .loading-title { font-size: clamp(18px, 5vw, 25px); letter-spacing: .14em; text-transform: uppercase; margin-bottom: 7px; white-space: nowrap; }
     .loading-subtitle { font-size: 10px; letter-spacing: .18em; opacity: .55; margin-bottom: 22px; }
     .loading-status { min-height: 18px; font-size: 11px; letter-spacing: .08em; opacity: .78; }
     .loading-track { height: 4px; margin-top: 11px; background: rgba(0,0,0,.58); border: 1px solid rgba(239,230,176,.13); overflow: hidden; }
