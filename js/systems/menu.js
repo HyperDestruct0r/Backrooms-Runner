@@ -136,6 +136,40 @@ const MenuSystem = {
       this.saveSettings();
     });
 
+    const runSettingsClose = document.getElementById("run-settings-close");
+    if (runSettingsClose) runSettingsClose.addEventListener("click", () => this.closeRunSettings());
+    const runSettings = document.getElementById("run-settings-overlay");
+    if (runSettings) runSettings.addEventListener("click", e => {
+      if (e.target === runSettings) this.closeRunSettings();
+    });
+    document.querySelectorAll(".run-menu-range").forEach(input => {
+      input.addEventListener("input", () => {
+        const key = input.dataset.setting;
+        this.settings[key] = Number(input.value);
+        const out = document.getElementById("run-setting-" + key + "-value");
+        if (out) out.textContent = Math.round(this.settings[key] * 100) + "%";
+        this.applyAudio(); this.saveSettings();
+      });
+    });
+    const runSens = document.getElementById("run-setting-sensitivity");
+    if (runSens) runSens.addEventListener("input", () => {
+      this.settings.sensitivity = Number(runSens.value);
+      const out = document.getElementById("run-setting-sensitivity-value");
+      if (out) out.textContent = Number(runSens.value).toFixed(3);
+      this.updateSensitivity(); this.saveSettings();
+    });
+    const runFullscreen = document.getElementById("run-setting-fullscreen");
+    if (runFullscreen) runFullscreen.addEventListener("change", () => {
+      this.settings.fullscreen = runFullscreen.checked;
+      this.saveSettings(); this.setFullscreen(runFullscreen.checked);
+    });
+    const runMobileLook = document.getElementById("run-setting-mobile-look");
+    if (runMobileLook) runMobileLook.addEventListener("change", () => {
+      this.settings.mobileLook = runMobileLook.value === "swipe" ? "swipe" : "joystick";
+      if (typeof MobileControls !== "undefined") MobileControls.setLookMode(this.settings.mobileLook);
+      this.saveSettings();
+    });
+
     window.addEventListener("keydown", e => {
       if (this.rebinding) {
         e.preventDefault();
@@ -209,6 +243,49 @@ const MenuSystem = {
       el.textContent = "";
       el.className = "seed-message";
     }
+  },
+
+  openRunSettings() {
+    if (GameState.phase !== "playing" || Stairwell.sequenceActive) return;
+    this.cancelRebind();
+    MobileControls.resetToggles();
+    clearInput();
+    Input.locked = false;
+    this.syncRunSettingsUI();
+    this.renderBindingsInto("run-controls-list", "run-controls-error");
+    this.updateRunMobileLookVisibility();
+    const overlay = document.getElementById("run-settings-overlay");
+    if (overlay) overlay.style.display = "flex";
+    setPauseOverlay(false);
+  },
+
+  closeRunSettings() {
+    this.cancelRebind();
+    const overlay = document.getElementById("run-settings-overlay");
+    if (overlay) overlay.style.display = "none";
+    if (GameState.phase === "playing") setPauseOverlay(true);
+  },
+
+  syncRunSettingsUI() {
+    ["master", "ambient", "footsteps", "events"].forEach(k => {
+      const input = document.querySelector('.run-menu-range[data-setting="' + k + '"]');
+      if (input) input.value = this.settings[k];
+      const out = document.getElementById("run-setting-" + k + "-value");
+      if (out) out.textContent = Math.round(this.settings[k] * 100) + "%";
+    });
+    const sens = document.getElementById("run-setting-sensitivity");
+    if (sens) sens.value = this.settings.sensitivity;
+    const sout = document.getElementById("run-setting-sensitivity-value");
+    if (sout) sout.textContent = Number(this.settings.sensitivity).toFixed(3);
+    const fs = document.getElementById("run-setting-fullscreen");
+    if (fs) fs.checked = !!this.settings.fullscreen;
+    const ml = document.getElementById("run-setting-mobile-look");
+    if (ml) ml.value = this.settings.mobileLook === "swipe" ? "swipe" : "joystick";
+  },
+
+  updateRunMobileLookVisibility() {
+    const touch = !!(typeof DeviceMode !== "undefined" && (DeviceMode.mobile || DeviceMode.lastPointerType === "touch"));
+    document.querySelectorAll(".run-mobile-look-setting").forEach(el => el.style.display = touch ? "block" : "none");
   },
 
   selectMain(index) {
@@ -294,8 +371,10 @@ const MenuSystem = {
     try { localStorage.setItem(this.bindingsKey, JSON.stringify(data)); } catch (_) {}
   },
 
-  renderBindings() {
-    const list = document.getElementById("controls-list");
+  renderBindings() { this.renderBindingsInto("controls-list", "controls-error"); this.renderBindingsInto("run-controls-list", "run-controls-error"); },
+
+  renderBindingsInto(listId, errorId) {
+    const list = document.getElementById(listId);
     if (!list || typeof CONFIG === "undefined") return;
     list.innerHTML = "";
     this.bindings.forEach(([action, label]) => {
@@ -305,9 +384,9 @@ const MenuSystem = {
       const right = document.createElement("div"); right.className = "control-right";
       const key = document.createElement("button"); key.type = "button"; key.className = "key-button";
       key.textContent = this.formatKey(CONFIG.keys[action]);
-      key.addEventListener("click", () => this.beginRebind(action, key));
+      key.addEventListener("click", () => this.beginRebind(action, key, errorId));
       const unbind = document.createElement("button"); unbind.type = "button"; unbind.className = "unbind-button"; unbind.textContent = "UNBIND";
-      unbind.addEventListener("click", () => this.unbind(action));
+      unbind.addEventListener("click", () => this.unbind(action, errorId));
       right.append(key, unbind); row.appendChild(right); list.appendChild(row);
     });
   },
@@ -322,36 +401,37 @@ const MenuSystem = {
     return code.replace(/Left|Right/g, "").toUpperCase();
   },
 
-  beginRebind(action, button) {
+  beginRebind(action, button, errorId = "controls-error") {
     this.cancelRebind();
-    this.rebinding = { action, button };
+    this.rebinding = { action, button, errorId };
     button.classList.add("rebinding");
     button.textContent = "PRESS A KEY…";
-    const error = document.getElementById("controls-error");
+    const error = document.getElementById(errorId);
     if (error) { error.textContent = "Press a key to bind. Backspace/Delete unbinds · Esc cancels."; error.className = "controls-message info"; }
   },
 
   tryBind(action, code) {
     if (["Escape", "Tab"].includes(code)) return;
+    const errorId = this.rebinding && this.rebinding.errorId || "controls-error";
     const conflict = this.bindings.find(([other]) => other !== action && CONFIG.keys[other] === code);
     if (conflict) {
-      const error = document.getElementById("controls-error");
+      const error = document.getElementById(errorId);
       if (error) { error.textContent = `${this.formatKey(code)} is already bound to “${conflict[1]}”. Unbind that control first.`; error.className = "controls-message error"; }
       return;
     }
     CONFIG.keys[action] = code;
     this.saveBindings();
     this.renderBindings();
-    const error = document.getElementById("controls-error");
+    const error = document.getElementById(errorId);
     if (error) { error.textContent = `Saved: ${this.formatKey(code)} → ${this.bindings.find(x => x[0] === action)[1]}.`; error.className = "controls-message success"; }
     this.rebinding = null;
   },
 
-  unbind(action) {
+  unbind(action, errorId = "controls-error") {
     CONFIG.keys[action] = null;
     this.saveBindings();
     this.renderBindings();
-    const error = document.getElementById("controls-error");
+    const error = document.getElementById(errorId);
     if (error) { error.textContent = `${this.bindings.find(x => x[0] === action)[1]} unbound.`; error.className = "controls-message success"; }
     this.rebinding = null;
   },
