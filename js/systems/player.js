@@ -251,8 +251,9 @@ const Player = {
       const stick = MobileControls;
       if (stick.lookMode === "swipe") {
         const swipe = stick.consumeSwipe();
-        this.yaw -= swipe.dx * CONFIG.lookSens;
-        this.pitch -= swipe.dy * CONFIG.lookSens;
+        const swipeSens = Number(stick.swipeSensitivity) || 0.0065;
+        this.yaw -= swipe.dx * swipeSens;
+        this.pitch -= swipe.dy * swipeSens;
       } else {
         const lookGain = CONFIG.lookSens * 18 * stick.lookSensitivity / 0.055;
         this.yaw -= stick.lookX * lookGain * dt * 60;
@@ -638,11 +639,16 @@ const Inventory = {
     return true;
   },
   toggle() {
+    // Inventory is unavailable during the stairwell transition; the transition
+    // owns the camera/player state until it completes.
+    if (GameState.phase !== "playing" || Stairwell.sequenceActive) return;
     GameState.inventoryOpen = !GameState.inventoryOpen;
     const el = document.getElementById("inv-overlay");
     if (el) el.style.display = GameState.inventoryOpen ? "flex" : "none";
     if (GameState.inventoryOpen) {
       setPauseOverlay(false);
+      clearInput();
+      Input.locked = false;
       this.refresh();
       if (document.pointerLockElement) document.exitPointerLock();
     } else if (!DeviceMode.mobile && renderer && renderer.domElement && GameState.phase === "playing") {
@@ -654,6 +660,9 @@ const Inventory = {
     GameState.inventoryOpen = false;
     const el = document.getElementById("inv-overlay");
     if (el) el.style.display = "none";
+    if (GameState.phase === "playing" && !Stairwell.sequenceActive) {
+      Input.locked = true;
+    }
   },
   refresh() {
     const list = document.getElementById("inv-list");
