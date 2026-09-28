@@ -204,10 +204,17 @@
 #mobile-controls {
   display:none; position:fixed; inset:0; z-index:12; pointer-events:none;
   touch-action:none; user-select:none; -webkit-user-select:none;
+  overflow:hidden;
 }
+#mobile-look-swipe-zone {
+  position:absolute; inset:0; z-index:1; display:none;
+  pointer-events:none; touch-action:none;
+  -webkit-user-select:none; user-select:none;
+}
+#mobile-look-swipe-zone.active { display:block; pointer-events:auto; }
 #mobile-controls.mobile-active { display:block; }
 .mobile-stick-zone {
-  position:absolute; bottom:max(18px, env(safe-area-inset-bottom));
+  position:absolute; z-index:3; bottom:max(18px, env(safe-area-inset-bottom));
   width:138px; height:138px; pointer-events:auto; touch-action:none;
 }
 #mobile-move-zone { left:max(16px, env(safe-area-inset-left)); }
@@ -229,9 +236,9 @@
   border:2px solid rgba(239,230,176,.55); border-radius:50%; background:rgba(203,184,90,.18);
   box-shadow:0 3px 12px rgba(0,0,0,.28); pointer-events:none;
 }
-#mobile-look-zone.swipe-mode { opacity:.2; pointer-events:none; }
-#mobile-look-zone.swipe-mode .mobile-stick-symbol::after { content:"SWIPE"; display:block; margin-top:7px; font:700 7px/1 Consolas,monospace; letter-spacing:.12em; }
+#mobile-look-zone.swipe-mode { display:none; }
 #mobile-actions {
+  z-index:4;
   position:absolute; top:72px; right:max(12px, env(safe-area-inset-right));
   display:grid; grid-template-columns:repeat(3,60px); gap:6px; pointer-events:auto;
 }
@@ -244,6 +251,7 @@
 .mobile-action-icon { font:700 20px/1 Arial,sans-serif; letter-spacing:0; }
 #mobile-actions button:active, #mobile-pause:active { background:rgba(203,184,90,.38); }
 #mobile-pause {
+  z-index:5;
   position:absolute; top:max(12px, env(safe-area-inset-top)); right:max(12px, env(safe-area-inset-right));
   min-width:46px; width:46px; min-height:40px; pointer-events:auto; font-size:16px;
 }
@@ -301,4 +309,127 @@ html.mobile-input #inv-close { display:block; }
   padding: 6px 12px; border: 1px solid rgba(224,176,109,.48);
   background: rgba(24,18,10,.72); color: #e0b06d; font: 800 10px/1.2 Arial,Helvetica,sans-serif;
   letter-spacing: .08em; text-align: center; pointer-events: none;
+}
+
+
+/* ------------------------------------------------------------------
+   MOBILE MENU / VIEWPORT FIT
+   The menu uses the available dynamic viewport rather than assuming a
+   desktop-sized canvas. This prevents landscape phones from clipping the
+   logo and prevents horizontal page overflow.
+   ------------------------------------------------------------------ */
+.menu-overlay, .menu-page {
+  box-sizing:border-box;
+  max-width:100vw;
+  overflow-x:hidden;
+}
+.menu-shell {
+  box-sizing:border-box;
+  width:min(1120px, 100%);
+  max-width:100%;
+  min-height:100svh;
+  min-height:100dvh;
+  height:auto;
+  padding-inline:clamp(14px, 4vw, 48px);
+}
+.menu-main {
+  box-sizing:border-box;
+  width:min(480px, 100%);
+  max-width:100%;
+}
+.menu-logo {
+  max-width:100%;
+  overflow-wrap:anywhere;
+  text-wrap:balance;
+}
+.menu-page {
+  width:100%;
+  max-width:100%;
+  min-height:100dvh;
+  height:auto;
+  padding:clamp(18px, 5vh, 56px) clamp(14px, 5vw, 56px);
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+}
+.menu-page-inner {
+  box-sizing:border-box;
+  width:min(980px, 100%);
+  max-width:100%;
+  min-height:0;
+  margin:0 auto;
+  padding-bottom:max(18px, env(safe-area-inset-bottom));
+}
+@media (max-width:700px) {
+  .menu-shell {
+    min-height:100svh;
+    min-height:100dvh;
+    padding-inline:max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right));
+    align-items:center;
+  }
+  .menu-main { width:100%; }
+  .menu-logo {
+    font-size:clamp(28px, 10vw, 52px);
+    line-height:.95;
+    letter-spacing:.10em;
+    white-space:normal;
+  }
+  .menu-subtitle { margin-bottom:22px; font-size:9px; letter-spacing:.20em; }
+  .menu-options {
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:8px;
+  }
+  .menu-option {
+    box-sizing:border-box;
+    width:100%;
+    min-height:54px;
+    padding:13px 10px 13px 30px;
+    font-size:clamp(13px, 3.8vw, 17px);
+    letter-spacing:.10em;
+  }
+  .menu-option::before { left:11px; width:7px; height:7px; }
+  .menu-option:hover,.menu-option.selected { transform:none; }
+  .menu-footer { display:none; }
+  .menu-page {
+    min-height:100svh;
+    min-height:100dvh;
+    padding:calc(max(16px, env(safe-area-inset-top)) + 8px) max(12px, env(safe-area-inset-right)) calc(max(16px, env(safe-area-inset-bottom)) + 8px) max(12px, env(safe-area-inset-left));
+  }
+  .menu-page-inner { width:100%; }
+  .menu-page h2 { font-size:clamp(23px, 7vw, 32px); letter-spacing:.10em; }
+  .menu-page .page-desc { line-height:1.45; margin-bottom:18px; }
+  .menu-back { margin-bottom:16px; padding:8px 12px; }
+  .play-choice-grid, .settings-grid, .controls-list, .mode-list { width:100%; max-width:100%; }
+  .play-choice, .setting-card, .mode-card, .control-row, .credits-card { box-sizing:border-box; max-width:100%; }
+  .custom-seed-row { flex-wrap:wrap; }
+  .custom-seed-row input { min-width:0; width:100%; }
+  .custom-seed-row button { width:100%; }
+  .control-row { align-items:flex-start; flex-wrap:wrap; }
+  .control-right { max-width:100%; flex-wrap:wrap; }
+}
+@media (max-width:700px) and (orientation:landscape) {
+  .menu-shell { align-items:flex-start; padding-top:max(10px, env(safe-area-inset-top)); padding-bottom:max(10px, env(safe-area-inset-bottom)); }
+  .menu-main { margin:auto 0; }
+  .menu-logo { font-size:clamp(25px, 7vw, 42px); }
+  .menu-subtitle { margin-bottom:12px; }
+  .menu-option { min-height:42px; padding-top:8px; padding-bottom:8px; }
+  .menu-page { padding-top:max(10px, env(safe-area-inset-top)); padding-bottom:max(10px, env(safe-area-inset-bottom)); }
+  .menu-page h2 { font-size:24px; }
+  .menu-page .page-desc { margin-bottom:12px; }
+  .settings-grid, .controls-list { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .mode-list { grid-template-columns:repeat(3, minmax(0,1fr)); }
+  .setting-card { padding:12px; }
+}
+@media (max-height:430px) and (orientation:landscape) {
+  .menu-logo {
+    font-size:clamp(24px, 7vw, 30px);
+    white-space:nowrap;
+    letter-spacing:.08em;
+  }
+  .menu-subtitle { display:none; }
+  .menu-option { min-height:38px; padding:7px 10px 7px 28px; }
+  .menu-page { padding-top:8px; padding-bottom:8px; }
+  .menu-page h2 { font-size:21px; margin-bottom:4px; }
+  .menu-page .page-desc { margin-bottom:8px; }
 }
