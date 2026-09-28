@@ -49,26 +49,28 @@ const CONFIG = {
     moveThreshold: 0.38
   },
   entity: {
-    walkSpeed: 3.35,
-    chaseSpeed: 6.15,
-    radius: 0.38,
-    height: 1.85,
-    visionRange: 22,
-    fovDeg: 78,
+    // Level 0 Entity v2 — tall, thin, bacteria-inspired silhouette.
+    walkSpeed: 3.15,
+    chaseSpeed: 6.85,
+    radius: 0.34,
+    height: 3.15,
+    visionRange: 24,
+    fovDeg: 84,
     crouchVisMult: 0.58,
     hearCrouch: 6,
     hearWalk: 14,
     hearSprint: 28,
     hearLand: 22,
     hearJump: 16,
-    repath: 0.45,
-    senseInterval: 0.18,
+    repath: 0.35,
+    senseInterval: 0.16,
     searchTime: 11,
     pauseMin: 0.7,
     pauseMax: 2.4,
-    contactDist: 1.85,
-    damagePerSec: 10
+    contactDist: 1.28,
+    damagePerSec: 100
   },
+
   chase: {
     redMin: 6,
     redMax: 28,
@@ -139,6 +141,25 @@ const CONFIG = {
     energyMaxPerRegion: 5,
     maxCarry: 5,
     interactDist: 1.85
+  },
+  passC: {
+    enabled: true,
+    wallDrawingChance: 0.018,
+    wallDrawingMax: 95,
+    chairChance: 0.0028,
+    chairMax: 42,
+    propChance: 0.0018,
+    propMax: 30,
+    crateStep: 4,
+    crateChance: 0.12,
+    crateMax: 32,
+    crateInteractDist: 1.8,
+    mazeWallRatio: 0.47,
+    mushroomAttempts: 5,
+    mushroomChance: 0.70,
+    mushroomEnergyMin: 1,
+    mushroomEnergyMax: 3,
+    almondSpawnChance: 0.60
   },
   hudColors: {
     green: [61, 186, 92],
@@ -626,6 +647,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === CONFIG.keys.use && GameState.ready && GameState.phase === "playing" && !GameState.inventoryOpen && !e.repeat) {
     e.preventDefault();
+    if (typeof PassC !== "undefined" && PassC.openNearestCrate && PassC.openNearestCrate()) return;
     PickupSystem.tryPickup();
   }
 }, true);
