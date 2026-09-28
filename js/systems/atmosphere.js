@@ -433,6 +433,9 @@ const EntitySystem = {
   targetModule: null,
   debugLine: null,
   vel: new THREE.Vector3(),
+  animT: 0,
+  visualBob: 0,
+  entityParts: null,
 
   spawn(position, yaw) {
     this.despawn();
@@ -448,36 +451,135 @@ const EntitySystem = {
     this.playerVisible = false;
     this.playerHeard = false;
     this.lastKnown.copy(position);
+    this.animT = 0;
+    this.visualBob = 0;
+
+    /*
+     * LEVEL 0 ENTITY V2
+     * Tall, thin, bacteria-inspired silhouette. All geometry is procedural
+     * so there is no external model dependency.
+     */
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x1a1814, roughness: 0.92, metalness: 0.02
+    group.name = "Level0_BacteriaEntity";
+
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x17130f,
+      roughness: 0.97,
+      metalness: 0.0
     });
-    const torso = new THREE.Mesh(Geometries.box, mat);
-    torso.scale.set(0.42, 0.95, 0.28);
-    torso.position.y = 1.15;
-    const head = new THREE.Mesh(Geometries.box, mat);
-    head.scale.set(0.28, 0.32, 0.26);
-    head.position.y = 1.78;
-    const legL = new THREE.Mesh(Geometries.box, mat);
-    legL.scale.set(0.16, 0.7, 0.16);
-    legL.position.set(-0.12, 0.35, 0);
-    const legR = new THREE.Mesh(Geometries.box, mat);
-    legR.scale.set(0.16, 0.7, 0.16);
-    legR.position.set(0.12, 0.35, 0);
-    group.add(torso, head, legL, legR);
+    const limbMat = new THREE.MeshStandardMaterial({
+      color: 0x0d0b09,
+      roughness: 0.99,
+      metalness: 0.0
+    });
+    const headMat = new THREE.MeshStandardMaterial({
+      color: 0x0a0908,
+      roughness: 1.0,
+      metalness: 0.0
+    });
+
+    const up = new THREE.Vector3(0, 1, 0);
+    const makeLimb = (a, b, rA, rB, material, radial = 7) => {
+      const dir = new THREE.Vector3().subVectors(b, a);
+      const len = dir.length();
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(rB, rA, len, radial, 1, false),
+        material
+      );
+      mesh.position.copy(a).add(b).multiplyScalar(0.5);
+      mesh.quaternion.setFromUnitVectors(up, dir.normalize());
+      return mesh;
+    };
+
+    const torso = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.17, 0.31, 1.28, 7, 1, false),
+      bodyMat
+    );
+    torso.position.set(0.015, 1.78, 0.015);
+    torso.rotation.z = -0.055;
+
+    const abdomen = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.19, 0.72, 7, 1, false),
+      bodyMat
+    );
+    abdomen.position.set(-0.035, 1.05, 0.01);
+    abdomen.rotation.z = 0.08;
+
+    const neck = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.09, 0.24, 7, 1, false),
+      limbMat
+    );
+    neck.position.set(0.01, 2.53, 0.0);
+
+    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.30, 1), headMat);
+    head.scale.set(0.78, 1.15, 0.70);
+    head.position.set(0.015, 2.82, -0.005);
+    head.rotation.z = -0.12;
+    head.rotation.x = 0.08;
+
+    const shoulderL = new THREE.Vector3(-0.19, 2.28, 0.0);
+    const elbowL = new THREE.Vector3(-0.39, 1.60, 0.035);
+    const handL = new THREE.Vector3(-0.54, 0.88, -0.015);
+    const shoulderR = new THREE.Vector3(0.19, 2.28, 0.01);
+    const elbowR = new THREE.Vector3(0.43, 1.57, -0.02);
+    const handR = new THREE.Vector3(0.58, 0.78, 0.02);
+
+    const armLU = makeLimb(shoulderL, elbowL, 0.085, 0.065, limbMat);
+    const armLL = makeLimb(elbowL, handL, 0.067, 0.042, limbMat);
+    const armRU = makeLimb(shoulderR, elbowR, 0.085, 0.065, limbMat);
+    const armRL = makeLimb(elbowR, handR, 0.067, 0.042, limbMat);
+
+    const handGeo = new THREE.SphereGeometry(0.075, 7, 5);
+    const handLMesh = new THREE.Mesh(handGeo, headMat);
+    handLMesh.scale.set(0.72, 1.45, 0.72);
+    handLMesh.position.copy(handL);
+    const handRMesh = new THREE.Mesh(handGeo, headMat);
+    handRMesh.scale.set(0.72, 1.45, 0.72);
+    handRMesh.position.copy(handR);
+
+    const hipL = new THREE.Vector3(-0.105, 0.74, 0.0);
+    const kneeL = new THREE.Vector3(-0.16, 0.36, 0.015);
+    const footL = new THREE.Vector3(-0.20, 0.035, -0.07);
+    const hipR = new THREE.Vector3(0.10, 0.74, 0.01);
+    const kneeR = new THREE.Vector3(0.15, 0.35, -0.01);
+    const footR = new THREE.Vector3(0.19, 0.035, -0.075);
+
+    const legLU = makeLimb(hipL, kneeL, 0.09, 0.06, limbMat);
+    const legLL = makeLimb(kneeL, footL, 0.062, 0.035, limbMat);
+    const legRU = makeLimb(hipR, kneeR, 0.09, 0.06, limbMat);
+    const legRL = makeLimb(kneeR, footR, 0.062, 0.035, limbMat);
+
+    const shoulderGeo = new THREE.SphereGeometry(0.13, 7, 5);
+    const shoulderLMesh = new THREE.Mesh(shoulderGeo, bodyMat);
+    shoulderLMesh.scale.set(0.95, 0.7, 0.72);
+    shoulderLMesh.position.copy(shoulderL);
+    const shoulderRMesh = new THREE.Mesh(shoulderGeo, bodyMat);
+    shoulderRMesh.scale.set(0.95, 0.7, 0.72);
+    shoulderRMesh.position.copy(shoulderR);
+
+    group.add(
+      torso, abdomen, neck, head,
+      armLU, armLL, armRU, armRL, handLMesh, handRMesh,
+      legLU, legLL, legRU, legRL,
+      shoulderLMesh, shoulderRMesh
+    );
     group.position.copy(position);
     group.rotation.y = this.yaw;
+
     if (scene) scene.add(group);
     this.mesh = group;
+    this.entityParts = { torso, abdomen, head };
     this.entities = [this];
     this.pickWanderTarget();
     return this;
   },
+
   despawn() {
     if (this.mesh && scene) scene.remove(this.mesh);
     if (this.debugLine && scene) scene.remove(this.debugLine);
     this.debugLine = null;
     this.mesh = null;
+    this.entityParts = null;
     this.spawned = false;
     this.entities = [];
     this.pathDistanceAtSpawn = 0;
@@ -681,6 +783,7 @@ const EntitySystem = {
 
   update(dt) {
     if (!this.spawned) return;
+    if (this.state === "CAPTURED") return;
     const E = CONFIG.entity;
     this.senseT -= dt;
     if (this.senseT <= 0) {
@@ -702,17 +805,16 @@ const EntitySystem = {
     const distP = Math.hypot(Player.position.x - this.position.x, Player.position.z - this.position.z);
     this.inContact = false;
     if (this.spawned && distP <= CONFIG.entity.contactDist && this.clearLineToPlayer()) {
+      // Entity v2: contact is a capture. The old entity could stand beside
+      // the player, deal a small amount of damage, and then disengage.
       this.inContact = true;
-      this.dmgAcc += CONFIG.entity.damagePerSec * dt;
-      let hit = 0;
-      while (this.dmgAcc >= 1) {
-        this.dmgAcc -= 1;
-        hit += 1;
-      }
-      if (hit > 0) {
-        Player.damagePlayer(hit);
-        ChaseFx.hitFlash();
-        if (Player.getPlayerHP() <= 0) Game.gameOver();
+      this.dmgAcc = 0;
+      ChaseFx.hitFlash();
+      Player.damagePlayer(Player.getPlayerHP());
+      if (Player.getPlayerHP() <= 0) {
+        this.setState("CAPTURED");
+        Game.gameOver();
+        return;
       }
     } else {
       this.dmgAcc = 0;
@@ -771,8 +873,20 @@ const EntitySystem = {
     }
 
     if (this.mesh) {
+      const moving = this.state === "PURSUING" || this.state === "ALERTED" || this.state === "SEARCHING";
+      this.animT += dt * (moving ? 7.5 : 2.0);
+      const sway = moving ? Math.sin(this.animT) * 0.018 : Math.sin(this.animT) * 0.008;
+      const lean = moving ? Math.sin(this.animT * 0.5) * 0.022 : Math.sin(this.animT * 0.35) * 0.012;
+      this.visualBob += ((moving ? Math.abs(Math.sin(this.animT * 0.5)) * 0.018 : 0) - this.visualBob) * Math.min(1, dt * 8);
       this.mesh.position.copy(this.position);
+      this.mesh.position.y += this.visualBob;
       this.mesh.rotation.y = this.yaw;
+      if (this.entityParts) {
+        this.entityParts.torso.rotation.z = -0.055 + lean;
+        this.entityParts.abdomen.rotation.z = 0.08 - lean * 0.7;
+        this.entityParts.head.rotation.z = -0.12 - lean * 0.65;
+        this.entityParts.head.rotation.y = sway * 0.8;
+      }
     }
     if (this.state === "PURSUING" && Math.random() < dt * 0.7) {
       AudioSystem.playPositional("creak", this.position.x, 1.4, this.position.z, { gain: 0.028, bus: "entity", max: 36 });
