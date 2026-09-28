@@ -20,7 +20,7 @@ const DEFAULTS = {
   regionOctaves: 2,
   regionPersistence: 0.55,
   regionLacunarity: 2,
-  regionThresholds: [0.15, 0.40, 0.75, 0.95],
+  regionThresholds: [0.10, 0.30, 0.65, 0.90],
   regionMaxClearCells: [15, 12, 9, 6, 4],
   // Region profiles deliberately change both quantity and architectural vocabulary.
   // The last two bands are not merely "more walls": Dense favors attached/intersecting
