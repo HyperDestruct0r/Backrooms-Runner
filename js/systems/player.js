@@ -658,6 +658,11 @@ const Inventory = {
     if (typeof MobileControls !== "undefined" && MobileControls.resetToggles) MobileControls.resetToggles();
     const el = document.getElementById("inv-overlay");
     if (el) el.style.display = "none";
+    // Inventory temporarily unlocks input so it can be used without gameplay
+    // continuing underneath it. Re-lock mobile gameplay when the inventory closes.
+    if (DeviceMode.mobile && GameState.phase === "playing" && !GameState.cutscene) {
+      Input.locked = true;
+    }
   },
   refresh() {
     const list = document.getElementById("inv-list");
