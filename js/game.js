@@ -395,7 +395,7 @@ const Game = {
       else if (GameState.level === 1) GameState.levelTimes[1] += dt;
       Stairwell.update(dt);
       CameraRig.update(dt);
-    } else if (GameState.phase === "playing" && (Input.locked || DeviceMode.mobile)) {
+    } else if (GameState.phase === "playing" && Input.locked) {
       GameState.elapsed += dt;
       if (GameState.level === 1 && Level1.active) {
         Level1.update(dt);
