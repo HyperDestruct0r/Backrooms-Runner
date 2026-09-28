@@ -103,6 +103,12 @@ const Game = {
         else renderer.domElement.requestPointerLock();
       }
     });
+    const pauseSettings = document.getElementById("pause-settings");
+    if (pauseSettings) pauseSettings.addEventListener("click", () => {
+      if (GameState.phase === "playing" && !Stairwell.sequenceActive && typeof MenuSystem !== "undefined") {
+        MenuSystem.openRunSettings();
+      }
+    });
     const pauseLeave = document.getElementById("pause-leave");
     if (pauseLeave) pauseLeave.addEventListener("click", () => this.leaveRun());
     const goBtn = document.getElementById("btn-gameover");
