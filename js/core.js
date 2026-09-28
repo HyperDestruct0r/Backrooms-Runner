@@ -6,6 +6,8 @@
 
 "use strict";
 
+"use strict";
+
 /* ------------------------------------------------------------------
    CONFIG
    ------------------------------------------------------------------ */
@@ -36,6 +38,7 @@ const CONFIG = {
   },
   stamina: {
     max: 100,
+    drain: 8,
     crouchDrain: 0.25,
     walkDrain: 0.50,
     sprintDrain: 1.0,
@@ -236,7 +239,6 @@ const GameState = {
   level: 0,
   cinematicCamera: false,
   regenerating: false,
-  regenerateArmedUntil: 0,
   runId: 0,
   levelTimes: { 0: 0, 1: 0 }
 };
@@ -272,6 +274,8 @@ const DeviceMode = {
     clearInput();
     // Mobile has no Pointer Lock; use Input.locked as the gameplay-active gate.
     Input.locked = next && GameState.phase === "playing" && !GameState.inventoryOpen;
+    if (typeof MobileControls !== "undefined" && MobileControls.resetToggles) MobileControls.resetToggles();
+    if (typeof MenuSystem !== "undefined" && MenuSystem.updateRunMobileLookVisibility) MenuSystem.updateRunMobileLookVisibility();
     if (typeof HUD !== "undefined" && HUD.toast && GameState.phase === "playing" && reason === "pointer") {
       HUD.toast(next ? "TOUCH CONTROLS" : "MOUSE + KEYBOARD");
     }
@@ -324,7 +328,8 @@ const MobileControls = {
   lookMode: "joystick",
   maxRadius: 56,
   lookSensitivity: 0.055,
-  swipeSensitivity: 0.0065,
+  toggleSprint: false,
+  toggleCrouch: false,
   initialized: false,
   _stick(zoneId, kind) {
     const zone = document.getElementById(zoneId);
@@ -407,22 +412,28 @@ const MobileControls = {
       zone.addEventListener('touchcancel', touchEnd, {passive:true});
     }
   },
+  resetToggles() {
+    this.toggleSprint = false;
+    this.toggleCrouch = false;
+    document.querySelectorAll('[data-mobile-action="sprint"], [data-mobile-action="crouch"]').forEach(btn => btn.classList.remove('is-toggled'));
+  },
+  toggleAction(action) {
+    if (action === 'sprint') {
+      this.toggleSprint = !this.toggleSprint;
+      if (this.toggleSprint) this.toggleCrouch = false;
+    } else if (action === 'crouch') {
+      this.toggleCrouch = !this.toggleCrouch;
+      if (this.toggleCrouch) this.toggleSprint = false;
+    }
+    document.querySelectorAll('[data-mobile-action="sprint"]').forEach(btn => btn.classList.toggle('is-toggled', this.toggleSprint));
+    document.querySelectorAll('[data-mobile-action="crouch"]').forEach(btn => btn.classList.toggle('is-toggled', this.toggleCrouch));
+  },
   setLookMode(mode) {
     this.lookMode = mode === "swipe" ? "swipe" : "joystick";
     const zone = document.getElementById("mobile-look-zone");
-    const swipeZone = document.getElementById("mobile-look-swipe-zone");
-    if (zone) {
-      zone.classList.toggle("swipe-mode", this.lookMode === "swipe");
-      zone.setAttribute("aria-hidden", this.lookMode === "swipe" ? "true" : "false");
-    }
-    if (swipeZone) {
-      swipeZone.classList.toggle("active", this.lookMode === "swipe");
-      swipeZone.setAttribute("aria-hidden", this.lookMode === "swipe" ? "false" : "true");
-    }
+    if (zone) zone.classList.toggle("swipe-mode", this.lookMode === "swipe");
     if (this.lookMode === "swipe") {
       this.lookX = this.lookY = 0;
-      this.lookDX = this.lookDY = 0;
-      this.swipeId = null;
       const k = zone && zone.querySelector('.mobile-stick-knob');
       if (k) k.style.transform = 'translate3d(0,0,0)';
     }
@@ -437,20 +448,18 @@ const MobileControls = {
   },
   _initSwipe() {
     const state = this;
-    const swipeZone = document.getElementById('mobile-look-swipe-zone');
-    if (!swipeZone) return;
     const down = e => {
-      if (!DeviceMode.mobile || state.lookMode !== 'swipe' || (e.pointerType && e.pointerType === 'mouse')) return;
-      if (state.swipeId !== null) return;
+      if (!DeviceMode.mobile || state.lookMode !== "swipe" || (e.pointerType && e.pointerType === "mouse")) return;
+      if (state._swipeBlocked(e.target)) return;
+      if (e.clientX < window.innerWidth * 0.34) return;
       e.preventDefault();
       DeviceMode.onPointerType('touch');
       state.swipeId = e.pointerId;
       state.swipeLastX = e.clientX;
       state.swipeLastY = e.clientY;
-      try { swipeZone.setPointerCapture(e.pointerId); } catch (_) {}
     };
     const move = e => {
-      if (state.swipeId === null || e.pointerId !== state.swipeId || state.lookMode !== 'swipe') return;
+      if (state.swipeId === null || e.pointerId !== state.swipeId || state.lookMode !== "swipe") return;
       e.preventDefault();
       state.lookDX += e.clientX - state.swipeLastX;
       state.lookDY += e.clientY - state.swipeLastY;
@@ -460,19 +469,20 @@ const MobileControls = {
     const end = e => {
       if (state.swipeId !== null && e.pointerId === state.swipeId) state.swipeId = null;
     };
-    swipeZone.addEventListener('pointerdown', down, {passive:false});
-    swipeZone.addEventListener('pointermove', move, {passive:false});
-    ['pointerup','pointercancel','lostpointercapture'].forEach(ev => swipeZone.addEventListener(ev, end, {passive:true}));
+    window.addEventListener('pointerdown', down, {passive:false});
+    window.addEventListener('pointermove', move, {passive:false});
+    ['pointerup','pointercancel'].forEach(ev => window.addEventListener(ev, end, {passive:true}));
     if (!window.PointerEvent) {
-      swipeZone.addEventListener('touchstart', e => {
-        if (!DeviceMode.mobile || state.lookMode !== 'swipe' || state.swipeId !== null) return;
-        const t = e.changedTouches[0];
+      window.addEventListener('touchstart', e => {
+        if (!DeviceMode.mobile || state.lookMode !== "swipe" || state.swipeId !== null) return;
+        const t = Array.from(e.changedTouches).find(t => t.clientX >= window.innerWidth * 0.34);
         if (!t) return;
+        const target = document.elementFromPoint(t.clientX, t.clientY);
+        if (state._swipeBlocked(target)) return;
         e.preventDefault(); DeviceMode.onPointerType('touch');
-        state.swipeId = 't' + t.identifier;
-        state.swipeLastX = t.clientX; state.swipeLastY = t.clientY;
+        state.swipeId = 't' + t.identifier; state.swipeLastX = t.clientX; state.swipeLastY = t.clientY;
       }, {passive:false});
-      swipeZone.addEventListener('touchmove', e => {
+      window.addEventListener('touchmove', e => {
         if (!state.swipeId || state.swipeId[0] !== 't') return;
         const wanted = Number(state.swipeId.slice(1));
         for (const t of e.changedTouches) if (t.identifier === wanted) {
@@ -483,14 +493,13 @@ const MobileControls = {
           break;
         }
       }, {passive:false});
-      ['touchend','touchcancel'].forEach(ev => swipeZone.addEventListener(ev, e => {
+      ['touchend','touchcancel'].forEach(ev => window.addEventListener(ev, e => {
         if (!state.swipeId || state.swipeId[0] !== 't') return;
         const wanted = Number(state.swipeId.slice(1));
         for (const t of e.changedTouches) if (t.identifier === wanted) { state.swipeId = null; break; }
       }, {passive:true}));
     }
   },
-
   init() {
     if (this.initialized) return;
     this.initialized = true;
@@ -499,36 +508,29 @@ const MobileControls = {
     this._initSwipe();
     document.querySelectorAll('[data-mobile-action]').forEach(btn => {
       const action = btn.dataset.mobileAction;
-      // Hold-style mobile actions must resolve their binding at activation time.
-      // This keeps mobile controls synchronized with custom keybinds without
-      // changing the existing semantic handlers for flashlight/inventory/use.
-      const getBoundCode = () => bindingCode(action);
-      let activeCode = null;
-      if (['jump', 'sprint', 'crouch'].includes(action)) {
+      const code = {jump:'Space'}[action];
+      if (action === 'sprint' || action === 'crouch') {
+        const toggle = e => {
+          if (e.pointerType === 'mouse') return;
+          e.preventDefault(); DeviceMode.onPointerType('touch');
+          if (GameState.phase !== 'playing' || GameState.inventoryOpen || Stairwell.sequenceActive) return;
+          Input.locked = true;
+          MobileControls.toggleAction(action);
+        };
+        btn.addEventListener('pointerup', toggle, {passive:false});
+        if (!window.PointerEvent) btn.addEventListener('touchend', toggle, {passive:false});
+      } else if (code) {
         const down = e => {
           if (e.pointerType === 'mouse') return;
           e.preventDefault(); DeviceMode.onPointerType('touch');
           Input.locked = GameState.phase === 'playing' && !GameState.inventoryOpen;
-          const code = getBoundCode();
-          if (!code) return;
-          activeCode = code;
-          Input.keys[code] = true;
+          Input.keys[CONFIG.keys.jump || code] = true;
         };
-        const up = () => {
-          if (activeCode) Input.keys[activeCode] = false;
-          activeCode = null;
-        };
+        const up = () => { Input.keys[CONFIG.keys.jump || code] = false; };
         btn.addEventListener('pointerdown', down, {passive:false});
         ['pointerup','pointercancel','pointerleave'].forEach(ev => btn.addEventListener(ev, up, {passive:true}));
         if (!window.PointerEvent) {
-          btn.addEventListener('touchstart', e => {
-            e.preventDefault(); DeviceMode.onPointerType('touch');
-            Input.locked = GameState.phase === 'playing' && !GameState.inventoryOpen;
-            const code = getBoundCode();
-            if (!code) return;
-            activeCode = code;
-            Input.keys[code] = true;
-          }, {passive:false});
+          btn.addEventListener('touchstart', e => { e.preventDefault(); DeviceMode.onPointerType('touch'); Input.keys[CONFIG.keys.jump || code] = true; }, {passive:false});
           ['touchend','touchcancel'].forEach(ev => btn.addEventListener(ev, up, {passive:true}));
         }
       } else {
@@ -550,15 +552,17 @@ const MobileControls = {
       const activatePause = e => {
         if (e.pointerType && e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
         e.preventDefault(); DeviceMode.onPointerType('touch');
-        if (GameState.phase === 'playing' && !Stairwell.sequenceActive && !GameState.inventoryOpen) {
+        if (GameState.phase === 'playing') {
           const overlay = document.getElementById('pause-overlay');
           const paused = overlay && overlay.style.display === 'flex';
           if (paused) {
             setPauseOverlay(false);
+            MobileControls.resetToggles();
             Input.locked = true;
           } else {
             setPauseOverlay(true);
             Input.locked = false;
+            MobileControls.resetToggles();
             clearInput();
           }
         }
@@ -581,6 +585,8 @@ function mobileActionDown(action) {
   if (action === "backward") return MobileControls.moveY > 0.12;
   if (action === "left") return MobileControls.moveX < -0.12;
   if (action === "right") return MobileControls.moveX > 0.12;
+  if (action === "sprint") return MobileControls.toggleSprint;
+  if (action === "crouch") return MobileControls.toggleCrouch;
   return false;
 }
 
@@ -601,10 +607,8 @@ function isActionDown(action) {
 }
 
 function isGameplayKey(code) {
-  // Only currently configured gameplay bindings should be intercepted.
-  // Keeping the old defaults here would make rebound keys still behave like
-  // gameplay keys for browser-default suppression even after being unbound.
-  return Object.values(CONFIG.keys).includes(code) || code === "F3";
+  const configured = Object.values(CONFIG.keys).filter(Boolean);
+  return configured.includes(code) || code === "F3";
 }
 
 window.addEventListener("keydown", (e) => {
@@ -633,17 +637,6 @@ window.addEventListener("keydown", (e) => {
   if (e.code === CONFIG.keys.regenerate && GameState.ready && (GameState.phase === "playing" || GameState.phase === "complete" || GameState.phase === "start")) {
     if (e.repeat || GameState.regenerating) return;
     e.preventDefault();
-
-    const now = performance.now();
-    if (now > GameState.regenerateArmedUntil) {
-      GameState.regenerateArmedUntil = now + 1200;
-      if (typeof HUD !== "undefined" && HUD && typeof HUD.toast === "function") {
-        HUD.toast("Press the regenerate key again within 1.2s to create a new layout.");
-      }
-      return;
-    }
-
-    GameState.regenerateArmedUntil = 0;
     Game.regenerate();
   }
   if (e.ctrlKey && e.shiftKey && e.altKey && (e.code === "KeyD" || e.key === "d" || e.key === "D")) {
