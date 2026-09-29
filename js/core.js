@@ -181,7 +181,8 @@ const CONFIG = {
     use: "KeyE",
     flashlight: "KeyF",
     nearestExit: "KeyN",
-    regenerate: "KeyG"
+    regenerate: "KeyG",
+    unlockMouse: "KeyU"
   },
   flashlight: {
     // Deliberately powerful: Level 1 blackouts are nearly pitch black.
@@ -618,15 +619,17 @@ window.addEventListener("keydown", (e) => {
   Input.keys[e.code] = true;
 
   const playing = GameState.phase === "playing" || GameState.phase === "complete";
-  if (e.code === "Escape" && GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive) {
-    if (Input.locked) {
-      // First Escape releases pointer lock and opens the pause menu.
-      setPauseOverlay(true);
-    } else {
-      // A second Escape while paused resumes the current run.
-      const resume = document.getElementById("pause-resume");
-      if (resume) resume.click();
-    }
+  // Escape is intentionally left to the browser Pointer Lock API.
+  // It unlocks the mouse but does not navigate away from the run.
+  // The explicit gamewide unlock binding below provides the same behavior
+  // without requiring Escape.
+  if (e.code === CONFIG.keys.unlockMouse && GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive && !DeviceMode.mobile && !e.repeat) {
+    e.preventDefault();
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    else Input.locked = false;
+    clearInput();
+    if (typeof HUD !== "undefined") HUD.toast("MOUSE UNLOCKED");
+    return;
   }
   if (playing || Input.locked) {
     if (e.ctrlKey || e.metaKey || e.altKey || isGameplayKey(e.code)) {
