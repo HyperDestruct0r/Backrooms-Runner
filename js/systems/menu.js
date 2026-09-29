@@ -15,7 +15,8 @@ const MenuSystem = {
     ["use", "Pick up / interact"],
     ["nearestExit", "Nearest exit"],
     ["recordRun", "Record run"],
-    ["regenerate", "New layout"]
+    ["regenerate", "New layout"],
+    ["unlockMouse", "Unlock mouse"]
   ],
   menuIndex: 0,
   menuItems: ["play", "tutorial", "settings", "controls", "credits"],
@@ -71,6 +72,11 @@ const MenuSystem = {
     document.querySelectorAll("[data-menu-index]").forEach(btn => {
       btn.addEventListener("mouseenter", () => this.selectMain(Number(btn.dataset.menuIndex)));
     });
+
+    const keyboardGuide = document.getElementById("open-keyboard-guide");
+    if (keyboardGuide) keyboardGuide.addEventListener("click", () => KeyboardGuide.open());
+    const keyboardGuideTutorial = document.getElementById("tutorial-keyboard-guide");
+    if (keyboardGuideTutorial) keyboardGuideTutorial.addEventListener("click", () => KeyboardGuide.open());
 
     const randomSeed = document.getElementById("menu-random-seed");
     if (randomSeed) randomSeed.addEventListener("click", () => {
