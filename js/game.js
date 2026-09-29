@@ -127,6 +127,7 @@ const Game = {
   async start(mode = "random", customSeed = null) {
     if (!GameState.ready || GameState.phase === "loading") return;
     const testBeta = mode === "beta";
+    const tutorial = mode === "tutorial";
     const startOverlay = document.getElementById("start-overlay");
     const loadOverlay = document.getElementById("game-loading");
 
@@ -141,6 +142,7 @@ const Game = {
     }
 
     GameState.phase = "loading";
+    GameState.tutorial = tutorial;
     const runId = ++GameState.runId;
     if (startOverlay) startOverlay.style.display = "none";
     setPauseOverlay(false);
@@ -157,9 +159,9 @@ const Game = {
     // Seed selection happens only after the player explicitly chooses
     // Random Seed or Custom Seed from the Play menu.
     const isCustom = mode === "custom";
-    const selectedSeed = isCustom
-      ? (customSeed >>> 0)
-      : this._newRunSeed();
+    const selectedSeed = tutorial
+      ? 13371337
+      : (isCustom ? (customSeed >>> 0) : this._newRunSeed());
     if (testBeta) this._setGameLoading(65, "INITIALIZING TEST BETA...");
 
     try {
@@ -209,6 +211,7 @@ const Game = {
     GameState.exitReached = false;
     GameState.level = 0;
     GameState.testBeta = false;
+    if (tutorial) GameState.tutorial = true;
     const betaBanner = document.getElementById("beta-run-warning");
     if (betaBanner) betaBanner.style.display = "none";
     GameState.cinematicCamera = false;
@@ -226,8 +229,13 @@ const Game = {
     await this._nextFrame();
     if (loadOverlay) loadOverlay.style.display = "none";
     GameState.phase = "playing";
-    if (DeviceMode.mobile) Input.locked = true;
+    if (tutorial) {
+      // Training uses the normal gameplay update path without taking over the
+      // browser pointer. This keeps the tutorial card clickable on desktop.
+      Input.locked = true;
+    } else if (DeviceMode.mobile) Input.locked = true;
     else renderer.domElement.requestPointerLock();
+    if (tutorial && typeof TutorialSystem !== "undefined") TutorialSystem.start();
   },
 
   leaveRun() {
@@ -238,6 +246,7 @@ const Game = {
     GameState.runId++;
     GameState.phase = "start";
     GameState.testBeta = false;
+    GameState.tutorial = false;
     const betaBanner = document.getElementById("beta-run-warning");
     if (betaBanner) betaBanner.style.display = "none";
     GameState.inventoryOpen = false;
@@ -423,11 +432,13 @@ const Game = {
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
       } else {
-        EncounterManager.update(dt);
-        EntitySystem.update(dt, Player);
+        if (!GameState.tutorial) {
+          EncounterManager.update(dt);
+          EntitySystem.update(dt, Player);
+        }
         ChaseFx.update(dt);
         AtmosphereSystem.update(dt);
-        EnvEventSystem.update(dt);
+        if (!GameState.tutorial) EnvEventSystem.update(dt);
         DebugPath.update(dt);
         LightingSystem.update(dt);
         DarknessSystem.update(dt);
@@ -437,6 +448,7 @@ const Game = {
     } else {
       CameraRig.update(0);
     }
+    if (GameState.tutorial && typeof TutorialSystem !== "undefined") TutorialSystem.update(dt);
     HUD.update();
     if (GameState.debug) {
       GameState._fpsN = (GameState._fpsN || 0) + 1;
