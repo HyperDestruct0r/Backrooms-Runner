@@ -182,7 +182,8 @@ const CONFIG = {
     flashlight: "KeyF",
     nearestExit: "KeyN",
     regenerate: "KeyG",
-    unlockMouse: "KeyU"
+    unlockMouse: "KeyU",
+    recordRun: "KeyR"
   },
   flashlight: {
     // Deliberately powerful: Level 1 blackouts are nearly pitch black.
@@ -629,6 +630,11 @@ window.addEventListener("keydown", (e) => {
     else Input.locked = false;
     clearInput();
     if (typeof HUD !== "undefined") HUD.toast("MOUSE UNLOCKED");
+    return;
+  }
+  if (e.code === CONFIG.keys.recordRun && GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive && !e.repeat) {
+    e.preventDefault();
+    if (typeof Game !== "undefined" && typeof Game.toggleRunRecording === "function") Game.toggleRunRecording();
     return;
   }
   if (playing || Input.locked) {
