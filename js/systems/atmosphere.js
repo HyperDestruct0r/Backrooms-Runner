@@ -805,15 +805,20 @@ const EntitySystem = {
     const distP = Math.hypot(Player.position.x - this.position.x, Player.position.z - this.position.z);
     this.inContact = false;
     if (this.spawned && distP <= CONFIG.entity.contactDist && this.clearLineToPlayer()) {
-      // Entity v2: contact is a capture. The old entity could stand beside
-      // the player, deal a small amount of damage, and then disengage.
+      // Contact is now a sustained capture: 100 HP/sec, applied every 0.1s.
+      // When HP reaches zero, movement locks and the capture cutscene runs
+      // before the normal Game Over screen appears.
       this.inContact = true;
-      this.dmgAcc = 0;
-      ChaseFx.hitFlash();
-      Player.damagePlayer(Player.getPlayerHP());
+      this.dmgAcc += dt * CONFIG.entity.damagePerSec;
+      while (this.dmgAcc >= 10 && Player.getPlayerHP() > 0) {
+        this.dmgAcc -= 10;
+        ChaseFx.hitFlash();
+        Player.damagePlayer(10);
+      }
       if (Player.getPlayerHP() <= 0) {
+        this.dmgAcc = 0;
         this.setState("CAPTURED");
-        Game.gameOver();
+        if (typeof CutsceneSystem !== "undefined") CutsceneSystem.startEntityCapture();
         return;
       }
     } else {
@@ -906,6 +911,115 @@ const EntitySystem = {
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
     this.debugLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xff6644 }));
     scene.add(this.debugLine);
+  }
+};
+
+
+const CutsceneSystem = {
+  active: false,
+  type: null,
+  t: 0,
+  duration: 3.4,
+  overlay: null,
+  text: null,
+  startEntityCapture() {
+    if (this.active) return;
+    this.active = true;
+    this.type = "entity_capture";
+    this.t = 0;
+    GameState.cutscene = true;
+    Input.locked = false;
+    clearInput();
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    this.overlay = document.getElementById("entity-capture-cutscene");
+    this.text = document.getElementById("entity-capture-text");
+    if (this.overlay) this.overlay.style.display = "flex";
+    if (this.text) this.text.style.opacity = "0";
+    ChaseFx.intensity = Math.max(ChaseFx.intensity || 0, 0.85);
+    AudioSystem._tone && AudioSystem._tone(58, "sawtooth", 0.18, 0.045, "events");
+  },
+  reset() {
+    this.active = false;
+    this.type = null;
+    this.t = 0;
+    GameState.cutscene = false;
+    if (this.overlay) this.overlay.style.display = "none";
+    if (this.text) this.text.style.opacity = "0";
+  },
+  update(dt) {
+    if (!this.active) return;
+    this.t += dt;
+    const cam = CameraRig.camera;
+    const e = EntitySystem;
+    const p = Player.position;
+    const phase = this.t / this.duration;
+
+    if (cam) {
+      // Keep the viewpoint anchored to the player while the entity dominates
+      // the frame. This avoids giving the player any movement control during
+      // the capture sequence.
+      const forward = new THREE.Vector3(-Math.sin(Player.yaw), 0, -Math.cos(Player.yaw));
+      const right = new THREE.Vector3(Math.cos(Player.yaw), 0, -Math.sin(Player.yaw));
+      const shake = Math.min(1, this.t * 1.8) * (0.012 + Math.max(0, phase - 0.25) * 0.018);
+      cam.position.set(
+        p.x + right.x * (Math.random() - 0.5) * shake,
+        p.y + Player.eyeHeight() + (Math.random() - 0.5) * shake,
+        p.z + right.z * (Math.random() - 0.5) * shake
+      );
+      cam.rotation.order = "YXZ";
+
+      const target = new THREE.Vector3();
+      if (e.mesh) {
+        // Gradually turn the camera toward the real entity as it closes in.
+        target.copy(e.mesh.position);
+        target.y += 1.35;
+      } else {
+        target.copy(p).add(forward.multiplyScalar(2));
+        target.y += 1.2;
+      }
+      cam.lookAt(target);
+      cam.rotation.z = Math.sin(this.t * 9) * Math.min(0.035, this.t * 0.012);
+      const fov = 72 + Math.sin(this.t * 5.5) * Math.min(3, this.t * 1.2);
+      if (Math.abs(cam.fov - fov) > 0.02) {
+        cam.fov = fov;
+        cam.updateProjectionMatrix();
+      }
+    }
+
+    if (e.mesh) {
+      // The entity remains a real world object; the cutscene only changes its
+      // presentation and lets it loom closer without any new damage ticks.
+      const toPlayer = new THREE.Vector3().subVectors(p, e.position);
+      const d = Math.max(0.001, Math.hypot(toPlayer.x, toPlayer.z));
+      if (this.t < 1.15 && d > 0.72) {
+        const speed = 0.9 + this.t * 0.9;
+        e.position.x += (toPlayer.x / d) * speed * dt;
+        e.position.z += (toPlayer.z / d) * speed * dt;
+      }
+      e.mesh.position.copy(e.position);
+      e.mesh.position.y += Math.sin(this.t * 12) * 0.018;
+      e.mesh.rotation.y = Math.atan2(-(p.x - e.position.x), -(p.z - e.position.z));
+      const scale = 1 + Math.max(0, this.t - 0.5) * 0.18;
+      e.mesh.scale.setScalar(scale);
+    }
+
+    if (this.overlay) {
+      const fadeIn = Math.min(1, this.t / 0.55);
+      const fadeOut = this.t > 2.35 ? Math.min(1, (this.t - 2.35) / 0.85) : 0;
+      this.overlay.style.background = `rgba(0,0,0,${Math.max(0, fadeIn * 0.18 + fadeOut * 0.92)})`;
+      if (this.text) {
+        this.text.style.opacity = this.t > 1.45 && this.t < 2.5 ? String(Math.min(0.72, (this.t - 1.45) * 1.4)) : "0";
+      }
+    }
+
+    if (this.t >= this.duration) {
+      this.active = false;
+      GameState.cutscene = false;
+      if (e.mesh) e.mesh.scale.set(1,1,1);
+      if (this.overlay) this.overlay.style.display = "none";
+      if (this.text) this.text.style.opacity = "0";
+      Game.gameOver();
+    }
   }
 };
 
