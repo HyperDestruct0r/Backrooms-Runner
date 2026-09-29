@@ -20,15 +20,15 @@ const DEFAULTS = {
   regionOctaves: 2,
   regionPersistence: 0.55,
   regionLacunarity: 2,
-  regionThresholds: [0.10, 0.30, 0.65, 0.90],
-  regionMaxClearCells: [15, 12, 9, 6, 4],
+  regionThresholds: [0.06, 0.20, 0.54, 0.82],
+  regionMaxClearCells: [12, 10, 8, 6, 4],
   // Region profiles deliberately change both quantity and architectural vocabulary.
   // The last two bands are not merely "more walls": Dense favors attached/intersecting
   // structures while Maze switches to short, turn-heavy chains and pocket-like frames.
-  regionMajorMultiplier: [0.72, 0.88, 1.00, 1.30, 1.48],
-  regionSecondaryMultiplier: [0.55, 0.78, 1.00, 1.48, 1.90],
-  regionMajorSizeMultiplier: [1.22, 1.10, 1.00, 0.82, 0.58],
-  regionMinStructureSpacingByBand: [18, 15, 11, 6, 3],
+  regionMajorMultiplier: [0.62, 0.78, 1.00, 1.38, 1.65],
+  regionSecondaryMultiplier: [0.50, 0.72, 1.00, 1.55, 2.10],
+  regionMajorSizeMultiplier: [1.12, 1.04, 1.00, 0.82, 0.56],
+  regionMinStructureSpacingByBand: [16, 13, 10, 5, 3],
   regionInfillAttempts: 72,
   regionMinStructureSpacing: 12,
   denseZoneThreshold: 0.46,
