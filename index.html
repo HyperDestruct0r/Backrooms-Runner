@@ -40,7 +40,7 @@
   <div id="boot-loading">
     <div class="loading-card">
       <div class="loading-title">BACKROOMS</div>
-      <div class="loading-subtitle">LEVEL 0 · INITIALIZING ENVIRONMENT</div>
+      <div class="loading-subtitle">INITIALIZING ENVIRONMENT</div>
       <div id="boot-status" class="loading-status pulse">INITIALIZING...</div>
       <div class="loading-track"><div id="boot-fill" class="loading-fill"></div></div>
       <div id="boot-percent" class="loading-percent">0%</div>
@@ -59,7 +59,7 @@
   <div id="elevator-sequence">
     <div id="elevator-card">
       <h2>LEVEL 1</h2>
-      <div id="elevator-status">ELEVATOR DOORS OPENING</div>
+      <div id="elevator-status">NOCLIPPING...</div>
       <div id="elevator-track"><div id="elevator-fill"></div></div>
       <div id="elevator-floor">LOADING LEVEL 1</div>
     </div>
@@ -107,10 +107,11 @@
     <div id="pause-panel">
       <h1>Paused</h1>
       <p>The Backrooms are waiting.</p>
-      <p class="pause-hint">Press ESC again or choose an option below.</p>
+      <p class="pause-hint">Use Resume to return to the run, or open a reference below.</p>
       <div class="pause-actions">
         <button id="pause-resume" type="button">Resume</button>
         <button id="pause-settings" type="button" class="pause-settings">Run Settings</button>
+        <button id="pause-keyboard-guide" type="button">Keyboard Guide</button>
         <button id="pause-export" type="button" class="pause-export" style="display:none">Export Run</button>
         <button id="pause-leave" type="button" class="pause-leave">Leave Run</button>
       </div>
@@ -202,6 +203,10 @@
               <strong>HOW TO PLAY</strong>
               <small>A written manual covering controls, HUD, movement, items, sanity, entities, events, exits, and procedural generation.</small>
             </button>
+            <button class="tutorial-hub-card" id="tutorial-keyboard-guide" type="button">
+              <strong>KEYBOARD GUIDE</strong>
+              <small>See the keyboard layout, highlighted game controls, and what every active key does.</small>
+            </button>
             <button class="tutorial-hub-card" id="tutorial-start-sandbox" type="button">
               <strong>TRAINING SIMULATION</strong>
               <small>Enter a protected Level 0 simulation and walk through the game's mechanics step by step.</small>
@@ -261,6 +266,7 @@
           <button id="menu-back-controls" class="menu-back" type="button">← BACK</button>
           <h2>CONTROLS</h2>
           <p class="page-desc">Click a key to rebind it. Changes save immediately. Backspace/Delete unbinds a control.</p>
+          <button id="open-keyboard-guide" class="tutorial-manual-launch" type="button">OPEN KEYBOARD GUIDE</button>
           <div id="controls-error" class="controls-message info">Select any key to begin rebinding.</div>
           <div id="controls-list" class="controls-list"></div>
         </div>
@@ -279,6 +285,15 @@
           </div>
         </div>
       </section>
+    </div>
+  </div>
+
+  <div id="keyboard-guide-overlay" class="keyboard-guide-overlay" aria-hidden="true">
+    <div class="keyboard-guide-card">
+      <div class="keyboard-guide-header"><div><span class="tutorial-count-label">CONTROL REFERENCE</span><h2>KEYBOARD GUIDE</h2></div><button id="keyboard-guide-close" class="menu-back" type="button">← CLOSE</button></div>
+      <p class="page-desc">Highlighted keys are currently assigned to game functions. Rebinding updates this guide automatically.</p>
+      <div id="keyboard-guide"></div>
+      <div id="keyboard-guide-legend" class="keyboard-guide-legend"></div>
     </div>
   </div>
 
@@ -373,6 +388,7 @@
 <script src="js/systems/auth.js"></script>
 <script src="js/systems/seed.js"></script>
 <script src="js/systems/noise-architectural.js"></script>
+<script src="js/systems/keyboard-guide.js"></script>
 <script src="js/systems/tutorial.js"></script>
 <script src="js/systems/menu.js"></script>
 <script src="js/game.js"></script>
