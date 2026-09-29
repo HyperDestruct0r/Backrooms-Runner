@@ -353,3 +353,22 @@ html.mobile-input #inv-close { display:block; }
   #run-settings-close { width:100%; }
   .run-settings-grid { grid-template-columns:1fr; }
 }
+
+
+#pause-keyboard-guide {
+  margin-top: 0;
+  padding: 10px 20px;
+  background: rgba(203,184,90,0.08);
+  color: #e8dfb0;
+  border: 1px solid rgba(203,184,90,0.48);
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+#pause-keyboard-guide:hover {
+  background: rgba(203,184,90,0.16);
+  color: #fff3b5;
+  border-color: rgba(228,212,122,.72);
+}
