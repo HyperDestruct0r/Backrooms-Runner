@@ -44,6 +44,82 @@ const Game = {
     GameState.level = 0;
     GameState.exitReached = false;
   },
+  _setRecordingIndicator(active) {
+    const el = document.getElementById("recording-indicator");
+    if (el) {
+      el.classList.toggle("is-recording", !!active);
+      el.style.display = active ? "block" : "none";
+    }
+  },
+  _downloadRecording(blob) {
+    if (!blob || !blob.size) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `backrooms-run-${stamp}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  },
+  _stopRunRecording(download = true) {
+    const recorder = this.runRecorder;
+    if (!recorder) {
+      this._setRecordingIndicator(false);
+      return;
+    }
+    this.runRecorder = null;
+    this._setRecordingIndicator(false);
+    if (recorder.state === "inactive") return;
+    recorder._downloadOnStop = !!download;
+    recorder.stop();
+  },
+  _startRunRecording() {
+    if (!renderer || !renderer.domElement || typeof renderer.domElement.captureStream !== "function" || typeof MediaRecorder === "undefined") {
+      if (typeof HUD !== "undefined") HUD.toast("RUN RECORDING IS NOT SUPPORTED IN THIS BROWSER");
+      return false;
+    }
+    const stream = renderer.domElement.captureStream(30);
+    const types = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    const mimeType = types.find(t => MediaRecorder.isTypeSupported(t));
+    let recorder;
+    try {
+      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    } catch (err) {
+      stream.getTracks().forEach(track => track.stop());
+      if (typeof HUD !== "undefined") HUD.toast("COULD NOT START RUN RECORDING");
+      return false;
+    }
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      stream.getTracks().forEach(track => track.stop());
+      if (recorder._downloadOnStop && chunks.length) this._downloadRecording(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
+    };
+    recorder.start(1000);
+    this.runRecorder = recorder;
+    this._setRecordingIndicator(true);
+    if (typeof HUD !== "undefined") HUD.toast("RUN RECORDING STARTED — PRESS R TO STOP");
+    return true;
+  },
+  toggleRunRecording() {
+    if (this.runRecorder && this.runRecorder.state !== "inactive") {
+      this._stopRunRecording(true);
+      return;
+    }
+    if (GameState.phase !== "playing") return;
+    const overlay = document.getElementById("record-confirm-overlay");
+    const yes = document.getElementById("record-confirm-yes");
+    const no = document.getElementById("record-confirm-no");
+    if (overlay && yes && no) {
+      overlay.style.display = "flex";
+      const close = () => { overlay.style.display = "none"; };
+      yes.onclick = () => { close(); this._startRunRecording(); };
+      no.onclick = close;
+      return;
+    }
+    this._startRunRecording();
+  },
   async init() {
     const boot = document.getElementById("boot-loading");
     this._setBoot(4, "INITIALIZING RENDERER...");
@@ -130,6 +206,9 @@ const Game = {
 
   async start(mode = "random", customSeed = null) {
     if (!GameState.ready || GameState.phase === "loading") return;
+    this._stopRunRecording(false);
+    const recordOverlay = document.getElementById("record-confirm-overlay");
+    if (recordOverlay) recordOverlay.style.display = "none";
     const testBeta = mode === "beta";
     const tutorial = mode === "tutorial";
     const startOverlay = document.getElementById("start-overlay");
@@ -244,6 +323,7 @@ const Game = {
 
   leaveRun() {
     if (GameState.phase !== "playing") return;
+    this._stopRunRecording(false);
 
     // Abandoning a run deliberately does not call AuthSystem.recordRun().
     // Invalidate every callback owned by this run before tearing its state down.
