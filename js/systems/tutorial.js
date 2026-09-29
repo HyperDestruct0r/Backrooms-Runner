@@ -44,6 +44,23 @@ const TutorialSystem = {
     if (next) next.addEventListener("click", () => this.advance());
     const exit = document.getElementById("tutorial-exit");
     if (exit) exit.addEventListener("click", () => this.exit());
+
+    // Tutorial hub / manual navigation. These are intentionally owned by the
+    // tutorial system so the menu remains the single entry point for all
+    // tutorial-related pages.
+    const openManual = document.getElementById("tutorial-open-manual");
+    if (openManual) openManual.addEventListener("click", () => this.openManual());
+
+    const startSandbox = document.getElementById("tutorial-start-sandbox");
+    if (startSandbox) startSandbox.addEventListener("click", () => {
+      if (typeof Game !== "undefined") Game.start("tutorial");
+    });
+
+    const manualLaunch = document.getElementById("tutorial-manual-launch");
+    if (manualLaunch) manualLaunch.addEventListener("click", () => {
+      if (typeof Game !== "undefined") Game.start("tutorial");
+    });
+
     window.addEventListener("keydown", e => {
       if (!this.active) return;
       if (e.code === "Enter" && !GameState.inventoryOpen) { e.preventDefault(); this.advance(); }
