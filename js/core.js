@@ -232,6 +232,7 @@ const GameState = {
   seed: 0,
   level0Seed: 0,
   testBeta: false,
+  tutorial: false,
   inventoryOpen: false,
   fps: 0,
   exitReached: false,
