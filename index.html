@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Backrooms Runner — Infinite Level 1</title>
+  <title>Backrooms Runner</title>
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/systems/transitions.css">
   <link rel="stylesheet" href="css/levels/level0.css">
@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="css/entities/smiler.css">
   <link rel="stylesheet" href="css/systems/auth.css">
   <link rel="stylesheet" href="css/systems/menu.css">
+  <link rel="stylesheet" href="css/systems/tutorial.css">
 </head>
 <body>
 
@@ -47,7 +48,7 @@
   </div>
   <div id="game-loading">
     <div class="loading-card">
-      <div class="loading-title">ENTERING LEVEL 0</div>
+      <div class="loading-title">Noclipping...</div>
       <div class="loading-subtitle">PLEASE WAIT</div>
       <div id="game-load-status" class="loading-status pulse">PREPARING...</div>
       <div class="loading-track"><div id="game-load-fill" class="loading-fill"></div></div>
@@ -155,9 +156,10 @@
         <p class="menu-subtitle">RUNNER // LEVEL 0</p>
         <div class="menu-options">
           <button class="menu-option selected" type="button" data-menu-index="0" data-menu-action="play">PLAY</button>
-          <button class="menu-option" type="button" data-menu-index="1" data-menu-action="settings">SETTINGS</button>
-          <button class="menu-option" type="button" data-menu-index="2" data-menu-action="controls">CONTROLS</button>
-          <button class="menu-option" type="button" data-menu-index="3" data-menu-action="credits">CREDITS</button>
+          <button class="menu-option" type="button" data-menu-index="1" data-menu-action="tutorial">TUTORIAL</button>
+          <button class="menu-option" type="button" data-menu-index="2" data-menu-action="settings">SETTINGS</button>
+          <button class="menu-option" type="button" data-menu-index="3" data-menu-action="controls">CONTROLS</button>
+          <button class="menu-option" type="button" data-menu-index="4" data-menu-action="credits">CREDITS</button>
         </div>
         <div class="menu-footer">W/S OR ARROWS TO SELECT · ENTER TO CONFIRM</div>
       </div>
@@ -187,6 +189,47 @@
               <div id="custom-seed-error" class="seed-message" aria-live="polite"></div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section id="menu-page-tutorial" class="menu-page" aria-label="Tutorial">
+        <div class="menu-page-inner">
+          <button id="menu-back-tutorial" class="menu-back" type="button">← BACK</button>
+          <h2>TUTORIAL</h2>
+          <p class="page-desc">Learn the rules, then practice them inside a safe simulation.</p>
+          <div class="tutorial-hub-grid">
+            <button class="tutorial-hub-card" id="tutorial-open-manual" type="button">
+              <strong>HOW TO PLAY</strong>
+              <small>A written manual covering controls, HUD, movement, items, sanity, entities, events, exits, and procedural generation.</small>
+            </button>
+            <button class="tutorial-hub-card" id="tutorial-start-sandbox" type="button">
+              <strong>TRAINING SIMULATION</strong>
+              <small>Enter a protected Level 0 simulation and walk through the game's mechanics step by step.</small>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="menu-page-tutorial-manual" class="menu-page" aria-label="How to play manual">
+        <div class="menu-page-inner tutorial-manual-inner">
+          <button id="menu-back-tutorial-manual" class="menu-back" type="button">← BACK</button>
+          <h2>HOW TO PLAY</h2>
+          <p class="page-desc">A complete reference for the current build.</p>
+          <div class="tutorial-manual-grid">
+            <article><h3>OBJECTIVE</h3><p>Explore the generated Backrooms, manage your resources, survive hazards, and locate an exit.</p></article>
+            <article><h3>MOVEMENT</h3><p>W A S D move relative to your view. Mouse or your selected mobile look method controls the camera. Sprint, crouch, and jump change how you move.</p></article>
+            <article><h3>HUD</h3><p>Health shows survivability. Stamina powers sprinting. Sanity represents your mental state. Time and distance track the run.</p></article>
+            <article><h3>FLASHLIGHT</h3><p>Toggle the flashlight when visibility falls. Darkness reduces how far you can see and makes the flashlight especially useful.</p></article>
+            <article><h3>INVENTORY</h3><p>Open the inventory to inspect carried items. Almond Water restores sanity. Energy Bars restore stamina when picked up.</p></article>
+            <article><h3>SANITY</h3><p>Sanity normally decreases slowly. Chasing entities, nearby threats, and other dangerous situations can accelerate the drain. Low sanity can cause visual anomalies and hallucinations.</p></article>
+            <article><h3>ENTITY</h3><p>The Level 0 entity can hear and see the player, investigate disturbances, pursue the player, and catch them. Avoid detection and keep distance.</p></article>
+            <article><h3>LIGHTS-OUT</h3><p>Environmental events can make the Backrooms much darker. During lights-out, visibility and threat management become more important.</p></article>
+            <article><h3>PROCEDURAL GENERATION</h3><p>Each run is generated from a seed. Level 0 contains regions ranging from expansive and open architecture to dense and maze-like spaces.</p></article>
+            <article><h3>EXITS</h3><p>Level 0 exits are placed far from the starting area. Reaching an exit begins the transition to the next level rather than simply ending the run.</p></article>
+            <article><h3>SETTINGS</h3><p>Audio, display, sensitivity, fullscreen, mobile look mode, and keybinds can be changed from the main menu. Run Settings can change several of these while playing.</p></article>
+            <article><h3>KEYBINDS</h3><p>Controls can be rebound from the Controls menu. The current labels are generated from your saved bindings.</p></article>
+          </div>
+          <button id="tutorial-manual-launch" class="tutorial-manual-launch" type="button">ENTER TRAINING SIMULATION</button>
         </div>
       </section>
 
@@ -236,6 +279,22 @@
           </div>
         </div>
       </section>
+    </div>
+  </div>
+
+  <div id="tutorial-overlay" aria-hidden="true">
+    <div id="tutorial-card">
+      <div id="tutorial-count">LESSON 1 / 12</div>
+      <div id="tutorial-progress"><div id="tutorial-progress-fill" class="tutorial-progress-fill"></div></div>
+      <h2 id="tutorial-title">WELCOME TO THE TRAINING SIMULATION</h2>
+      <p id="tutorial-text"></p>
+      <div class="tutorial-actions">
+        <div id="tutorial-hint" class="tutorial-hint"></div>
+        <div>
+          <button id="tutorial-exit" class="tutorial-exit" type="button">EXIT TRAINING</button>
+          <button id="tutorial-next" type="button">BEGIN TRAINING</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -314,6 +373,7 @@
 <script src="js/systems/auth.js"></script>
 <script src="js/systems/seed.js"></script>
 <script src="js/systems/noise-architectural.js"></script>
+<script src="js/systems/tutorial.js"></script>
 <script src="js/systems/menu.js"></script>
 <script src="js/game.js"></script>
 </body>
