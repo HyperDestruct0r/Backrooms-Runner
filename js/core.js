@@ -238,6 +238,7 @@ const GameState = {
   elevatorShake: 0,
   level: 0,
   cinematicCamera: false,
+  cutscene: false,
   regenerating: false,
   runId: 0,
   levelTimes: { 0: 0, 1: 0 }
