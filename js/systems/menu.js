@@ -18,7 +18,7 @@ const MenuSystem = {
     ["regenerate", "New layout"]
   ],
   menuIndex: 0,
-  menuItems: ["play", "settings", "controls", "credits"],
+  menuItems: ["play", "tutorial", "settings", "controls", "credits"],
   playPage: "play-select",
   rebinding: null,
   settingsKey: "backroomsRunner.settings.v1",
@@ -197,6 +197,11 @@ const MenuSystem = {
   activate(action) {
     if (action === "play") {
       this.showPage(this.playPage);
+      return;
+    }
+    if (action === "tutorial") {
+      if (typeof TutorialSystem !== "undefined") TutorialSystem.openHub();
+      else this.showPage("tutorial");
       return;
     }
     if (action === "settings" || action === "controls" || action === "credits") {
