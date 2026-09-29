@@ -164,6 +164,16 @@
       transition: opacity 0.45s ease;
     }
 
+    #entity-capture-cutscene {
+      display:none; position:fixed; inset:0; z-index:130; align-items:center; justify-content:center;
+      pointer-events:none; background:rgba(0,0,0,0); color:#d8d3bd;
+      font-family:Consolas,"Segoe UI",monospace; letter-spacing:.24em;
+    }
+    #entity-capture-text {
+      opacity:0; font-size:clamp(14px,2vw,22px); text-align:center;
+      text-shadow:0 0 18px rgba(255,255,255,.16);
+    }
+
     #elevator-sequence {
       display:none; position:fixed; inset:0; z-index:90; align-items:center; justify-content:center;
       background:rgba(3,4,5,.05); color:#e8e7df; font-family:Consolas,"Segoe UI",monospace;
