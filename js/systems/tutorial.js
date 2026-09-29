@@ -40,27 +40,22 @@ const TutorialSystem = {
   ],
 
   init() {
+    // Tutorial hub / manual navigation. These must be bound explicitly because
+    // they are not data-menu-action buttons and therefore MenuSystem does not
+    // handle them.
+    const hubManual = document.getElementById("tutorial-open-manual");
+    if (hubManual) hubManual.addEventListener("click", () => this.openManual());
+
+    const hubTraining = document.getElementById("tutorial-start-sandbox");
+    if (hubTraining) hubTraining.addEventListener("click", () => this.launchTraining());
+
+    const manualLaunch = document.getElementById("tutorial-manual-launch");
+    if (manualLaunch) manualLaunch.addEventListener("click", () => this.launchTraining());
+
     const next = document.getElementById("tutorial-next");
     if (next) next.addEventListener("click", () => this.advance());
     const exit = document.getElementById("tutorial-exit");
     if (exit) exit.addEventListener("click", () => this.exit());
-
-    // Tutorial hub / manual navigation. These are intentionally owned by the
-    // tutorial system so the menu remains the single entry point for all
-    // tutorial-related pages.
-    const openManual = document.getElementById("tutorial-open-manual");
-    if (openManual) openManual.addEventListener("click", () => this.openManual());
-
-    const startSandbox = document.getElementById("tutorial-start-sandbox");
-    if (startSandbox) startSandbox.addEventListener("click", () => {
-      if (typeof Game !== "undefined") Game.start("tutorial");
-    });
-
-    const manualLaunch = document.getElementById("tutorial-manual-launch");
-    if (manualLaunch) manualLaunch.addEventListener("click", () => {
-      if (typeof Game !== "undefined") Game.start("tutorial");
-    });
-
     window.addEventListener("keydown", e => {
       if (!this.active) return;
       if (e.code === "Enter" && !GameState.inventoryOpen) { e.preventDefault(); this.advance(); }
@@ -73,6 +68,16 @@ const TutorialSystem = {
 
   openManual() {
     if (typeof MenuSystem !== "undefined") MenuSystem.showPage("tutorial-manual");
+  },
+
+  launchTraining() {
+    // Starting a training run is a real Game.start("tutorial") call so the
+    // protected Level 0 simulation is initialized exactly like the rest of
+    // the game, without requiring pointer lock before the tutorial card opens.
+    if (typeof MenuSystem !== "undefined") MenuSystem.showPage("main");
+    if (typeof Game !== "undefined" && typeof Game.start === "function") {
+      Game.start("tutorial");
+    }
   },
 
   start() {
