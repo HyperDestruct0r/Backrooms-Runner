@@ -212,6 +212,7 @@ const Game = {
     const betaBanner = document.getElementById("beta-run-warning");
     if (betaBanner) betaBanner.style.display = "none";
     GameState.cinematicCamera = false;
+    GameState.cutscene = false;
     // Level1 was already fully reset before Level 0 was rebuilt. Do not call
     // resetVisuals() here: Level1.enter() aliases Level.colliders/triggers to
     // its streaming arrays, so resetting it after Level 0 is built would wipe
@@ -241,6 +242,7 @@ const Game = {
     if (betaBanner) betaBanner.style.display = "none";
     GameState.inventoryOpen = false;
     GameState.cinematicCamera = false;
+    GameState.cutscene = false;
     setPauseOverlay(false);
     clearInput();
     Inventory.close();
@@ -327,6 +329,7 @@ const Game = {
     GameState.exitReached = false;
     GameState.level = 0;
     GameState.cinematicCamera = false;
+    GameState.cutscene = false;
     AudioSystem.resume();
     AudioSystem.ambientHumStart();
     GameState.regenerating = false;
@@ -401,6 +404,11 @@ const Game = {
       else if (GameState.level === 1) GameState.levelTimes[1] += dt;
       Stairwell.update(dt);
       CameraRig.update(dt);
+    } else if (GameState.phase === "playing" && GameState.cutscene) {
+      GameState.elapsed += dt;
+      if (GameState.level === 0) GameState.levelTimes[0] += dt;
+      else if (GameState.level === 1) GameState.levelTimes[1] += dt;
+      if (typeof CutsceneSystem !== "undefined") CutsceneSystem.update(dt);
     } else if (GameState.phase === "playing" && Input.locked) {
       GameState.elapsed += dt;
       if (GameState.level === 1 && Level1.active) {
