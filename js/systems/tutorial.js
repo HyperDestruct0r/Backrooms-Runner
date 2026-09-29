@@ -40,19 +40,12 @@ const TutorialSystem = {
   ],
 
   init() {
-    const hubManual = document.getElementById("tutorial-open-manual");
-    if (hubManual) hubManual.addEventListener("click", () => this.openManual());
-    const hubSandbox = document.getElementById("tutorial-start-sandbox");
-    if (hubSandbox) hubSandbox.addEventListener("click", () => { if (typeof Game !== "undefined") Game.start("tutorial"); });
-    const manualLaunch = document.getElementById("tutorial-manual-launch");
-    if (manualLaunch) manualLaunch.addEventListener("click", () => { if (typeof Game !== "undefined") Game.start("tutorial"); });
     const next = document.getElementById("tutorial-next");
     if (next) next.addEventListener("click", () => this.advance());
     const exit = document.getElementById("tutorial-exit");
     if (exit) exit.addEventListener("click", () => this.exit());
     window.addEventListener("keydown", e => {
       if (!this.active) return;
-      if (e.code === "Escape") { e.preventDefault(); this.exit(); }
       if (e.code === "Enter" && !GameState.inventoryOpen) { e.preventDefault(); this.advance(); }
     }, true);
   },
@@ -89,12 +82,6 @@ const TutorialSystem = {
     const s = this.stages[this.stage];
     const title = document.getElementById("tutorial-title");
     const text = document.getElementById("tutorial-text");
-    const hubManual = document.getElementById("tutorial-open-manual");
-    if (hubManual) hubManual.addEventListener("click", () => this.openManual());
-    const hubSandbox = document.getElementById("tutorial-start-sandbox");
-    if (hubSandbox) hubSandbox.addEventListener("click", () => { if (typeof Game !== "undefined") Game.start("tutorial"); });
-    const manualLaunch = document.getElementById("tutorial-manual-launch");
-    if (manualLaunch) manualLaunch.addEventListener("click", () => { if (typeof Game !== "undefined") Game.start("tutorial"); });
     const next = document.getElementById("tutorial-next");
     const count = document.getElementById("tutorial-count");
     const progress = document.getElementById("tutorial-progress-fill");
@@ -109,20 +96,35 @@ const TutorialSystem = {
     this.prepareStage();
   },
 
+  keyLabel(action) {
+    const code = CONFIG.keys[action];
+    if (!code) return "UNBOUND";
+    const special = {
+      Space: "SPACE", ShiftLeft: "SHIFT", ShiftRight: "SHIFT",
+      ControlLeft: "CTRL", ControlRight: "CTRL",
+      ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→",
+      Escape: "ESC", Backspace: "BACKSPACE", Delete: "DELETE", Enter: "ENTER"
+    };
+    if (special[code]) return special[code];
+    if (code.startsWith("Key")) return code.slice(3).toUpperCase();
+    if (code.startsWith("Digit")) return code.slice(5);
+    if (code.startsWith("Numpad")) return "NUM " + code.slice(6);
+    return code.replace(/Left|Right/g, "").toUpperCase();
+  },
+
   stageHint() {
+    const k = a => this.keyLabel(a);
     switch (this.stage) {
-      case 1: return "Try W, A, S, D and move your camera.";
-      case 2: return "Try sprint, crouch, and jump.";
-      case 3: return "Toggle your flashlight.";
-      case 5: return "Open your inventory.";
-      case 6: return "Drink the Almond Water from the inventory.";
-      case 7: return "Watch the sanity demonstration.";
-      case 8: return "Look toward the entity demonstration.";
-      case 9: return "Watch the lighting demonstration.";
+      case 1: return `MOVE: ${k("forward")} ${k("backward")} ${k("left")} ${k("right")}  •  LOOK: mouse / touch`;
+      case 2: return `SPRINT: ${k("sprint")}  •  CROUCH: ${k("crouch")}  •  JUMP: ${k("jump")}`;
+      case 3: return `FLASHLIGHT: ${k("flashlight")}`;
+      case 5: return `INVENTORY: ${k("inventory")}`;
+      case 6: return `DRINK ALMOND WATER: ${k("drink")}`;
+      case 8: return `The entity demonstration is ahead. LOOK toward it.`;
+      case 9: return `FLASHLIGHT: ${k("flashlight")}  •  MOUSE UNLOCK: ${k("unlockMouse")}`;
       default: return "You can continue when ready.";
     }
   },
-
   prepareStage() {
     if (this.stage === 6) {
       Inventory.reset();
