@@ -103,6 +103,10 @@ const Game = {
         else renderer.domElement.requestPointerLock();
       }
     });
+    const pauseKeyboardGuide = document.getElementById("pause-keyboard-guide");
+    if (pauseKeyboardGuide) pauseKeyboardGuide.addEventListener("click", () => {
+      if (typeof KeyboardGuide !== "undefined") KeyboardGuide.open();
+    });
     const pauseSettings = document.getElementById("pause-settings");
     if (pauseSettings) pauseSettings.addEventListener("click", () => {
       if (GameState.phase === "playing" && !Stairwell.sequenceActive && typeof MenuSystem !== "undefined") {
