@@ -1704,7 +1704,7 @@ const Level = {
         // Level 0 walls remain normal Backrooms wallpaper all the way to the elevator.
         // The elevator facade provides its own concrete surround; recoloring nearby
         // procedural wall runs was causing large black-looking slabs beside the exit.
-        const wallMat = (((x + z) % 3 === 0) ? Materials.wallAlt : Materials.wall);
+        const wallMat = Materials.wall; // Uniform classic wallpaper; lighting alone controls visible brightness.
         const mesh = new THREE.Mesh(makeWorldBox(sx, H, sz, 0.5), wallMat);
         mesh.position.set((x + x2 + 1) * T * 0.5, H * 0.5, (z + z2 + 1) * T * 0.5);
         this.group.add(mesh);
@@ -1753,8 +1753,8 @@ const Level = {
       const arch = beta.architectural || {};
       const zones = arch.zones || [];
       const usedBetaLights = [];
-      const spacing = 6; // 12m between fixtures on the 2m beta grid.
-      const maxFixtures = 150;
+      const spacing = 5; // 10m between candidate fixtures; keep fixtures visually frequent.
+      const maxFixtures = 180; // Visible fixtures are cheap; dynamic point lights remain capped for performance.
 
       function nearestBetaZone(tx, tz) {
         let best = null, bd = Infinity;
@@ -1767,10 +1767,20 @@ const Level = {
         return best;
       }
 
-      for (let z = 4; z < this.rows - 4 && usedBetaLights.length < maxFixtures; z += spacing) {
-        for (let x = 4; x < this.cols - 4 && usedBetaLights.length < maxFixtures; x += spacing) {
+      const betaCandidates = [];
+      for (let z = 4; z < this.rows - 4; z += spacing) {
+        for (let x = 4; x < this.cols - 4; x += spacing) {
           if (this.getTile(x, z) === TILE.WALL || this.getTile(x, z) === TILE.COLUMN) continue;
-
+          const wp = this.tileToWorld(x, z);
+          betaCandidates.push({ x, z, wp, d: (wp.x-this.startPos.x)**2 + (wp.z-this.startPos.z)**2 });
+        }
+      }
+      // Spawn-adjacent fixtures get dynamic lights first; visible fixtures still
+      // populate the rest of the map. This prevents a bright-looking menu spawn
+      // followed by a completely unlit starting corridor.
+      betaCandidates.sort((a,b) => a.d-b.d);
+      for (let bi = 0; bi < betaCandidates.length && usedBetaLights.length < maxFixtures; bi++) {
+          const x = betaCandidates[bi].x, z = betaCandidates[bi].z;
           const zone = nearestBetaZone(x, z);
           if (zone && zone.type && zone.type.name === "alcoves" && ((x + z) % 4 === 0)) {
             // BRIGHT zone: keep the denser sampling.
@@ -1784,14 +1794,13 @@ const Level = {
           if (duplicate) continue;
           usedBetaLights.push([x, z]);
 
-          const w = this.tileToWorld(x, z);
+          const w = betaCandidates[bi].wp;
           const bright = zone && zone.type && zone.type.name === "alcoves";
           LightingSystem.addFluorescent(
             scene, w.x, H - 0.06, w.z,
-            LightingSystem.lights.length < 150,
+            LightingSystem.lights.length < 40,
             bright ? 1.42 : 1.16
           );
-        }
       }
     } else {
       // Standard module-based lighting.
