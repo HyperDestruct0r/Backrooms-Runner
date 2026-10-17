@@ -159,7 +159,7 @@ const TextureFactory = {
     const size = 512;
     const c = this.makeCanvas(size);
     const ctx = c.getContext("2d");
-    ctx.fillStyle = "#c9c3a4";
+    ctx.fillStyle = "#c9c5a8";
     ctx.fillRect(0, 0, size, size);
     const img = ctx.getImageData(0, 0, size, size);
     const d = img.data;
@@ -173,10 +173,10 @@ const TextureFactory = {
       }
     }
     ctx.putImageData(img, 0, 0);
-    ctx.strokeStyle = "rgba(150,138,80,0.55)";
+    ctx.strokeStyle = "rgba(142,132,91,0.48)";
     ctx.lineWidth = 3;
-    const cell = size / 2;
-    for (let i = 0; i <= 2; i++) {
+    const cell = size / 4;
+    for (let i = 0; i <= 4; i++) {
       ctx.beginPath();
       ctx.moveTo(i * cell, 0);
       ctx.lineTo(i * cell, size);
@@ -186,17 +186,17 @@ const TextureFactory = {
       ctx.lineTo(size, i * cell);
       ctx.stroke();
     }
-    ctx.strokeStyle = "rgba(120,110,60,0.28)";
+    ctx.strokeStyle = "rgba(120,112,77,0.20)";
     ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) {
+    for (let i = 0; i <= 8; i++) {
       ctx.beginPath();
-      ctx.moveTo(i * (size / 4), 0);
-      ctx.lineTo(i * (size / 4), size);
+      ctx.moveTo(i * (size / 8), 0);
+      ctx.lineTo(i * (size / 8), size);
       ctx.stroke();
     }
     ctx.fillStyle = "rgba(90,80,40,0.35)";
-    for (let gy = 0; gy < 2; gy++) {
-      for (let gx = 0; gx < 2; gx++) {
+    for (let gy = 0; gy < 4; gy++) {
+      for (let gx = 0; gx < 4; gx++) {
         ctx.fillRect(gx * cell + 6, gy * cell + 6, 4, 4);
         ctx.fillRect(gx * cell + cell - 10, gy * cell + 6, 4, 4);
         ctx.fillRect(gx * cell + 6, gy * cell + cell - 10, 4, 4);
@@ -250,16 +250,16 @@ function initAssets() {
   const ceilingMap = TextureFactory.fromConfigOrCanvas("ceiling", () => TextureFactory.ceiling());
 
   Materials.wall = new THREE.MeshStandardMaterial({
-    map: wallMap, roughness: 0.86, metalness: 0.02, color: 0xffffff
+    map: wallMap, roughness: 0.94, metalness: 0.0, color: 0xfff8df
   });
   Materials.wallAlt = new THREE.MeshStandardMaterial({
-    map: wallAltMap, roughness: 0.88, metalness: 0.02, color: 0xd7cda2
+    map: wallAltMap, roughness: 0.94, metalness: 0.0, color: 0xe0d4a2
   });
   Materials.wallTrim = new THREE.MeshStandardMaterial({
-    color: 0xbba24a, roughness: 0.72, metalness: 0.04
+    color: 0xb8a66b, roughness: 0.88, metalness: 0.0
   });
   Materials.carpet = new THREE.MeshStandardMaterial({
-    map: carpetMap, roughness: 0.97, metalness: 0.0, color: 0xffffff
+    map: carpetMap, roughness: 1.0, metalness: 0.0, color: 0xfff6df
   });
   Materials.carpetDark = new THREE.MeshStandardMaterial({
     map: carpetMap, roughness: 0.97, metalness: 0.0, color: 0x8f7a45
@@ -268,7 +268,7 @@ function initAssets() {
     map: ceilingMap, roughness: 0.9, metalness: 0.0, color: 0xffffff
   });
   Materials.column = new THREE.MeshStandardMaterial({
-    map: wallMap, roughness: 0.84, metalness: 0.02, color: 0xc9bd8c
+    map: wallMap, roughness: 0.94, metalness: 0.0, color: 0xd9ca91
   });
   Materials.light = new THREE.MeshStandardMaterial({
     color: 0xfff6d8, emissive: 0xfff1c2, emissiveIntensity: 1.35, roughness: 0.4, metalness: 0
