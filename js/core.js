@@ -12,6 +12,8 @@
    CONFIG
    ------------------------------------------------------------------ */
 const CONFIG = {
+  // Level 0 local-light output, adjustable from 0 (fully dark) to 100 (full output).
+  level0LightingPercent: 100,
   tile: 2.0,
   wallH: 3.15,
   wallT: 2.0,
@@ -41,11 +43,11 @@ const CONFIG = {
     drain: 8,
     crouchDrain: 0.25,
     walkDrain: 0.50,
-    sprintDrain: 1.0,
-    sprintJumpDrain: 1.0,
+    sprintDrain: 0.3,
+    sprintJumpDrain: 0.6,
     drain: 1.0,
-    regen: 0.33,
-    delay: 2.5,
+    regen: 3.0,
+    delay: 0.6,
     moveThreshold: 0.38
   },
   entity: {
@@ -941,8 +943,20 @@ const LightingSystem = {
   ambient: null,
   eventTimer: 0,
   clusterUntil: 0,
+  intensityMultiplier() {
+    const value = Number(CONFIG.level0LightingPercent);
+    return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 100)) / 100;
+  },
+  setIntensityPercent(value) {
+    CONFIG.level0LightingPercent = Math.max(0, Math.min(100, Number(value) || 0));
+    const mult = this.intensityMultiplier();
+    for (const u of this.units) {
+      if (u.light) u.light.intensity = u.state === "BROKEN" ? 0 : u.baseIntensity * (u.state === "DIM" ? 0.42 : 1) * mult;
+      if (u.panelMat) u.panelMat.emissiveIntensity = (u.state === "BROKEN" ? 0.04 : u.state === "DIM" ? 0.4 : 1.35) * mult;
+    }
+  },
   init(scene) {
-    // Soft fill only — fixtures do the real illumination (VERSION 3 can retune)
+    // Level 0 uses fixture lights only; the ambient fill is disabled while it is active.
     this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.56);
     scene.add(this.hemi);
     this.ambient = new THREE.AmbientLight(0xc8b56a, 0.46);
@@ -977,7 +991,7 @@ const LightingSystem = {
       // A longer inverse-square falloff avoids the hard-looking 25m light
       // cutoff visible on walls. The fixture should fade into neighboring
       // pools of light rather than changing wall color abruptly.
-      light = new THREE.PointLight(0xfff1c4, state === "DIM" ? base * 0.42 : base, 42, 2.0);
+      light = new THREE.PointLight(0xfff1c4, (state === "DIM" ? base * 0.42 : base) * this.intensityMultiplier(), 42, 2.0);
       light.position.set(x, y - 0.28, z);
       scene.add(light);
       this.lights.push(light);
@@ -1009,13 +1023,13 @@ const LightingSystem = {
     unit.state = state;
     if (state === "BROKEN") {
       if (unit.light) unit.light.intensity = 0;
-      unit.panelMat.emissiveIntensity = 0.04;
+      unit.panelMat.emissiveIntensity = 0.04 * this.intensityMultiplier();
     } else if (state === "DIM") {
-      if (unit.light) unit.light.intensity = unit.baseIntensity * 0.42;
-      unit.panelMat.emissiveIntensity = 0.4;
+      if (unit.light) unit.light.intensity = unit.baseIntensity * 0.42 * this.intensityMultiplier();
+      unit.panelMat.emissiveIntensity = 0.4 * this.intensityMultiplier();
     } else if (state === "NORMAL") {
-      if (unit.light) unit.light.intensity = unit.baseIntensity;
-      unit.panelMat.emissiveIntensity = 1.35;
+      if (unit.light) unit.light.intensity = unit.baseIntensity * this.intensityMultiplier();
+      unit.panelMat.emissiveIntensity = 1.35 * this.intensityMultiplier();
     }
   },
   triggerClusterEvent(cx, cz, radius) {
@@ -1062,8 +1076,8 @@ const LightingSystem = {
       } else {
         amp = 0.55 + Math.sin(performance.now() * 0.012 + u.flickerPhase) * 0.2;
       }
-      if (u.light) u.light.intensity = u.baseIntensity * amp;
-      u.panelMat.emissiveIntensity = 0.35 + amp * 0.9;
+      if (u.light) u.light.intensity = u.baseIntensity * amp * this.intensityMultiplier();
+      u.panelMat.emissiveIntensity = (0.35 + amp * 0.9) * this.intensityMultiplier();
     }
   },
   triggerNearPlayer(pos) {
