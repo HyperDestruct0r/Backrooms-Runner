@@ -63,17 +63,19 @@ const TextureFactory = {
         // Broad, irregular age stains. Keep the wallpaper recognizable rather
         // than turning it into a noisy yellow texture.
         let stain = this.fbm(x * 0.012 + seed * 2.1, y * 0.015 + seed * 0.8);
-        stain = Math.max(0, (stain - 0.57) * 1.65);
+        stain = Math.max(0, (stain - 0.61) * 0.95);
         const vertical = Math.sin((x / 30) + n2 * 1.4) * 0.5 + 0.5;
         const seam = Math.abs(Math.sin(x * Math.PI / 42 + n2 * 0.15));
-        const baseR = 188 + warmth;
-        const baseG = 177 + warmth * 0.35;
-        const baseB = 104 + warmth * 0.12;
-        let r = baseR + (n - 0.5) * 30 + vertical * 5 - stain * 58 - seam * 3 + fine * 15;
-        let g = baseG + (n - 0.5) * 27 + vertical * 4 - stain * 49 - seam * 2 + fine * 13;
-        let b = baseB + (n - 0.5) * 18 + vertical * 2 - stain * 28 + fine * 8;
+        const baseR = 194 + warmth;
+        const baseG = 181 + warmth * 0.30;
+        const baseB = 111 + warmth * 0.10;
+        // Classic Level 0 wallpaper is mostly uniform at a distance; keep
+        // texture fine and low-contrast rather than mottled or heavily stained.
+        let r = baseR + (n - 0.5) * 17 + vertical * 2.5 - stain * 26 - seam * 1.5 + fine * 7;
+        let g = baseG + (n - 0.5) * 15 + vertical * 2.0 - stain * 23 - seam * 1.2 + fine * 6;
+        let b = baseB + (n - 0.5) * 11 + vertical * 1.2 - stain * 14 + fine * 4;
         // A few dark flecks mimic old paint/wallpaper imperfections.
-        if (this.hash(x * 3.7 + seed * 8, y * 4.1) > 0.992) { r -= 28; g -= 25; b -= 15; }
+        if (this.hash(x * 3.7 + seed * 8, y * 4.1) > 0.997) { r -= 13; g -= 12; b -= 7; }
         const i = (y * size + x) * 4;
         d[i] = Math.max(0, Math.min(255, r));
         d[i + 1] = Math.max(0, Math.min(255, g));
@@ -159,7 +161,7 @@ const TextureFactory = {
     const size = 512;
     const c = this.makeCanvas(size);
     const ctx = c.getContext("2d");
-    ctx.fillStyle = "#c9c5a8";
+    ctx.fillStyle = "#c9c3a4";
     ctx.fillRect(0, 0, size, size);
     const img = ctx.getImageData(0, 0, size, size);
     const d = img.data;
@@ -173,10 +175,10 @@ const TextureFactory = {
       }
     }
     ctx.putImageData(img, 0, 0);
-    ctx.strokeStyle = "rgba(142,132,91,0.48)";
+    ctx.strokeStyle = "rgba(150,138,80,0.55)";
     ctx.lineWidth = 3;
-    const cell = size / 4;
-    for (let i = 0; i <= 4; i++) {
+    const cell = size / 2;
+    for (let i = 0; i <= 2; i++) {
       ctx.beginPath();
       ctx.moveTo(i * cell, 0);
       ctx.lineTo(i * cell, size);
@@ -186,17 +188,17 @@ const TextureFactory = {
       ctx.lineTo(size, i * cell);
       ctx.stroke();
     }
-    ctx.strokeStyle = "rgba(120,112,77,0.20)";
+    ctx.strokeStyle = "rgba(120,110,60,0.28)";
     ctx.lineWidth = 1;
-    for (let i = 0; i <= 8; i++) {
+    for (let i = 0; i <= 4; i++) {
       ctx.beginPath();
-      ctx.moveTo(i * (size / 8), 0);
-      ctx.lineTo(i * (size / 8), size);
+      ctx.moveTo(i * (size / 4), 0);
+      ctx.lineTo(i * (size / 4), size);
       ctx.stroke();
     }
     ctx.fillStyle = "rgba(90,80,40,0.35)";
-    for (let gy = 0; gy < 4; gy++) {
-      for (let gx = 0; gx < 4; gx++) {
+    for (let gy = 0; gy < 2; gy++) {
+      for (let gx = 0; gx < 2; gx++) {
         ctx.fillRect(gx * cell + 6, gy * cell + 6, 4, 4);
         ctx.fillRect(gx * cell + cell - 10, gy * cell + 6, 4, 4);
         ctx.fillRect(gx * cell + 6, gy * cell + cell - 10, 4, 4);
@@ -250,16 +252,16 @@ function initAssets() {
   const ceilingMap = TextureFactory.fromConfigOrCanvas("ceiling", () => TextureFactory.ceiling());
 
   Materials.wall = new THREE.MeshStandardMaterial({
-    map: wallMap, roughness: 0.94, metalness: 0.0, color: 0xfff8df
+    map: wallMap, roughness: 0.86, metalness: 0.02, color: 0xffffff
   });
   Materials.wallAlt = new THREE.MeshStandardMaterial({
-    map: wallAltMap, roughness: 0.94, metalness: 0.0, color: 0xe0d4a2
+    map: wallAltMap, roughness: 0.88, metalness: 0.02, color: 0xd7cda2
   });
   Materials.wallTrim = new THREE.MeshStandardMaterial({
-    color: 0xb8a66b, roughness: 0.88, metalness: 0.0
+    color: 0xbba24a, roughness: 0.72, metalness: 0.04
   });
   Materials.carpet = new THREE.MeshStandardMaterial({
-    map: carpetMap, roughness: 1.0, metalness: 0.0, color: 0xfff6df
+    map: carpetMap, roughness: 0.97, metalness: 0.0, color: 0xffffff
   });
   Materials.carpetDark = new THREE.MeshStandardMaterial({
     map: carpetMap, roughness: 0.97, metalness: 0.0, color: 0x8f7a45
@@ -268,7 +270,7 @@ function initAssets() {
     map: ceilingMap, roughness: 0.9, metalness: 0.0, color: 0xffffff
   });
   Materials.column = new THREE.MeshStandardMaterial({
-    map: wallMap, roughness: 0.94, metalness: 0.0, color: 0xd9ca91
+    map: wallMap, roughness: 0.84, metalness: 0.02, color: 0xc9bd8c
   });
   Materials.light = new THREE.MeshStandardMaterial({
     color: 0xfff6d8, emissive: 0xfff1c2, emissiveIntensity: 1.35, roughness: 0.4, metalness: 0
