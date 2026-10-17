@@ -5,7 +5,17 @@ const DarknessSystem = {
   profile: "NORMAL",
   targetOpacity: 0,
   update(dt) {
-    if (!scene || !Player || GameState.phase !== "playing" || GameState.level !== 0) return;
+    // Archived for the current build: Level 0 should stay evenly fluorescent-lit.
+    // Keep the legacy darkness implementation below for possible future reuse.
+    if (GameState.level === 0) {
+      this.active = false;
+      this.profile = "NORMAL";
+      this.targetOpacity = 0;
+      const overlay = document.getElementById("dark-fog");
+      if (overlay) overlay.style.opacity = "0";
+      return;
+    }
+    if (!scene || !Player || GameState.phase !== "playing") return;
     if (!scene.fog) scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
     if (!scene.background) scene.background = new THREE.Color(CONFIG.fogColor);
     const T = CONFIG.tile;
@@ -166,7 +176,8 @@ const EnvEventSystem = {
       { id: "electrical_surge", weight: 14, execute: () => this.evSurge() },
       { id: "light_shuts_off", weight: 14, execute: () => this.evLightFail() },
       { id: "distant_thump", weight: 14, execute: () => this.evThump() },
-      { id: "dark_corridor", weight: 8, execute: () => this.evDark() },
+      // Darkness events retained in code but disabled for the current atmosphere pass.
+      { id: "dark_corridor", weight: 0, execute: () => this.evDark() },
       { id: "light_behind_player", weight: 6, execute: () => this.evBehind() },
       { id: "visual_movement", weight: 3, execute: () => this.evVisual() },
       { id: "unknown_event", weight: 2, execute: () => this.evUnknown() }
