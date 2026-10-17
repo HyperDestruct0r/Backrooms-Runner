@@ -986,12 +986,12 @@ const LightingSystem = {
     }
 
     let light = null;
-    const base = (intensityScale == null ? 1 : intensityScale) * 2.25;
+    const base = (intensityScale == null ? 1 : intensityScale) * 3.0;
     if (withPoint && state !== "BROKEN") {
       // A longer inverse-square falloff avoids the hard-looking 25m light
       // cutoff visible on walls. The fixture should fade into neighboring
       // pools of light rather than changing wall color abruptly.
-      light = new THREE.PointLight(0xfff1c4, (state === "DIM" ? base * 0.42 : base) * this.intensityMultiplier(), 42, 2.0);
+      light = new THREE.PointLight(0xfff1c4, (state === "DIM" ? base * 0.42 : base) * this.intensityMultiplier(), 54, 1.65);
       light.position.set(x, y - 0.28, z);
       scene.add(light);
       this.lights.push(light);
@@ -1013,7 +1013,9 @@ const LightingSystem = {
       baseIntensity: base,
       flickerT: Math.random() * 10,
       flickerPhase: Math.random() * Math.PI * 2,
-      burstLeft: 0
+      burstLeft: 0,
+      ambientFlickerT: 2 + Math.random() * 9,
+      ambientFlickerLeft: 0
     };
     this.units.push(unit);
     return unit;
@@ -1060,6 +1062,28 @@ const LightingSystem = {
     }
     for (let i = 0; i < this.units.length; i++) {
       const u = this.units[i];
+      // Healthy and dim fixtures occasionally flicker independently. Each
+      // fixture has its own randomized timer, so the whole maze never blacks
+      // out in synchronized unison.
+      if (u.state === "NORMAL" || u.state === "DIM") {
+        u.ambientFlickerT -= dt;
+        if (u.ambientFlickerT <= 0) {
+          u.ambientFlickerLeft = 0.08 + Math.random() * 0.22;
+          u.ambientFlickerT = 4 + Math.random() * 10;
+        }
+        if (u.ambientFlickerLeft > 0) {
+          u.ambientFlickerLeft -= dt;
+          const dip = Math.random() < 0.72 ? 0.48 + Math.random() * 0.32 : 0.9 + Math.random() * 0.1;
+          const stateMult = u.state === "DIM" ? 0.42 : 1;
+          if (u.light) u.light.intensity = u.baseIntensity * stateMult * dip * this.intensityMultiplier();
+          u.panelMat.emissiveIntensity = (u.state === "DIM" ? 0.4 : 1.35) * dip * this.intensityMultiplier();
+        } else {
+          const stateMult = u.state === "DIM" ? 0.42 : 1;
+          if (u.light) u.light.intensity = u.baseIntensity * stateMult * this.intensityMultiplier();
+          u.panelMat.emissiveIntensity = (u.state === "DIM" ? 0.4 : 1.35) * this.intensityMultiplier();
+        }
+        continue;
+      }
       if (u.state !== "FLICKERING") continue;
       u.flickerT -= dt;
       if (u.flickerT <= 0) {
