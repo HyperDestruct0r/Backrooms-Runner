@@ -956,10 +956,12 @@ const LightingSystem = {
     }
   },
   init(scene) {
-    // Level 0 uses fixture lights only; the ambient fill is disabled while it is active.
-    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.56);
+    // Keep a very subtle warm environmental fill so floors and ceiling tiles
+    // remain readable between fluorescent pools. Fixture lights still provide
+    // the dominant illumination, preserving dark pockets without harsh contrast.
+    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.14);
     scene.add(this.hemi);
-    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.46);
+    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.075);
     scene.add(this.ambient);
     scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
     scene.background = new THREE.Color(CONFIG.fogColor);
