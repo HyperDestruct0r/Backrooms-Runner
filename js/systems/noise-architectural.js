@@ -4,10 +4,10 @@ const DEFAULTS = {
   width: 250,
   height: 250,
   cellMeters: 2,
-  majorCount: 42,
+  majorCount: 52,
   majorMin: 16,
   majorMax: 44,
-  secondaryPerMajor: 1.35,
+  secondaryPerMajor: 1.42,
   secondaryMin: 6,
   secondaryMax: 18,
   pillarCount: 12,
@@ -20,17 +20,18 @@ const DEFAULTS = {
   regionOctaves: 2,
   regionPersistence: 0.55,
   regionLacunarity: 2,
-  regionThresholds: [0.06, 0.20, 0.54, 0.82],
-  regionMaxClearCells: [12, 10, 8, 6, 4],
+  // Test Beta should feel like a continuous maze, with only rare open pockets.
+  regionThresholds: [0.02, 0.08, 0.28, 0.58],
+  regionMaxClearCells: [8, 7, 6, 4, 3],
   // Region profiles deliberately change both quantity and architectural vocabulary.
   // The last two bands are not merely "more walls": Dense favors attached/intersecting
   // structures while Maze switches to short, turn-heavy chains and pocket-like frames.
-  regionMajorMultiplier: [0.62, 0.78, 1.00, 1.38, 1.65],
-  regionSecondaryMultiplier: [0.50, 0.72, 1.00, 1.55, 2.10],
-  regionMajorSizeMultiplier: [1.12, 1.04, 1.00, 0.82, 0.56],
-  regionMinStructureSpacingByBand: [16, 13, 10, 5, 3],
-  regionInfillAttempts: 72,
-  regionMinStructureSpacing: 12,
+  regionMajorMultiplier: [0.55, 0.78, 1.08, 1.55, 2.00],
+  regionSecondaryMultiplier: [0.60, 0.88, 1.18, 1.62, 2.15],
+  regionMajorSizeMultiplier: [1.08, 1.00, 0.92, 0.78, 0.58],
+  regionMinStructureSpacingByBand: [14, 11, 8, 4, 2],
+  regionInfillAttempts: 90,
+  regionMinStructureSpacing: 10,
   denseZoneThreshold: 0.46,
   maxPlacementAttempts: 90,
   smoothingPasses: 1,
@@ -447,7 +448,7 @@ function generate(seed,opts={}){
         placed.push({bb,kind:'mazeChain',isMajor:false,cx,cy,type,zoneId:z.id,region:'maze'});
         structures.push({kind:'mazeChain',isMajor:false,cx,cy,type,size:len,zoneId:z.id,region:'maze'});
         const step=Math.max(3,Math.floor(len*.65));
-        const turn=r()<.8?(r()<.5?1:3):0;
+        const turn=r()<.85?(r()<.5?1:3):0;
         dir=(dir+turn)%4;
         const dx=[1,0,-1,0][dir],dy=[0,1,0,-1][dir];
         cx=Math.max(5,Math.min(w-6,cx+dx*step));cy=Math.max(5,Math.min(h-6,cy+dy*step));
