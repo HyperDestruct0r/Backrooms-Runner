@@ -11,6 +11,9 @@ const DarknessSystem = {
       this.active = false;
       this.profile = "NORMAL";
       this.targetOpacity = 0;
+      // No global fill on Level 0: areas between fixture light pools stay dark.
+      if (LightingSystem.ambient) LightingSystem.ambient.intensity = 0;
+      if (LightingSystem.hemi) LightingSystem.hemi.intensity = 0;
       const overlay = document.getElementById("dark-fog");
       if (overlay) overlay.style.opacity = "0";
       return;
