@@ -151,10 +151,9 @@ const LevelGenerator = {
         hasExit: false,
         hasStart: type === "start",
         // Persistent per-module lighting profile.
-        lightProfile: (function () {
-          const r = rng();
-          return r < 0.15 ? "DARK" : (r > 0.78 ? "BRIGHT" : "NORMAL");
-        })(),
+        // Level 0 uses consistent fluorescent lighting. Darkness mechanics remain
+        // in the codebase, but are intentionally not used for this level's look.
+        lightProfile: "NORMAL",
         dark: false,
         skipLights: false,
         anomaly: null,
@@ -297,9 +296,11 @@ const LevelGenerator = {
         const nz = cgz + DIR4[d].z;
         if (!inGrid(nx, nz) || occupied[nz][nx]) continue;
         let typ = "corridor";
-        if (rng() < 0.16) typ = "hall_long";
-        else if (rng() < 0.12) typ = "room_small";
-        else if (rng() < 0.05) typ = "junction";
+        const layoutRoll = rng();
+        if (layoutRoll < 0.18) typ = "hall_long";
+        else if (layoutRoll < 0.29) typ = "junction";
+        else if (layoutRoll < 0.36) typ = "corner";
+        else if (layoutRoll < 0.43) typ = "room_small";
         const node = tryPlace(typ === "hall_long" ? "corridor" : typ, nx, nz, d);
         if (!node) continue;
         if (linkDoor(cgx, cgz, d)) addEdge(spine[spine.length - 1], node, d);
@@ -353,14 +354,13 @@ const LevelGenerator = {
       }
 
       const roll = rng();
+      // Level 0 is primarily a maze, not a collection of large open rooms.
+      // Long passages and tight turns dominate; small pockets are occasional.
       let type = "corridor";
-      if (roll < 0.18) type = "corridor";
-      else if (roll < 0.27) type = "hall_long";
-      else if (roll < 0.35) type = "corner";
-      else if (roll < 0.48) type = "junction";
-      else if (roll < 0.58) type = "room_small";
-      else if (roll < 0.84) type = "room_large";
-      else type = "room_pillar";
+      if (roll < 0.20) type = "hall_long";
+      else if (roll < 0.39) type = "corner";
+      else if (roll < 0.61) type = "junction";
+      else if (roll < 0.70) type = "room_small";
 
       const node = tryPlace(type, ngx, ngz, sock.dir);
       if (!node) continue;
@@ -1753,8 +1753,8 @@ const Level = {
       const arch = beta.architectural || {};
       const zones = arch.zones || [];
       const usedBetaLights = [];
-      const spacing = 9; // 18m between fixtures on the 2m beta grid.
-      const maxFixtures = 72;
+      const spacing = 6; // 12m between fixtures on the 2m beta grid.
+      const maxFixtures = 150;
 
       function nearestBetaZone(tx, tz) {
         let best = null, bd = Infinity;
@@ -1788,7 +1788,7 @@ const Level = {
           const bright = zone && zone.type && zone.type.name === "alcoves";
           LightingSystem.addFluorescent(
             scene, w.x, H - 0.06, w.z,
-            LightingSystem.lights.length < 42,
+            LightingSystem.lights.length < 150,
             bright ? 1.42 : 1.16
           );
         }
@@ -1826,7 +1826,7 @@ const Level = {
           usedLightTiles.push([tx, tz]);
           const w = this.tileToWorld(tx, tz);
           const scale = profile === "BRIGHT" ? 1.42 : 1.16;
-          const withPoint = profile !== "DARK" && LightingSystem.lights.length < 42;
+          const withPoint = profile !== "DARK" && LightingSystem.lights.length < 120;
           LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, scale);
         }
       }
