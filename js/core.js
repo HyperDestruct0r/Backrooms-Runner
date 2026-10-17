@@ -114,10 +114,10 @@ const CONFIG = {
     curveExp: 2.15
   },
   audio: {
-    master: 0.55,
-    ambient: 0.028,
-    footsteps: 0.22,
-    events: 0.18
+    master: 0.82,
+    ambient: 0.10,
+    footsteps: 0.42,
+    events: 0.38
   },
   sanity: {
     max: 100,
@@ -763,7 +763,7 @@ const AudioSystem = {
       g.gain.value = names[i] === "ambient" ? CONFIG.audio.ambient
         : names[i] === "footsteps" ? CONFIG.audio.footsteps
         : names[i] === "events" ? CONFIG.audio.events
-        : 0.16;
+        : 0.28;
       g.connect(this.master);
       this.buses[names[i]] = g;
     }
@@ -879,7 +879,7 @@ const AudioSystem = {
     if (crouch && Math.random() < 0.45) return;
     const hard = material === "concrete";
     const pitch = ((crouch ? 70 : sprint ? 105 : 88) * (hard ? 1.35 : 1)) * (0.92 + Math.random() * 0.16);
-    const gain = (crouch ? 0.012 : sprint ? 0.055 : 0.028) * (hard ? 1.25 : 1) * (0.8 + Math.random() * 0.4);
+    const gain = (crouch ? 0.025 : sprint ? 0.085 : 0.050) * (hard ? 1.25 : 1) * (0.8 + Math.random() * 0.4);
     const dur = crouch ? 0.05 : sprint ? 0.04 : 0.055;
     this._noise(dur, gain, "footsteps", null, hard ? 200 : 80, pitch * (hard ? 6 : 4));
     this._tone(pitch, hard ? "triangle" : "sine", dur * (hard ? 1.4 : 1.1), gain * (hard ? 0.22 : 0.35), "footsteps");
