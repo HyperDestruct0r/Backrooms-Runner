@@ -991,7 +991,7 @@ const LightingSystem = {
       // A longer inverse-square falloff avoids the hard-looking 25m light
       // cutoff visible on walls. The fixture should fade into neighboring
       // pools of light rather than changing wall color abruptly.
-      light = new THREE.PointLight(0xfff1c4, (state === "DIM" ? base * 0.42 : base) * this.intensityMultiplier(), 150, 1.0);
+      light = new THREE.PointLight(0xfff1c4, (state === "DIM" ? base * 0.42 : base) * this.intensityMultiplier(), 150, 0.5);
       light.position.set(x, y - 0.28, z);
       scene.add(light);
       this.lights.push(light);
