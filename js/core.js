@@ -937,6 +937,7 @@ const AudioSystem = {
    ------------------------------------------------------------------ */
 const LightingSystem = {
   lights: [],
+  floorLights: [],
   fixtures: [],
   units: [],
   hemi: null,
@@ -952,16 +953,15 @@ const LightingSystem = {
     const mult = this.intensityMultiplier();
     for (const u of this.units) {
       if (u.light) u.light.intensity = u.state === "BROKEN" ? 0 : u.baseIntensity * (u.state === "DIM" ? 0.42 : 1) * mult;
+      if (u.floorLight) u.floorLight.intensity = u.state === "BROKEN" ? 0 : u.baseIntensity * (u.state === "DIM" ? 0.42 : 1) * 0.72 * mult;
       if (u.panelMat) u.panelMat.emissiveIntensity = (u.state === "BROKEN" ? 0.04 : u.state === "DIM" ? 0.4 : 1.35) * mult;
     }
   },
   init(scene) {
-    // Keep a very subtle warm environmental fill so floors and ceiling tiles
-    // remain readable between fluorescent pools. Fixture lights still provide
-    // the dominant illumination, preserving dark pockets without harsh contrast.
-    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.14);
+    // Level 0 uses fixture lights only; the ambient fill is disabled while it is active.
+    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.56);
     scene.add(this.hemi);
-    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.075);
+    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.46);
     scene.add(this.ambient);
     scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
     scene.background = new THREE.Color(CONFIG.fogColor);
@@ -988,15 +988,29 @@ const LightingSystem = {
     }
 
     let light = null;
+    let floorLight = null;
+    let floorTarget = null;
     const base = (intensityScale == null ? 1 : intensityScale) * 3.0;
     if (withPoint && state !== "BROKEN") {
-      // A longer inverse-square falloff avoids the hard-looking 25m light
-      // cutoff visible on walls. The fixture should fade into neighboring
-      // pools of light rather than changing wall color abruptly.
+      // Broad point light provides soft local illumination around the fixture.
       light = new THREE.PointLight(0xfff1c4, (state === "DIM" ? base * 0.42 : base) * this.intensityMultiplier(), 100, 1.0);
       light.position.set(x, y - 0.28, z);
       scene.add(light);
       this.lights.push(light);
+
+      // A small pool of downward-focused fill lights helps reveal carpet
+      // without adding global ambient illumination. Keep the count capped
+      // for performance; every fifth eligible fixture gets one.
+      if ((this.floorLights.length < 24) && (Math.floor(Math.abs(x * 7 + z * 13)) % 5 === 0)) {
+        floorLight = new THREE.SpotLight(0xffe8bd, (state === "DIM" ? base * 0.42 : base) * 0.72 * this.intensityMultiplier(), 32, 0.92, 0.82, 1.0);
+        floorLight.position.set(x, y - 0.30, z);
+        floorTarget = new THREE.Object3D();
+        floorTarget.position.set(x, 0.12, z);
+        scene.add(floorTarget);
+        floorLight.target = floorTarget;
+        scene.add(floorLight);
+        this.floorLights.push({ light: floorLight, target: floorTarget });
+      }
     }
     if (state === "BROKEN") {
       panelMat.emissiveIntensity = 0.05;
@@ -1010,6 +1024,7 @@ const LightingSystem = {
       homeState: state,
       x: x, y: y, z: z,
       light: light,
+      floorLight: floorLight,
       panel: panel,
       panelMat: panelMat,
       baseIntensity: base,
@@ -1027,12 +1042,15 @@ const LightingSystem = {
     unit.state = state;
     if (state === "BROKEN") {
       if (unit.light) unit.light.intensity = 0;
+      if (unit.floorLight) unit.floorLight.intensity = 0;
       unit.panelMat.emissiveIntensity = 0.04 * this.intensityMultiplier();
     } else if (state === "DIM") {
       if (unit.light) unit.light.intensity = unit.baseIntensity * 0.42 * this.intensityMultiplier();
+      if (unit.floorLight) unit.floorLight.intensity = unit.baseIntensity * 0.42 * 0.72 * this.intensityMultiplier();
       unit.panelMat.emissiveIntensity = 0.4 * this.intensityMultiplier();
     } else if (state === "NORMAL") {
       if (unit.light) unit.light.intensity = unit.baseIntensity * this.intensityMultiplier();
+      if (unit.floorLight) unit.floorLight.intensity = unit.baseIntensity * 0.72 * this.intensityMultiplier();
       unit.panelMat.emissiveIntensity = 1.35 * this.intensityMultiplier();
     }
   },
@@ -1078,10 +1096,12 @@ const LightingSystem = {
           const dip = Math.random() < 0.72 ? 0.48 + Math.random() * 0.32 : 0.9 + Math.random() * 0.1;
           const stateMult = u.state === "DIM" ? 0.42 : 1;
           if (u.light) u.light.intensity = u.baseIntensity * stateMult * dip * this.intensityMultiplier();
+          if (u.floorLight) u.floorLight.intensity = u.baseIntensity * stateMult * dip * 0.72 * this.intensityMultiplier();
           u.panelMat.emissiveIntensity = (u.state === "DIM" ? 0.4 : 1.35) * dip * this.intensityMultiplier();
         } else {
           const stateMult = u.state === "DIM" ? 0.42 : 1;
           if (u.light) u.light.intensity = u.baseIntensity * stateMult * this.intensityMultiplier();
+          if (u.floorLight) u.floorLight.intensity = u.baseIntensity * stateMult * 0.72 * this.intensityMultiplier();
           u.panelMat.emissiveIntensity = (u.state === "DIM" ? 0.4 : 1.35) * this.intensityMultiplier();
         }
         continue;
@@ -1103,6 +1123,7 @@ const LightingSystem = {
         amp = 0.55 + Math.sin(performance.now() * 0.012 + u.flickerPhase) * 0.2;
       }
       if (u.light) u.light.intensity = u.baseIntensity * amp * this.intensityMultiplier();
+      if (u.floorLight) u.floorLight.intensity = u.baseIntensity * amp * 0.72 * this.intensityMultiplier();
       u.panelMat.emissiveIntensity = (0.35 + amp * 0.9) * this.intensityMultiplier();
     }
   },
@@ -1147,6 +1168,11 @@ const LightingSystem = {
       if (light && light.shadow && light.shadow.dispose) light.shadow.dispose();
       s.remove(light);
     }
+    for (let i = 0; i < this.floorLights.length; i++) {
+      const entry = this.floorLights[i];
+      if (entry.light) s.remove(entry.light);
+      if (entry.target) s.remove(entry.target);
+    }
     for (let i = 0; i < this.fixtures.length; i++) {
       const fixture = this.fixtures[i];
       // Fixture panel materials are cloned per generated run. Their texture
@@ -1157,6 +1183,7 @@ const LightingSystem = {
       s.remove(fixture);
     }
     this.lights.length = 0;
+    this.floorLights.length = 0;
     this.fixtures.length = 0;
     this.units.length = 0;
     this.clusterUntil = 0;
