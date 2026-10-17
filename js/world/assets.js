@@ -60,22 +60,17 @@ const TextureFactory = {
         const n = this.fbm(x * 0.028 + seed, y * 0.034 + seed * 1.7);
         const n2 = this.fbm(x * 0.085 + 13, y * 0.075 + 7);
         const fine = this.hash(x * 1.7 + seed, y * 2.1 + seed) * 0.10;
-        // Broad, irregular age stains. Keep the wallpaper recognizable rather
-        // than turning it into a noisy yellow texture.
-        let stain = this.fbm(x * 0.012 + seed * 2.1, y * 0.015 + seed * 0.8);
-        stain = Math.max(0, (stain - 0.61) * 0.95);
-        const vertical = Math.sin((x / 30) + n2 * 1.4) * 0.5 + 0.5;
-        const seam = Math.abs(Math.sin(x * Math.PI / 42 + n2 * 0.15));
-        const baseR = 194 + warmth;
-        const baseG = 181 + warmth * 0.30;
-        const baseB = 111 + warmth * 0.10;
-        // Classic Level 0 wallpaper is mostly uniform at a distance; keep
-        // texture fine and low-contrast rather than mottled or heavily stained.
-        let r = baseR + (n - 0.5) * 17 + vertical * 2.5 - stain * 26 - seam * 1.5 + fine * 7;
-        let g = baseG + (n - 0.5) * 15 + vertical * 2.0 - stain * 23 - seam * 1.2 + fine * 6;
-        let b = baseB + (n - 0.5) * 11 + vertical * 1.2 - stain * 14 + fine * 4;
-        // A few dark flecks mimic old paint/wallpaper imperfections.
-        if (this.hash(x * 3.7 + seed * 8, y * 4.1) > 0.997) { r -= 13; g -= 12; b -= 7; }
+        // Consistent classic yellow-beige wallpaper. Keep only very fine
+        // paper grain: large stains and random flecks made adjacent wall runs
+        // appear to have different colors, especially under point lighting.
+        const seam = Math.abs(Math.sin(x * Math.PI / 42));
+        const grain = (n - 0.5) * 5 + (fine - 0.05) * 3;
+        const baseR = 198 + warmth;
+        const baseG = 184 + warmth * 0.20;
+        const baseB = 119 + warmth * 0.10;
+        const r = baseR + grain - seam * 1.0;
+        const g = baseG + grain * 0.82 - seam * 0.8;
+        const b = baseB + grain * 0.55 - seam * 0.35;
         const i = (y * size + x) * 4;
         d[i] = Math.max(0, Math.min(255, r));
         d[i + 1] = Math.max(0, Math.min(255, g));
@@ -247,7 +242,7 @@ function initAssets() {
   Geometries.beam = new THREE.BoxGeometry(1, 0.1, 0.18);
 
   const wallMap = TextureFactory.fromConfigOrCanvas("wall", () => TextureFactory.wallpaper(1.2, 0));
-  const wallAltMap = TextureFactory.fromConfigOrCanvas("wallAlt", () => TextureFactory.wallpaper(4.8, -8));
+  const wallAltMap = wallMap; // Keep legacy material name but share the exact same texture.
   const carpetMap = TextureFactory.fromConfigOrCanvas("carpet", () => TextureFactory.carpet());
   const ceilingMap = TextureFactory.fromConfigOrCanvas("ceiling", () => TextureFactory.ceiling());
 
@@ -255,7 +250,7 @@ function initAssets() {
     map: wallMap, roughness: 0.86, metalness: 0.02, color: 0xffffff
   });
   Materials.wallAlt = new THREE.MeshStandardMaterial({
-    map: wallAltMap, roughness: 0.88, metalness: 0.02, color: 0xd7cda2
+    map: wallAltMap, roughness: 0.88, metalness: 0.02, color: 0xffffff
   });
   Materials.wallTrim = new THREE.MeshStandardMaterial({
     color: 0xbba24a, roughness: 0.72, metalness: 0.04
