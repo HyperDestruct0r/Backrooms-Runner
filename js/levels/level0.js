@@ -1754,7 +1754,7 @@ const Level = {
       const zones = arch.zones || [];
       const usedBetaLights = [];
       const spacing = 5; // 10m between candidate fixtures; keep fixtures visually frequent.
-      const maxFixtures = 180; // Visible fixtures are cheap; dynamic point lights remain capped for performance.
+      const maxFixtures = 180; // Keep visible fixtures distributed across the full maze.
 
       function nearestBetaZone(tx, tz) {
         let best = null, bd = Infinity;
@@ -1775,10 +1775,15 @@ const Level = {
           betaCandidates.push({ x, z, wp, d: (wp.x-this.startPos.x)**2 + (wp.z-this.startPos.z)**2 });
         }
       }
-      // Spawn-adjacent fixtures get dynamic lights first; visible fixtures still
-      // populate the rest of the map. This prevents a bright-looking menu spawn
-      // followed by a completely unlit starting corridor.
-      betaCandidates.sort((a,b) => a.d-b.d);
+      // Shuffle candidates before selecting fixtures so the fixture field spans
+      // the entire maze instead of clustering around spawn. A stable spatial
+      // spread matters even more than adding lots of lights to one area.
+      for (let i = betaCandidates.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = betaCandidates[i]; betaCandidates[i] = betaCandidates[j]; betaCandidates[j] = temp;
+      }
+      let betaDynamicLights = 0;
+      const maxBetaDynamicLights = 70;
       for (let bi = 0; bi < betaCandidates.length && usedBetaLights.length < maxFixtures; bi++) {
           const x = betaCandidates[bi].x, z = betaCandidates[bi].z;
           const zone = nearestBetaZone(x, z);
@@ -1796,9 +1801,13 @@ const Level = {
 
           const w = betaCandidates[bi].wp;
           const bright = zone && zone.type && zone.type.name === "alcoves";
+          // Most fixtures receive a real point light. A small minority remain
+          // unlit for atmosphere, and a hard cap keeps dynamic lighting bounded.
+          const withPoint = betaDynamicLights < maxBetaDynamicLights && Math.random() >= 0.12;
+          if (withPoint) betaDynamicLights++;
           LightingSystem.addFluorescent(
             scene, w.x, H - 0.06, w.z,
-            LightingSystem.lights.length < 40,
+            withPoint,
             bright ? 1.42 : 1.16
           );
       }
