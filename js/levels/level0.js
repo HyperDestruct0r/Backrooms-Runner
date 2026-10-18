@@ -1753,8 +1753,8 @@ const Level = {
       const arch = beta.architectural || {};
       const zones = arch.zones || [];
       const usedBetaLights = [];
-      const spacing = 5; // 10m between candidate fixtures; keep fixtures visually frequent.
-      const maxFixtures = 180; // Keep visible fixtures distributed across the full maze.
+      const spacing = 3.5; // Denser ceiling fixture candidates, aligned to the tiled ceiling.
+      const maxFixtures = 340; // More visible fixtures; dynamic point lights remain separately capped.
 
       function nearestBetaZone(tx, tz) {
         let best = null, bd = Infinity;
@@ -1794,7 +1794,7 @@ const Level = {
           let duplicate = false;
           for (let i = 0; i < usedBetaLights.length; i++) {
             const dx = usedBetaLights[i][0] - x, dz = usedBetaLights[i][1] - z;
-            if (dx * dx + dz * dz < 36) { duplicate = true; break; }
+            if (dx * dx + dz * dz < 9) { duplicate = true; break; }
           }
           if (duplicate) continue;
           usedBetaLights.push([x, z]);
