@@ -956,10 +956,11 @@ const LightingSystem = {
     }
   },
   init(scene) {
-    // Level 0 uses fixture lights only; the ambient fill is disabled while it is active.
-    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.56);
+    // A restrained warm fill keeps the carpet and ceiling readable between fixtures
+    // without washing out the yellow wallpaper or adding any extra dynamic lights.
+    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.18);
     scene.add(this.hemi);
-    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.46);
+    this.ambient = new THREE.AmbientLight(0xc8b56a, 0.12);
     scene.add(this.ambient);
     scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
     scene.background = new THREE.Color(CONFIG.fogColor);
@@ -986,7 +987,9 @@ const LightingSystem = {
     }
 
     let light = null;
-    const base = (intensityScale == null ? 1 : intensityScale) * 3.0;
+    // Modestly brighter than the distributed-lighting baseline; retain the same
+    // light count and attenuation model to avoid the floor-fill pass's FPS cost.
+    const base = (intensityScale == null ? 1 : intensityScale) * 3.6;
     if (withPoint && state !== "BROKEN") {
       // A longer inverse-square falloff avoids the hard-looking 25m light
       // cutoff visible on walls. The fixture should fade into neighboring
