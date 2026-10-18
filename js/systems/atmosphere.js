@@ -13,8 +13,8 @@ const DarknessSystem = {
       this.targetOpacity = 0;
       // Restrained warm fill keeps carpet and ceiling readable between fixtures.
       // Fluorescent point lights still provide the main directional falloff.
-      if (LightingSystem.ambient) LightingSystem.ambient.intensity = 0.12;
-      if (LightingSystem.hemi) LightingSystem.hemi.intensity = 0.20;
+      if (LightingSystem.ambient) LightingSystem.ambient.intensity = 0.26;
+      if (LightingSystem.hemi) LightingSystem.hemi.intensity = 0.32;
       const overlay = document.getElementById("dark-fog");
       if (overlay) overlay.style.opacity = "0";
       return;
