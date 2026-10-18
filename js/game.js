@@ -254,6 +254,14 @@ const Game = {
       if (betaBanner) betaBanner.style.display = testBeta ? "block" : "none";
     } catch (err) {
       console.error("Could not generate Level 0 for new run:", err);
+      // Test Beta diagnostics: show the actual failure on-screen for players
+      // who cannot access browser developer tools (e.g. Chromebook).
+      if (testBeta) {
+        const message = (err && err.message) ? err.message : String(err || "Unknown error");
+        const startSeed = document.getElementById("start-seed");
+        if (startSeed) startSeed.textContent = "TEST BETA ERROR: " + message.slice(0, 140);
+        if (typeof HUD !== "undefined" && HUD.toast) HUD.toast("TEST BETA FAILED: " + message.slice(0, 110));
+      }
       GameState.phase = "start";
       GameState.testBeta = false;
       const betaBanner = document.getElementById("beta-run-warning");
