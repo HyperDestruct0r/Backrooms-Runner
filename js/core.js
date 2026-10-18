@@ -84,16 +84,16 @@ const CONFIG = {
   fogNear: 58,
   fogFar: 175,
   cameraFar: 180,
-  cameraFov: 72,
+  cameraFov: 69,
   sprintFov: 78,
   /* VERSION 3: point these at local files to replace generated textures
      e.g. wall: "textures/wallpaper.jpg" */
   textures: {
-    wall: null,
-    wallAlt: null,
-    carpet: null,
-    carpetDark: null,
-    ceiling: null
+    wall: "assets/textures/level0-wallpaper.png",
+    wallAlt: "assets/textures/level0-wallpaper.png",
+    carpet: "assets/textures/level0-carpet.png",
+    carpetDark: "assets/textures/level0-carpet.png",
+    ceiling: "assets/textures/level0-ceiling.png"
   },
   gen: {
     minPath: 500,
@@ -956,9 +956,8 @@ const LightingSystem = {
     }
   },
   init(scene) {
-    // A restrained warm fill keeps the carpet and ceiling readable between fixtures
-    // without washing out the yellow wallpaper or adding any extra dynamic lights.
-    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.18);
+    // Level 0 uses fixture lights only; the ambient fill is disabled while it is active.
+    this.hemi = new THREE.HemisphereLight(0xffefc2, 0x6a5a28, 0.20);
     scene.add(this.hemi);
     this.ambient = new THREE.AmbientLight(0xc8b56a, 0.12);
     scene.add(this.ambient);
@@ -987,9 +986,7 @@ const LightingSystem = {
     }
 
     let light = null;
-    // Modestly brighter than the distributed-lighting baseline; retain the same
-    // light count and attenuation model to avoid the floor-fill pass's FPS cost.
-    const base = (intensityScale == null ? 1 : intensityScale) * 3.6;
+    const base = (intensityScale == null ? 1 : intensityScale) * 3.3;
     if (withPoint && state !== "BROKEN") {
       // A longer inverse-square falloff avoids the hard-looking 25m light
       // cutoff visible on walls. The fixture should fade into neighboring
