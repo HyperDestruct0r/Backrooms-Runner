@@ -89,11 +89,11 @@ const CONFIG = {
   /* VERSION 3: point these at local files to replace generated textures
      e.g. wall: "textures/wallpaper.jpg" */
   textures: {
-    wall: "assets/textures/level0-wallpaper.png",
-    wallAlt: "assets/textures/level0-wallpaper.png",
-    carpet: "assets/textures/level0-carpet.png",
-    carpetDark: "assets/textures/level0-carpet.png",
-    ceiling: "assets/textures/level0-ceiling.png"
+    wall: "assets/level0-wallpaper.png",
+    wallAlt: "assets/level0-wallpaper.png",
+    carpet: "assets/level0-carpet.png",
+    carpetDark: "assets/level0-carpet.png",
+    ceiling: "assets/level0-ceiling.png"
   },
   gen: {
     minPath: 500,
