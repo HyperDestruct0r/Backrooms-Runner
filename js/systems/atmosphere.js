@@ -11,9 +11,11 @@ const DarknessSystem = {
       this.active = false;
       this.profile = "NORMAL";
       this.targetOpacity = 0;
-      // No global fill on Level 0: areas between fixture light pools stay dark.
-      if (LightingSystem.ambient) LightingSystem.ambient.intensity = 0;
-      if (LightingSystem.hemi) LightingSystem.hemi.intensity = 0;
+      // Keep a restrained, warm fill on Level 0 so upward-facing carpet and
+      // downward-facing ceiling surfaces remain visible between fluorescent pools.
+      // This uses two existing global lights, not additional per-fixture lights.
+      if (LightingSystem.ambient) LightingSystem.ambient.intensity = 0.12;
+      if (LightingSystem.hemi) LightingSystem.hemi.intensity = 0.18;
       const overlay = document.getElementById("dark-fog");
       if (overlay) overlay.style.opacity = "0";
       return;
