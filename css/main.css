@@ -8,8 +8,9 @@
     }
     #hud-top {
       position: absolute; top: 16px; left: 18px; font-size: 14px; letter-spacing: 0.08em;
-      line-height: 1.6; opacity: 0.92;
+      line-height: 1.6; opacity: 0.92; display: flex; gap: 16px; align-items: baseline;
     }
+    #hud-fps { font-size: 11px; letter-spacing: 0.08em; opacity: 0.55; }
     #hud-obj {
       position: absolute; top: 16px; right: 18px; font-size: 13px; letter-spacing: 0.12em;
       text-transform: uppercase; opacity: 0.8;
@@ -142,6 +143,18 @@
       display: none; position: absolute; left: 18px; top: 72px;
       font-size: 12px; line-height: 1.55; letter-spacing: 0.04em;
       background: rgba(20,18,10,0.55); padding: 10px 12px; white-space: pre;
+    }
+    #dev-console {
+      position: absolute; left: 18px; right: 18px; bottom: 22px; z-index: 30;
+      pointer-events: auto; font-family: Consolas, "Segoe UI", monospace;
+    }
+    #dev-console-hint {
+      font-size: 10px; letter-spacing: 0.12em; opacity: 0.55; margin-bottom: 4px;
+    }
+    #dev-console-input {
+      width: min(520px, 100%); padding: 8px 10px; border: 1px solid rgba(203,184,90,0.45);
+      background: rgba(16,14,8,0.88); color: #efe6b0; font: 13px Consolas, monospace;
+      outline: none;
     }
     #chase-vignette {
       position: absolute; inset: 0; pointer-events: none; opacity: 0;
