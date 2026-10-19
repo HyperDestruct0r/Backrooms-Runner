@@ -854,7 +854,13 @@ const EntitySystem = {
       return;
     }
     this.inContact = false;
-    if (this.spawned && distP <= CONFIG.entity.contactDist && this.clearLineToPlayer()) {
+    // Trigger a close-range grab when the entity reaches the player, without
+    // requiring mesh overlap. The larger contact radius is also used by the
+    // pursuit stop distance so it does not halt just outside attack range.
+    // Close grab is distance only. A wall can still block a long chase,
+    // but it should not stop a grab that is already on top of the player.
+    const closeEnough = this.spawned && distP <= CONFIG.entity.contactDist;
+    if (closeEnough && (distP <= 2.2 || this.clearLineToPlayer())) {
       // Contact is a sustained capture: 100 HP/sec, dealt as 10 HP every 0.1s.
       // A stumble roll can break the grab between 0.3 and 0.6 seconds.
       if (this.contactT <= 0) {
