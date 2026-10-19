@@ -36,7 +36,7 @@
       overflow: auto;
     }
     #inv-panel {
-      width: min(340px, calc(100vw - 24px)); max-width: 100%; max-height: calc(100dvh - 24px);
+      width: min(420px, calc(100vw - 24px)); max-width: 100%; max-height: calc(100dvh - 24px);
       overflow: auto; background: #2a2618; border: 1px solid #8a7a3a;
       color: #efe6b0; padding: clamp(14px, 4vw, 22px) clamp(14px, 5vw, 24px); pointer-events: auto;
     }
@@ -49,13 +49,20 @@
       -webkit-tap-highlight-color:transparent; touch-action:manipulation;
     }
     #inv-close:hover { background:#3a341c; color:#efe6b0; }
-    #inv-list { font-size: 14px; line-height: 1.8; min-height: 48px; }
-    #inv-list button {
-      display: block; width: 100%; text-align: left; background: transparent;
-      border: 1px solid #6a5a30; color: #efe6b0; padding: 6px 10px; margin: 6px 0;
-      letter-spacing: 0.06em; cursor: pointer;
+    #inv-list {
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+      min-height: 48px;
     }
-    #inv-list button:hover { background: #3a341c; }
+    .inv-slot {
+      aspect-ratio: 1; border: 1px solid #6a5a30; background: #1c190e;
+      color: #efe6b0; display: flex; align-items: center; justify-content: center;
+      position: relative; cursor: pointer; font-size: 11px; letter-spacing: 0.04em;
+    }
+    .inv-slot:hover, .inv-slot.selected { background: #3a341c; border-color: #cbb85a; }
+    .inv-slot .count {
+      position: absolute; right: 4px; bottom: 3px; font-size: 11px; font-weight: 700;
+    }
+    .inv-slot .mark { font-size: 16px; font-weight: 700; }
     #inv-hint { margin-top: 12px; font-size: 11px; opacity: 0.65; text-align: center; }
     #toast-note {
       position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%);
