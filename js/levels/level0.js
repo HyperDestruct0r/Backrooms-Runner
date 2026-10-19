@@ -2023,6 +2023,7 @@ const Level = {
       Stairwell.build(sceneRef);
       SpawnManager.apply(beta);
       PickupSystem.generate(beta.seed);
+      if (typeof PassC !== "undefined") PassC.generate(beta.seed);
       const seedEl = document.getElementById("hud-seed-val");
       if (seedEl) seedEl.textContent = String(beta.seed);
       const startSeed = document.getElementById("start-seed");
@@ -2070,6 +2071,7 @@ const Level = {
     Stairwell.build(sceneRef);
     SpawnManager.apply(result);
     PickupSystem.generate(result.seed);
+    if (typeof PassC !== "undefined") PassC.generate(result.seed);
     const seedEl = document.getElementById("hud-seed-val");
     if (seedEl) seedEl.textContent = String(result.seed);
     const startSeed = document.getElementById("start-seed");
