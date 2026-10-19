@@ -725,7 +725,7 @@ if (NoiseArchitecturalAPI) {
     const preferredMin=Math.floor(500/p.cellMeters);
     const preferredMax=Math.floor(1000/p.cellMeters);
     let fallback=null,fallbackBest=-1,overMax=null,overMaxBest=-1;
-    for(let idx=0;idx<total;idx++){
+    for(let idx=0;idx<total;idx+=3){
       if(dist[idx]<0) continue;
       const x=idx%w,z=(idx/w)|0;
       const d=elevatorDir(x,z);
