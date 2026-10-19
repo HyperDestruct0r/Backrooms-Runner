@@ -43,7 +43,7 @@ const CONFIG = {
     drain: 8,
     crouchDrain: 0.25,
     walkDrain: 0.50,
-    sprintDrain: 0.3,
+    sprintDrain: 0.3, // Temporary playtest value. Nerf before release.
     sprintJumpDrain: 0.6,
     drain: 1.0,
     regen: 3.0,
@@ -70,7 +70,13 @@ const CONFIG = {
     pauseMin: 0.7,
     pauseMax: 2.4,
     contactDist: 1.28,
-    damagePerSec: 100
+    damagePerSec: 100,
+    damageChunk: 10,
+    stumbleChance: 0.40,
+    stumbleMin: 0.3,
+    stumbleMax: 0.6,
+    stunMin: 0.25,
+    stunMax: 0.75
   },
 
   chase: {
@@ -618,6 +624,7 @@ function isGameplayKey(code) {
 }
 
 window.addEventListener("keydown", (e) => {
+  if (typeof DevCommands !== "undefined" && DevCommands.open) return;
   if (e.code === "ControlLeft" || e.code === "ControlRight") Input.ctrlDown = true;
   Input.keys[e.code] = true;
 
@@ -626,6 +633,13 @@ window.addEventListener("keydown", (e) => {
   // It unlocks the mouse but does not navigate away from the run.
   // The explicit gamewide unlock binding below provides the same behavior
   // without requiring Escape.
+  if (e.code === "Escape" && GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive) {
+    if (typeof MenuSystem !== "undefined" && MenuSystem.isRunSettingsOpen && MenuSystem.isRunSettingsOpen()) {
+      e.preventDefault();
+      MenuSystem.closeRunSettings();
+      return;
+    }
+  }
   if (e.code === CONFIG.keys.unlockMouse && GameState.phase === "playing" && !GameState.inventoryOpen && !Stairwell.sequenceActive && !DeviceMode.mobile && !e.repeat) {
     e.preventDefault();
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
@@ -650,7 +664,15 @@ window.addEventListener("keydown", (e) => {
   if (e.code === CONFIG.keys.regenerate && GameState.ready && (GameState.phase === "playing" || GameState.phase === "complete" || GameState.phase === "start")) {
     if (e.repeat || GameState.regenerating) return;
     e.preventDefault();
-    Game.regenerate();
+    const now = performance.now();
+    const last = GameState._regenPress || 0;
+    if (now - last < 450) {
+      GameState._regenPress = 0;
+      Game.regenerate();
+    } else {
+      GameState._regenPress = now;
+      if (typeof HUD !== "undefined") HUD.toast("PRESS G AGAIN TO REGENERATE");
+    }
   }
   if (e.ctrlKey && e.shiftKey && e.altKey && (e.code === "KeyD" || e.key === "d" || e.key === "D")) {
     e.preventDefault();
@@ -658,6 +680,7 @@ window.addEventListener("keydown", (e) => {
     const panel = document.getElementById("debug-panel");
     if (panel) panel.style.display = GameState.debug ? "block" : "none";
     if (!GameState.debug) DebugPath.hide();
+    if (typeof HUD !== "undefined") HUD.toast(GameState.debug ? "DEBUG ON · ` FOR COMMANDS" : "DEBUG OFF");
     return;
   }
   if (e.code === "F3") {
@@ -695,6 +718,7 @@ window.addEventListener("keydown", (e) => {
   }
 }, true);
 window.addEventListener("keyup", (e) => {
+  if (typeof DevCommands !== "undefined" && DevCommands.open) return;
   Input.keys[e.code] = false;
   if (e.code === "ControlLeft" || e.code === "ControlRight") {
     Input.ctrlDown = !!(Input.keys.ControlLeft || Input.keys.ControlRight);
@@ -729,7 +753,7 @@ document.addEventListener("pointerlockchange", () => {
   }
   Input.locked = !!(renderer && document.pointerLockElement === renderer.domElement);
   if (!Input.locked) clearInput();
-  const paused = GameState.phase === "playing" && !Input.locked && !GameState.inventoryOpen && !Stairwell.sequenceActive;
+  const paused = GameState.phase === "playing" && !Input.locked && !GameState.inventoryOpen && !Stairwell.sequenceActive && !GameState.cutscene && !(typeof DevCommands !== "undefined" && DevCommands.open);
   setPauseOverlay(paused);
   const note = document.getElementById("pause-note");
   if (note) note.style.display = "none";
