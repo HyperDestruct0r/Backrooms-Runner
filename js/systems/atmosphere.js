@@ -900,7 +900,9 @@ const EntitySystem = {
 
     if (this.state === "PURSUING") {
       const close = distP;
-      if (close < 1.65) {
+      // Keep closing until contact range. The old 1.65 stop left it
+      // standing just outside contactDist until the player walked in.
+      if (close <= CONFIG.entity.contactDist) {
         this.vel.set(0, 0, 0);
       } else {
         this.repathT -= dt;
@@ -1031,53 +1033,27 @@ const CutsceneSystem = {
     const phase = this.t / this.duration;
 
     if (cam) {
-      // Keep the viewpoint anchored to the player while the entity dominates
-      // the frame. This avoids giving the player any movement control during
-      // the capture sequence.
-      const forward = new THREE.Vector3(-Math.sin(Player.yaw), 0, -Math.cos(Player.yaw));
-      const right = new THREE.Vector3(Math.cos(Player.yaw), 0, -Math.sin(Player.yaw));
-      const shake = Math.min(1, this.t * 1.8) * (0.012 + Math.max(0, phase - 0.25) * 0.018);
+      // First-person grab: the view is lifted as if being picked up.
+      // The entity stays hidden so the player never sees it.
+      const lift = Math.min(1.15, this.t * 0.55);
+      const shake = Math.min(1, this.t * 1.6) * (0.01 + Math.max(0, phase - 0.2) * 0.016);
       cam.position.set(
-        p.x + right.x * (Math.random() - 0.5) * shake,
-        p.y + Player.eyeHeight() + (Math.random() - 0.5) * shake,
-        p.z + right.z * (Math.random() - 0.5) * shake
+        p.x + (Math.random() - 0.5) * shake,
+        p.y + Player.eyeHeight() + lift + (Math.random() - 0.5) * shake * 0.4,
+        p.z + (Math.random() - 0.5) * shake
       );
       cam.rotation.order = "YXZ";
-
-      const target = new THREE.Vector3();
-      if (e.mesh) {
-        // Gradually turn the camera toward the real entity as it closes in.
-        target.copy(e.mesh.position);
-        target.y += 1.35;
-      } else {
-        target.copy(p).add(forward.multiplyScalar(2));
-        target.y += 1.2;
-      }
-      cam.lookAt(target);
-      cam.rotation.z = Math.sin(this.t * 9) * Math.min(0.035, this.t * 0.012);
-      const fov = 72 + Math.sin(this.t * 5.5) * Math.min(3, this.t * 1.2);
+      cam.rotation.y = Player.yaw;
+      cam.rotation.x = -0.18 - Math.min(0.35, this.t * 0.12);
+      cam.rotation.z = Math.sin(this.t * 8) * Math.min(0.04, this.t * 0.014);
+      const fov = 74 + Math.sin(this.t * 6) * Math.min(2.5, this.t);
       if (Math.abs(cam.fov - fov) > 0.02) {
         cam.fov = fov;
         cam.updateProjectionMatrix();
       }
     }
 
-    if (e.mesh) {
-      // The entity remains a real world object; the cutscene only changes its
-      // presentation and lets it loom closer without any new damage ticks.
-      const toPlayer = new THREE.Vector3().subVectors(p, e.position);
-      const d = Math.max(0.001, Math.hypot(toPlayer.x, toPlayer.z));
-      if (this.t < 1.15 && d > 0.72) {
-        const speed = 0.9 + this.t * 0.9;
-        e.position.x += (toPlayer.x / d) * speed * dt;
-        e.position.z += (toPlayer.z / d) * speed * dt;
-      }
-      e.mesh.position.copy(e.position);
-      e.mesh.position.y += Math.sin(this.t * 12) * 0.018;
-      e.mesh.rotation.y = Math.atan2(-(p.x - e.position.x), -(p.z - e.position.z));
-      const scale = 1 + Math.max(0, this.t - 0.5) * 0.18;
-      e.mesh.scale.setScalar(scale);
-    }
+    if (e.mesh) e.mesh.visible = false;
 
     if (this.overlay) {
       const fadeIn = Math.min(1, this.t / 0.55);
@@ -1091,7 +1067,7 @@ const CutsceneSystem = {
     if (this.t >= this.duration) {
       this.active = false;
       GameState.cutscene = false;
-      if (e.mesh) e.mesh.scale.set(1,1,1);
+      if (e.mesh) { e.mesh.visible = true; e.mesh.scale.set(1,1,1); }
       if (this.overlay) this.overlay.style.display = "none";
       if (this.text) this.text.style.opacity = "0";
       Game.gameOver();
