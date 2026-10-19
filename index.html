@@ -38,22 +38,28 @@
   </div>
 
   <div id="boot-loading">
+    <div class="loading-bg"></div>
     <div class="loading-card">
-      <div class="loading-title">BACKROOMS</div>
-      <div class="loading-subtitle">LEVEL 0 · INITIALIZING ENVIRONMENT</div>
+      <div class="loading-kicker">BACKROOMS RUNNER</div>
+      <div class="loading-title">LEVEL 0</div>
+      <div class="loading-subtitle">INITIALIZING ENVIRONMENT</div>
       <div id="boot-status" class="loading-status pulse">INITIALIZING...</div>
       <div class="loading-track"><div id="boot-fill" class="loading-fill"></div></div>
       <div id="boot-percent" class="loading-percent">0%</div>
+      <div id="boot-tip" class="loading-tip">Some corridors may look familiar. They are not.</div>
     </div>
   </div>
   <div id="game-loading">
+    <div class="loading-bg"></div>
     <div class="loading-card">
-      <div class="loading-title">ENTERING LEVEL 0</div>
-      <div class="loading-subtitle">PLEASE WAIT</div>
+      <div class="loading-kicker">BACKROOMS RUNNER</div>
+      <div id="game-load-title" class="loading-title">ENTERING LEVEL 0</div>
+      <div id="game-load-subtitle" class="loading-subtitle">PLEASE WAIT</div>
+      <div id="game-load-seed" class="loading-seed">SEED —</div>
       <div id="game-load-status" class="loading-status pulse">PREPARING...</div>
       <div class="loading-track"><div id="game-load-fill" class="loading-fill"></div></div>
       <div id="game-load-percent" class="loading-percent">0%</div>
-      <div class="loading-tip">The layout is generated for this run. Some corridors may look familiar. They are not.</div>
+      <div id="game-load-tip" class="loading-tip">The layout is generated for this run. Some corridors may look familiar. They are not.</div>
     </div>
   </div>
   <div id="elevator-sequence">
@@ -87,6 +93,10 @@
     <div id="beta-run-warning" style="display:none">TEST BETA · PLAY AT YOUR OWN RISK · EXPERIMENTAL GENERATOR</div>
     <div id="hud-seed"><span id="hud-level-label">LEVEL 0</span> · SEED <span id="hud-seed-val">—</span></div>
     <div id="debug-panel"></div>
+    <div id="dev-console" style="display:none">
+      <div id="dev-console-hint">DEV · ENTER TO RUN · ESC OR ` TO CLOSE</div>
+      <input id="dev-console-input" type="text" autocomplete="off" spellcheck="false" placeholder="level 1">
+    </div>
     <div id="toast-note"></div>
     <div id="crosshair"></div>
     <div id="dark-fog"></div>
@@ -250,6 +260,7 @@
             <div class="setting-card"><label>EVENTS <span id="setting-events-value">18%</span></label><input class="menu-range" data-setting="events" type="range" min="0" max="1" step="0.01" value="0.18"></div>
             <div class="setting-card"><label>MOUSE SENSITIVITY <span id="setting-sensitivity-value">0.002</span></label><input id="setting-sensitivity" type="range" min="0.0005" max="0.005" step="0.00005" value="0.00215"></div>
             <div class="setting-card mobile-look-setting"><label>MOBILE LOOK</label><select id="setting-mobile-look"><option value="joystick">RIGHT JOYSTICK</option><option value="swipe">SWIPE SCREEN</option></select><div class="setting-note">Choose whether mobile camera control uses the right look joystick or a swipe gesture on the right side of the screen.</div></div>
+            <div class="setting-card"><div class="switch"><span>SHOW FPS</span><input id="setting-show-fps" type="checkbox"></div><div class="setting-note">Off by default. A small frame-rate counter appears in the corner while playing.</div></div>
             <div class="setting-card"><div class="switch"><span>FULLSCREEN</span><input id="setting-fullscreen" type="checkbox"></div><div class="setting-note">Uses your browser's fullscreen permission.</div></div>
           </div>
           <h3>GAME MODES</h3>
@@ -391,6 +402,7 @@
 <script src="js/systems/keyboard-guide.js"></script>
 <script src="js/systems/tutorial.js"></script>
 <script src="js/systems/menu.js"></script>
+<script src="js/systems/dev-commands.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>
