@@ -130,6 +130,8 @@ const CONFIG = {
   sanity: {
     max: 100,
     drain: 0.12,
+    level0Drain: 0,
+    level1Drain: 0.04,
     chaseDrain: 0.2,
     restoreDrink: 10,
     hpRegenSanityNeed: 20,
