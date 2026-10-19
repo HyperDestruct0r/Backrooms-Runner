@@ -11,10 +11,12 @@ const DarknessSystem = {
       this.active = false;
       this.profile = "NORMAL";
       this.targetOpacity = 0;
-      // Restrained warm fill keeps carpet and ceiling readable between fixtures.
-      // Fluorescent point lights still provide the main directional falloff.
-      if (LightingSystem.ambient) LightingSystem.ambient.intensity = 0.26;
-      if (LightingSystem.hemi) LightingSystem.hemi.intensity = 0.32;
+      // Very low warm fill keeps carpet readable between fixtures without
+      // washing out the local fluorescent pools. Test Beta is a much larger
+      // field with fewer lights, so it needs a little more fill to stay readable.
+      const beta = !!(LevelGenerator.last && LevelGenerator.last.beta);
+      if (LightingSystem.ambient) LightingSystem.ambient.intensity = beta ? 0.16 : 0.06;
+      if (LightingSystem.hemi) LightingSystem.hemi.intensity = beta ? 0.22 : 0.10;
       const overlay = document.getElementById("dark-fog");
       if (overlay) overlay.style.opacity = "0";
       return;
@@ -445,6 +447,10 @@ const EntitySystem = {
   playerHeard: false,
   inContact: false,
   dmgAcc: 0,
+  contactT: 0,
+  stumbleAt: 0,
+  willStumble: false,
+  stunT: 0,
   targetModule: null,
   debugLine: null,
   vel: new THREE.Vector3(),
@@ -466,6 +472,12 @@ const EntitySystem = {
     this.playerVisible = false;
     this.playerHeard = false;
     this.lastKnown.copy(position);
+    this.inContact = false;
+    this.dmgAcc = 0;
+    this.contactT = 0;
+    this.stumbleAt = 0;
+    this.willStumble = false;
+    this.stunT = 0;
     this.animT = 0;
     this.visualBob = 0;
 
@@ -599,6 +611,9 @@ const EntitySystem = {
     this.entities = [];
     this.pathDistanceAtSpawn = 0;
     this.state = "WANDERING";
+    this.stunT = 0;
+    this.contactT = 0;
+    this.dmgAcc = 0;
     ChaseFx.reset();
   },
   getPosition() { return this.position; },
@@ -818,26 +833,69 @@ const EntitySystem = {
     }
 
     const distP = Math.hypot(Player.position.x - this.position.x, Player.position.z - this.position.z);
+    if (this.stunT > 0) {
+      this.stunT -= dt;
+      this.inContact = false;
+      this.dmgAcc = 0;
+      this.contactT = 0;
+      this.vel.set(0, 0, 0);
+      if (this.mesh) {
+        this.animT += dt * 1.2;
+        this.mesh.position.copy(this.position);
+        this.mesh.rotation.y = this.yaw;
+        this.mesh.rotation.z = Math.sin(this.animT * 6) * 0.04;
+      }
+      if (this.stunT <= 0) {
+        this.stunT = 0;
+        if (this.mesh) this.mesh.rotation.z = 0;
+        this.setState(this.playerVisible ? "PURSUING" : "SEARCHING");
+      }
+      this.updateDebugViz();
+      return;
+    }
     this.inContact = false;
     if (this.spawned && distP <= CONFIG.entity.contactDist && this.clearLineToPlayer()) {
-      // Contact is now a sustained capture: 100 HP/sec, applied every 0.1s.
-      // When HP reaches zero, movement locks and the capture cutscene runs
-      // before the normal Game Over screen appears.
+      // Contact is a sustained capture: 100 HP/sec, dealt as 10 HP every 0.1s.
+      // A stumble roll can break the grab between 0.3 and 0.6 seconds.
+      if (this.contactT <= 0) {
+        this.willStumble = Math.random() < (E.stumbleChance == null ? 0.4 : E.stumbleChance);
+        const lo = E.stumbleMin == null ? 0.3 : E.stumbleMin;
+        const hi = E.stumbleMax == null ? 0.6 : E.stumbleMax;
+        this.stumbleAt = lo + Math.random() * Math.max(0, hi - lo);
+      }
       this.inContact = true;
+      this.contactT += dt;
       this.dmgAcc += dt * CONFIG.entity.damagePerSec;
-      while (this.dmgAcc >= 10 && Player.getPlayerHP() > 0) {
-        this.dmgAcc -= 10;
+      const chunk = E.damageChunk || 10;
+      while (this.dmgAcc >= chunk && Player.getPlayerHP() > 0) {
+        this.dmgAcc -= chunk;
         ChaseFx.hitFlash();
-        Player.damagePlayer(10);
+        Player.damagePlayer(chunk);
       }
       if (Player.getPlayerHP() <= 0) {
         this.dmgAcc = 0;
+        this.contactT = 0;
         this.setState("CAPTURED");
         if (typeof CutsceneSystem !== "undefined") CutsceneSystem.startEntityCapture();
         return;
       }
+      if (this.willStumble && this.contactT >= this.stumbleAt) {
+        this.inContact = false;
+        this.dmgAcc = 0;
+        this.contactT = 0;
+        this.willStumble = false;
+        const sLo = E.stunMin == null ? 0.25 : E.stunMin;
+        const sHi = E.stunMax == null ? 0.75 : E.stunMax;
+        this.stunT = sLo + Math.random() * Math.max(0, sHi - sLo);
+        this.vel.set(0, 0, 0);
+        if (typeof HUD !== "undefined") HUD.toast("IT STUMBLES");
+        AudioSystem.playPositional("thump", this.position.x, 1.2, this.position.z, { gain: 0.06, bus: "entity", max: 28 });
+        this.updateDebugViz();
+        return;
+      }
     } else {
       this.dmgAcc = 0;
+      this.contactT = 0;
     }
 
     if (this.state === "PURSUING") {
@@ -945,6 +1003,9 @@ const CutsceneSystem = {
     GameState.cutscene = true;
     Input.locked = false;
     clearInput();
+    if (typeof setPauseOverlay === "function") setPauseOverlay(false);
+    const pauseNote = document.getElementById("pause-note");
+    if (pauseNote) pauseNote.style.display = "none";
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
     this.overlay = document.getElementById("entity-capture-cutscene");
     this.text = document.getElementById("entity-capture-text");
