@@ -69,80 +69,110 @@ const Level1 = {
     rec.colliders.push({min:new THREE.Vector3(x-sx/2,this.baseY,z-sz/2),max:new THREE.Vector3(x+sx/2,this.baseY+h,z+sz/2)});
   },
   pillar(g,rec,x,z){
-    this.addBox(g,this.shared.concretePillar,x,this.baseY+3.6,z,1.12,7.2,1.12);
-    rec.colliders.push({min:new THREE.Vector3(x-.56,this.baseY,z-.56),max:new THREE.Vector3(x+.56,this.baseY+7.2,z+.56)});
-    this.addBox(g,this.shared.concreteDark,x,this.baseY+0.12,z,1.38,0.24,1.38);
+    const h=5.35, w=0.86;
+    this.addBox(g,this.shared.concretePillar,x,this.baseY+h/2,z,w,h,w);
+    rec.colliders.push({min:new THREE.Vector3(x-w/2,this.baseY,z-w/2),max:new THREE.Vector3(x+w/2,this.baseY+h,z+w/2)});
+    this.addBox(g,this.shared.concreteDark,x,this.baseY+0.10,z,w+0.16,0.20,w+0.16);
+    this.addPillarLetter(g,x,z,h,w);
+  },
+  addPillarLetter(g,x,z,h,w){
+    const letters="ABCTSEFGHKMNPR";
+    const idx=Math.abs((Math.floor(x)*13+Math.floor(z)*7))%letters.length;
+    const ch=letters[idx];
+    if(!this.letterMats) this.letterMats=Object.create(null);
+    if(!this.letterMats[ch]){
+      const c=document.createElement("canvas"); c.width=128; c.height=160;
+      const ctx=c.getContext("2d");
+      ctx.clearRect(0,0,128,160);
+      ctx.fillStyle="#d6c24a";
+      ctx.font="bold 96px sans-serif";
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(ch,64,82);
+      const tex=new THREE.CanvasTexture(c);
+      tex.colorSpace=THREE.SRGBColorSpace;
+      this.letterMats[ch]=new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,toneMapped:false});
+    }
+    const face=Math.abs(Math.floor(x+z))%4;
+    const decal=new THREE.Mesh(new THREE.PlaneGeometry(0.62,0.78),this.letterMats[ch]);
+    const y=this.baseY+1.55;
+    const o=w/2+0.012;
+    if(face===0){ decal.position.set(x,y,z+o); }
+    else if(face===1){ decal.position.set(x+o,y,z); decal.rotation.y=Math.PI/2; }
+    else if(face===2){ decal.position.set(x,y,z-o); decal.rotation.y=Math.PI; }
+    else { decal.position.set(x-o,y,z); decal.rotation.y=-Math.PI/2; }
+    g.add(decal);
   },
   fixture(g,x,z,bright,rng,rec){
-    const panel=new THREE.Mesh(Geometries.lightPanel,this.shared.light);
-    panel.scale.set(1.35,1,0.34); panel.position.set(x,this.baseY+6.85,z); g.add(panel);
+    const y=this.baseY+5.08;
+    const panelMat=this.shared.light.clone();
+    const panel=new THREE.Mesh(Geometries.lightPanel,panelMat);
+    panel.scale.set(1.55,1,0.28); panel.position.set(x,y,z); g.add(panel);
     const housing=new THREE.Mesh(Geometries.lightHousing,Materials.lightHousing);
-    housing.scale.set(1.42,1,0.4); housing.position.set(x,this.baseY+6.80,z); g.add(housing);
+    housing.scale.set(1.64,1,0.34); housing.position.set(x,y-0.04,z); g.add(housing);
     const blackout=this.blackoutState==='flicker'||this.blackoutState==='outage';
-    panel.material.emissiveIntensity=blackout?0:2.65*bright;
-    rec.fixtures.push({panel,housing,base:bright});
-    if(rng()<0.10 && this.lights.length<12){
-      const L=new THREE.PointLight(0xf4f7ff,blackout?0:1.12*bright,22,1.65);
-      L.position.set(x,this.baseY+6.25,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
+    panelMat.emissiveIntensity=blackout?0:3.4*bright;
+    rec.fixtures.push({panel,housing,base:bright,mat:panelMat});
+    if(rng()<0.82 && this.lights.length<64){
+      const L=new THREE.PointLight(0xf7f8ff,blackout?0:2.35*bright,38,1.15);
+      L.position.set(x,y-0.35,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
     }
   },
   pipeRun(g,x,z,lenX,lenZ,rng){
-    if(lenX>0) this.addBox(g,this.shared.pipe,x,this.baseY+6.45,z,lenX,0.18,0.18);
-    else this.addBox(g,this.shared.pipe,x,this.baseY+6.45,z,0.18,0.18,lenZ);
+    const y=this.baseY+4.85;
+    if(lenX>0) this.addBox(g,this.shared.pipe,x,y,z,lenX,0.14,0.14);
+    else this.addBox(g,this.shared.pipe,x,y,z,0.14,0.14,lenZ);
     if(rng()<0.35){
       const px=x+(lenX>0?lenX*.22:0), pz=z+(lenZ>0?lenZ*.22:0);
-      this.addBox(g,this.shared.pipe,px,this.baseY+6.05,pz,0.14,0.70,0.14);
+      this.addBox(g,this.shared.pipe,px,y-0.32,pz,0.10,0.55,0.10);
     }
   },
-  concreteTexture(repeatX,repeatY){
-    const t=TextureFactory.concrete(); t.repeat.set(repeatX,repeatY); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.needsUpdate=true; return t;
+  addBeams(g,ox,oz,S){
+    const y=this.baseY+5.22;
+    for(let ix=8;ix<S;ix+=16) this.addBox(g,this.shared.beam,ox+ix,y,oz+S/2,0.28,0.16,S);
+    for(let iz=8;iz<S;iz+=16) this.addBox(g,this.shared.beam,ox+S/2,y,oz+iz,S,0.16,0.28);
   },
-  waterTexture(){
-    const c=document.createElement('canvas'); c.width=256; c.height=256;
-    const ctx=c.getContext('2d'); ctx.fillStyle='#273b3c'; ctx.fillRect(0,0,256,256);
-    for(let i=0;i<900;i++){
-      const x=Math.random()*256,y=Math.random()*256,r=Math.random()*1.8;
-      ctx.fillStyle='rgba(180,205,205,'+(0.03+Math.random()*0.10)+')'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-    }
-    for(let r=22;r<128;r+=22){ ctx.strokeStyle='rgba(210,225,225,0.10)'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.arc(128,128,r,0,Math.PI*2); ctx.stroke(); }
-    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=4; return t;
+  loadTex(path,repeatX,repeatY){
+    const t=new THREE.TextureLoader().load(path);
+    t.wrapS=t.wrapT=THREE.RepeatWrapping;
+    t.colorSpace=THREE.SRGBColorSpace;
+    t.anisotropy=8;
+    t.repeat.set(repeatX,repeatY);
+    return t;
   },
   materialSet(){
     if(this.shared.floor) return;
-    const floorMap=this.concreteTexture(6,6);
-    const pillarMap=this.concreteTexture(2.2,7.0);
-    const ceilMap=this.concreteTexture(5,5);
-    this.shared.floor=new THREE.MeshStandardMaterial({map:floorMap,color:0x9a9c9a,roughness:0.44,metalness:0.10});
-    this.shared.concrete=new THREE.MeshStandardMaterial({map:floorMap.clone(),color:0x858886,roughness:0.78,metalness:0.02});
-    this.shared.concretePillar=new THREE.MeshStandardMaterial({map:pillarMap,color:0x929593,roughness:0.82,metalness:0.02});
-    this.shared.concreteDark=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x676a68,roughness:0.90,metalness:0.01});
-    this.shared.concreteLight=new THREE.MeshStandardMaterial({map:ceilMap,color:0xa5a8a5,roughness:0.76,metalness:0.02});
-    this.shared.beam=new THREE.MeshStandardMaterial({map:pillarMap.clone(),color:0x5e6260,roughness:0.84,metalness:0.04});
-    this.shared.metal=new THREE.MeshStandardMaterial({color:0x6f7471,roughness:0.42,metalness:0.72});
-    this.shared.light=new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xf5f8ff,emissiveIntensity:2.35,roughness:0.34});
-    this.shared.pipe=new THREE.MeshStandardMaterial({color:0x777b78,roughness:0.62,metalness:0.5});
-    this.shared.water=new THREE.MeshPhysicalMaterial({map:this.waterTexture(),color:0x496668,transparent:true,opacity:0.78,roughness:0.08,metalness:0.12,clearcoat:0.75,clearcoatRoughness:0.08,side:THREE.DoubleSide});
+    const floorMap=this.loadTex("assets/level1-floor.jpg",4,4);
+    const wallMap=this.loadTex("assets/level1-wall.jpg",2,3);
+    const ceilMap=this.loadTex("assets/level1-ceiling.jpg",3,3);
+    this.shared.floor=new THREE.MeshStandardMaterial({map:floorMap,color:0x8a8d90,roughness:0.62,metalness:0.04});
+    this.shared.concrete=new THREE.MeshStandardMaterial({map:wallMap,color:0x86898c,roughness:0.84,metalness:0.02});
+    this.shared.concretePillar=new THREE.MeshStandardMaterial({map:wallMap.clone(),color:0x909396,roughness:0.80,metalness:0.02});
+    this.shared.concreteDark=new THREE.MeshStandardMaterial({map:wallMap.clone(),color:0x5e6164,roughness:0.90,metalness:0.01});
+    this.shared.concreteLight=new THREE.MeshStandardMaterial({map:ceilMap,color:0x7d8084,roughness:0.86,metalness:0.02});
+    this.shared.beam=new THREE.MeshStandardMaterial({map:ceilMap.clone(),color:0x55585b,roughness:0.82,metalness:0.04});
+    this.shared.metal=new THREE.MeshStandardMaterial({color:0x6a6e72,roughness:0.40,metalness:0.72});
+    this.shared.light=new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xf7f8ff,emissiveIntensity:3.2,roughness:0.28});
+    this.shared.pipe=new THREE.MeshStandardMaterial({color:0x6e7276,roughness:0.58,metalness:0.46});
+    this.shared.water=new THREE.MeshPhysicalMaterial({color:0x1c2226,transparent:true,opacity:0.62,roughness:0.06,metalness:0.18,clearcoat:1,clearcoatRoughness:0.04,side:THREE.DoubleSide});
     this.shared.water.needsUpdate=true;
   },
   addPuddle(g,wx,wz,rng){
-    const r=0.46+rng()*0.08;
-    const geo=new THREE.CircleGeometry(r,24);
-    const mesh=new THREE.Mesh(geo,this.shared.water);
-    mesh.rotation.x=-Math.PI/2; mesh.position.set(wx,this.baseY+0.012,wz); g.add(mesh);
-    this.puddles.push({x:wx,z:wz,r:r*0.92});
+    const r=1.6+rng()*1.8;
+    const geo=new THREE.CircleGeometry(r,20);
+    const mat=this.shared.water.clone();
+    const mesh=new THREE.Mesh(geo,mat);
+    mesh.rotation.x=-Math.PI/2; mesh.position.set(wx,this.baseY+0.015,wz); g.add(mesh);
+    const streak=new THREE.Mesh(new THREE.PlaneGeometry(r*0.55,0.08),new THREE.MeshBasicMaterial({color:0xd7dde4,transparent:true,opacity:0.28,depthWrite:false}));
+    streak.rotation.x=-Math.PI/2; streak.position.set(wx,this.baseY+0.02,wz); g.add(streak);
+    this.puddles.push({x:wx,z:wz,r:r*0.9});
   },
   generatePuddles(g,rec,bx,bz,S,rng,openMask){
-    // Eight independent 15m x 15m tile attempts per streamed section.
-    // Each attempt has a 3% chance, and a successful puddle must land on
-    // genuinely open floor. This keeps puddles sparse even in huge lots.
-    for(let attempt=0;attempt<8;attempt++){
-      if(rng()>=0.03) continue;
-      const cells=S/15;
-      const tx=Math.floor(rng()*cells), tz=Math.floor(rng()*cells);
-      const x=bx+tx*15+7.5, z=bz+tz*15+7.5;
+    for(let attempt=0;attempt<5;attempt++){
+      if(rng()>=0.28) continue;
+      const x=bx+6+rng()*(S-12), z=bz+6+rng()*(S-12);
       if(openMask && !openMask(x,z)) continue;
-      if(this.puddles.some(p=>(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z)<1.4)) continue;
-      this.addPuddle(g,x+(rng()-.5)*5,z+(rng()-.5)*5,rng);
+      if(this.puddles.some(p=>(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z)<16)) continue;
+      this.addPuddle(g,x,z,rng);
     }
   },
   getMaintenanceWalls(mx,mz){
@@ -395,7 +425,8 @@ const Level1 = {
     rec.colliders.push({min:new THREE.Vector3(ox,this.baseY-0.18,oz),max:new THREE.Vector3(ox+S,this.baseY,oz+S)});
     const ceilMap=this.shared.concreteLight.map.clone(); ceilMap.repeat.set(S/14,S/14); ceilMap.needsUpdate=true;
     const ceilMat=this.shared.concreteLight.clone(); ceilMat.map=ceilMap;
-    this.addBox(g,ceilMat,centerX,this.baseY+7.12,centerZ,S,0.24,S);
+    this.addBox(g,ceilMat,centerX,this.baseY+5.40,centerZ,S,0.18,S);
+    this.addBeams(g,ox,oz,S);
     // Structural grid is present in both spaces, but parking lots are more open.
     for(let ix=8;ix<S;ix+=16) for(let iz=8;iz<S;iz+=16){
       if(rng()<0.10) continue;
@@ -431,7 +462,11 @@ const Level1 = {
 
     // Puddles are preferentially placed in parking/open floor; a smaller number
     // can appear in unusually wide maintenance sections.
-    if(type==='parking' || rng()<0.20){
+    if(type==='parking' || rng()<0.35){
+      if(typeof PassC!=="undefined" && rng()<0.55){
+        const cx=ox+8+rng()*(S-16), cz=oz+8+rng()*(S-16);
+        PassC.placeWorldCrate(g,cx,cz,"l1-"+cx+","+cz);
+      }
       const openMask=(x,z)=>{
         // Only place puddles on actual open floor. The first collider in a
         // chunk is the floor slab; ignore it and test structural obstacles.
@@ -480,15 +515,16 @@ const Level1 = {
   setFixtureState(on,dim=1){
     for(const rec of this.chunks.values()){
       for(const f of rec.fixtures){
-        const e=on ? 2.85*f.base*dim : 0.0;
-        f.panel.material.emissiveIntensity=e;
+        const e=on ? 3.4*f.base*dim : 0.0;
+        if(f.mat) f.mat.emissiveIntensity=e;
+        else f.panel.material.emissiveIntensity=e;
         f.panel.visible=true; f.housing.visible=true;
       }
-      for(const L of rec.pointLights) L.intensity=on ? 1.22*dim : 0;
+      for(const L of rec.pointLights) L.intensity=on ? 2.35*dim : 0;
     }
     for(const L of this.ambientLights){
-      if(L.isHemisphereLight) L.intensity = on ? 1.48*dim : 0.065;
-      else L.intensity = on ? 0.64*dim : 0.022;
+      if(L.isHemisphereLight) L.intensity = on ? 0.22*dim : 0.04;
+      else L.intensity = on ? 0.08*dim : 0.015;
     }
   },
   startBlackout(){
@@ -506,7 +542,7 @@ const Level1 = {
   endBlackout(){
     this.blackoutState='cooldown'; this.blackoutCooldown=60+this.rngFor(this.blackoutCycle,7,334)()*30;
     this.setFixtureState(true,1);
-    if(scene){ scene.fog=null; scene.background && scene.background.setHex(0x202321); }
+    if(scene){ scene.fog=new THREE.Fog(0x1a1c1e,18,72); scene.background && scene.background.setHex(0x1a1c1e); }
   },
   updateBlackout(dt){
     this.levelTime+=dt;
@@ -545,7 +581,7 @@ const Level1 = {
     if(!CameraRig.camera) return;
     let inside=false;
     for(const p of this.puddles){ const dx=Player.position.x-p.x,dz=Player.position.z-p.z; if(dx*dx+dz*dz<=p.r*p.r){inside=true;break;} }
-    const base=(this.blackoutState==='flicker'||this.blackoutState==='outage')?18:320;
+    const base=(this.blackoutState==='flicker'||this.blackoutState==='outage')?18:160;
     const target=inside ? base*0.85 : base;
     if(Math.abs(CameraRig.camera.far-target)>0.5){ CameraRig.camera.far+=(target-CameraRig.camera.far)*0.35; CameraRig.camera.updateProjectionMatrix(); }
   },
@@ -672,10 +708,10 @@ const Level1 = {
     // level does not leave stale pickups behind.
     if(PickupSystem.group && scene) scene.remove(PickupSystem.group);
     PickupSystem.group=new THREE.Group(); PickupSystem.group.name='Level1_Pickups'; scene.add(PickupSystem.group);
-    const hemi=new THREE.HemisphereLight(0xe9f1f5,0x2b2e2d,1.48);
-    const amb=new THREE.AmbientLight(0xc2c9cc,0.64); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
-    scene.fog=null; if(scene.background) scene.background.setHex(0x202321);
-    if(CameraRig.camera){ CameraRig.camera.far=320; CameraRig.camera.updateProjectionMatrix(); }
+    const hemi=new THREE.HemisphereLight(0xc5ccd2,0x1a1c1e,0.22);
+    const amb=new THREE.AmbientLight(0x9aa0a6,0.08); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
+    scene.fog=new THREE.Fog(0x1a1c1e,18,72); if(scene.background) scene.background.setHex(0x1a1c1e);
+    if(CameraRig.camera){ CameraRig.camera.far=160; CameraRig.camera.updateProjectionMatrix(); }
     this.lastMCX=999999; this.lastMCZ=999999; this.stream(true); this.placeExit();
   },
   enter(seed,elevatorState){
@@ -701,7 +737,7 @@ const Level1 = {
   update(dt){
     if(!this.active) return;
     if(this.blackoutState!=='flicker' && this.blackoutState!=='outage'){
-      if(scene) scene.fog=null;
+      if(scene && !scene.fog) scene.fog=new THREE.Fog(0x1a1c1e,18,72);
       const darkFog=document.getElementById('dark-fog');
       if(darkFog) darkFog.style.opacity='0';
     }
