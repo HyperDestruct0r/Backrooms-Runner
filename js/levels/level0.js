@@ -820,7 +820,18 @@ const DebugPath = {
       if (this.line.geometry) this.line.geometry.dispose();
       this.line = null;
     }
-    if (!this.visible || !Level.tiles) return;
+    if (!this.visible) return;
+    if (GameState.level === 1 && typeof Level1 !== "undefined" && Level1.exitPosition) {
+      const pts = [
+        new THREE.Vector3(Player.position.x, 0.35, Player.position.z),
+        Level1.exitPosition.clone().setY(0.28)
+      ];
+      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      this.line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffc46a }));
+      if (scene) scene.add(this.line);
+      return;
+    }
+    if (!Level.tiles) return;
     const T = CONFIG.tile;
     const sx = Math.floor(Player.position.x / T);
     const sz = Math.floor(Player.position.z / T);
@@ -1399,6 +1410,10 @@ const Level = {
   startPos: new THREE.Vector3(2, 0, 2),
   group: null,
   darkFogGroup: null,
+  chunks: new Map(),
+  chunkTiles: 24,
+  streamRadius: 3,
+  lastChunk: "",
   worldMin: new THREE.Vector3(),
   worldMax: new THREE.Vector3(),
 
@@ -1473,6 +1488,8 @@ const Level = {
     }
     this.group = null;
     this.darkFogGroup = null;
+    this.chunks = new Map();
+    this.lastChunk = "";
     this.colliders.length = 0;
     this.triggers.length = 0;
     Stairwell.reset();
@@ -1579,419 +1596,133 @@ const Level = {
   buildMeshes(scene) {
     this.group = new THREE.Group();
     this.group.name = "LevelMeshes";
-    const T = CONFIG.tile;
-    const H = CONFIG.wallH;
-
-    // One floor and one ceiling covering the playable bounds (few draw calls)
-    const worldW = this.cols * T;
-    const worldD = this.rows * T;
-    const floorMap = Materials.carpet.map.clone();
-    floorMap.repeat.set(worldW / 2, worldD / 2);
-    floorMap.needsUpdate = true;
-    const floorMat = Materials.carpet.clone();
-    floorMat.map = floorMap;
-    const addFloorRect = (minx, minz, maxx, maxz) => {
-      const w = maxx - minx, d = maxz - minz;
-      if (w < 0.05 || d < 0.05) return;
-      const geo = new THREE.PlaneGeometry(w, d);
-      const mesh = new THREE.Mesh(geo, floorMat);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set((minx + maxx) * 0.5, 0, (minz + maxz) * 0.5);
-      this.group.add(mesh);
-    };
-    const holes = Stairwell.exits.map((st) => st.hole).filter(Boolean);
-    if (!holes.length) {
-      addFloorRect(0, 0, worldW, worldD);
-    } else {
-      const zCuts = [0, worldD];
-      for (let i = 0; i < holes.length; i++) {
-        zCuts.push(Math.max(0, holes[i].minz), Math.min(worldD, holes[i].maxz));
-      }
-      zCuts.sort((a, b) => a - b);
-      const uniqueZ = [];
-      for (let i = 0; i < zCuts.length; i++) {
-        if (!uniqueZ.length || Math.abs(uniqueZ[uniqueZ.length - 1] - zCuts[i]) > 0.001) uniqueZ.push(zCuts[i]);
-      }
-      for (let zi = 0; zi < uniqueZ.length - 1; zi++) {
-        const z0 = uniqueZ[zi], z1 = uniqueZ[zi + 1];
-        const midZ = (z0 + z1) * 0.5;
-        const active = holes.filter((h) => midZ >= h.minz && midZ <= h.maxz);
-        const xCuts = [0, worldW];
-        for (let i = 0; i < active.length; i++) {
-          xCuts.push(Math.max(0, active[i].minx), Math.min(worldW, active[i].maxx));
-        }
-        xCuts.sort((a, b) => a - b);
-        const uniqueX = [];
-        for (let i = 0; i < xCuts.length; i++) {
-          if (!uniqueX.length || Math.abs(uniqueX[uniqueX.length - 1] - xCuts[i]) > 0.001) uniqueX.push(xCuts[i]);
-        }
-        for (let xi = 0; xi < uniqueX.length - 1; xi++) {
-          const x0 = uniqueX[xi], x1 = uniqueX[xi + 1];
-          const insideHole = active.some((h) => midZ >= h.minz && midZ <= h.maxz && ((x0+x1)*0.5) >= h.minx && ((x0+x1)*0.5) <= h.maxx);
-          if (!insideHole && x1 - x0 > 0.05 && z1 - z0 > 0.05) addFloorRect(x0, z0, x1, z1);
-        }
-      }
-    }
-    // Ceiling, but with real vertical openings above the elevators.
-    // This prevents the exit from becoming a low-ceiling tunnel and lets
-    // the player descend naturally into the concrete structure.
-    const ceilMap = Materials.ceiling.map.clone();
-    ceilMap.repeat.set(worldW / 2, worldD / 2);
-    ceilMap.needsUpdate = true;
-    const ceilMat = Materials.ceiling.clone();
-    ceilMat.map = ceilMap;
-    const addCeilRect = (minx, minz, maxx, maxz) => {
-      const w = maxx - minx, d = maxz - minz;
-      if (w < 0.05 || d < 0.05) return;
-      const geo = new THREE.PlaneGeometry(w, d);
-      const mesh = new THREE.Mesh(geo, ceilMat);
-      mesh.rotation.x = Math.PI / 2;
-      mesh.position.set((minx + maxx) * 0.5, H, (minz + maxz) * 0.5);
-      this.group.add(mesh);
-    };
-    if (!holes.length) {
-      addCeilRect(0, 0, worldW, worldD);
-    } else {
-      const zCuts = [0, worldD];
-      for (let i = 0; i < holes.length; i++) {
-        zCuts.push(Math.max(0, holes[i].minz), Math.min(worldD, holes[i].maxz));
-      }
-      zCuts.sort((a, b) => a - b);
-      const uniqueZ = [];
-      for (let i = 0; i < zCuts.length; i++) {
-        if (!uniqueZ.length || Math.abs(uniqueZ[uniqueZ.length - 1] - zCuts[i]) > 0.001) uniqueZ.push(zCuts[i]);
-      }
-      for (let zi = 0; zi < uniqueZ.length - 1; zi++) {
-        const z0 = uniqueZ[zi], z1 = uniqueZ[zi + 1];
-        const midZ = (z0 + z1) * 0.5;
-        const active = holes.filter((h) => midZ >= h.minz && midZ <= h.maxz);
-        const xCuts = [0, worldW];
-        for (let i = 0; i < active.length; i++) {
-          xCuts.push(Math.max(0, active[i].minx), Math.min(worldW, active[i].maxx));
-        }
-        xCuts.sort((a, b) => a - b);
-        const uniqueX = [];
-        for (let i = 0; i < xCuts.length; i++) {
-          if (!uniqueX.length || Math.abs(uniqueX[uniqueX.length - 1] - xCuts[i]) > 0.001) uniqueX.push(xCuts[i]);
-        }
-        for (let xi = 0; xi < uniqueX.length - 1; xi++) {
-          const x0 = uniqueX[xi], x1 = uniqueX[xi + 1];
-          const insideHole = active.some((h) => midZ >= h.minz && midZ <= h.maxz && ((x0 + x1) * 0.5) >= h.minx && ((x0 + x1) * 0.5) <= h.maxx);
-          if (!insideHole && x1 - x0 > 0.05 && z1 - z0 > 0.05) addCeilRect(x0, z0, x1, z1);
-        }
-      }
-    }
-
-
-
-    // Wall meshes from same merged regions as colliders (skip envelope)
-    const used = [];
-    for (let z = 0; z < this.rows; z++) used.push(new Array(this.cols).fill(false));
+    this.chunks = new Map();
+    this.lastChunk = "";
     for (let z = 0; z < this.rows; z++) {
       for (let x = 0; x < this.cols; x++) {
-        if (used[z][x] || !this.isSolidTile(this.getTile(x, z))) continue;
-        let x2 = x;
-        while (x2 + 1 < this.cols && this.isSolidTile(this.getTile(x2 + 1, z)) && !used[z][x2 + 1]) x2++;
-        let z2 = z;
-        let canGrow = true;
-        while (canGrow && z2 + 1 < this.rows) {
-          for (let xx = x; xx <= x2; xx++) {
-            if (!this.isSolidTile(this.getTile(xx, z2 + 1)) || used[z2 + 1][xx]) { canGrow = false; break; }
-          }
-          if (canGrow) z2++;
-        }
-        for (let zz = z; zz <= z2; zz++) for (let xx = x; xx <= x2; xx++) used[zz][xx] = true;
-
-        const sx = (x2 - x + 1) * T;
-        const sz = (z2 - z + 1) * T;
-        // Level 0 walls remain normal Backrooms wallpaper all the way to the elevator.
-        // The elevator facade provides its own concrete surround; recoloring nearby
-        // procedural wall runs was causing large black-looking slabs beside the exit.
-        const wallMat = Materials.wall; // Uniform classic wallpaper; lighting alone controls visible brightness.
-        const mesh = new THREE.Mesh(makeWorldBox(sx, H, sz, 0.5), wallMat);
-        mesh.position.set((x + x2 + 1) * T * 0.5, H * 0.5, (z + z2 + 1) * T * 0.5);
-        this.group.add(mesh);
-
-        const trim = new THREE.Mesh(Geometries.box, Materials.wallTrim);
-        trim.scale.set(sx + 0.03, 0.11, sz + 0.03);
-        trim.position.set(mesh.position.x, 0.055, mesh.position.z);
-        this.group.add(trim);
-
-        const cap = new THREE.Mesh(Geometries.box, Materials.wallTrim);
-        cap.scale.set(sx + 0.03, 0.06, sz + 0.03);
-        cap.position.set(mesh.position.x, H - 0.03, mesh.position.z);
-        this.group.add(cap);
-      }
-    }
-
-    // Columns, frames, special pads
-    for (let z = 0; z < this.rows; z++) {
-      for (let x = 0; x < this.cols; x++) {
-        const t = this.getTile(x, z);
-        const w = this.tileToWorld(x, z);
-
-        if (t === TILE.COLUMN) {
-          const col = new THREE.Mesh(Geometries.column, Materials.column);
-          col.position.set(w.x, H * 0.5, w.z);
-          this.group.add(col);
-        }
-        if (t === TILE.START) {
+        if (this.getTile(x, z) === TILE.START) {
+          const w = this.tileToWorld(x, z);
           this.startPos.set(w.x, 0, w.z);
         }
       }
     }
-
-    // IMPORTANT PERFORMANCE FIX:
-    // Older revisions created a fluorescent fixture for roughly every
-    // third walkable tile. In a 48x40 module world that can mean thousands
-    // of THREE.Mesh objects, making startup appear frozen at 52%.
-    // Standard generation still uses one or a few fixtures per module.
-    // TEST BETA is different: its architectural mask is a continuous
-    // 250x250 tile field, so it needs its own sparse ceiling-light sampler.
-    // This samples actual walkable tiles, guaranteeing fixtures land on the
-    // generated carpet instead of relying on module coordinates that may be
-    // occupied by a wall.
+    scene.add(this.group);
+    this.stream(true);
+  },
+  buildChunk(cx, cz) {
+    const key = cx + "," + cz;
+    if (this.chunks.has(key) || !this.group) return;
+    const T = CONFIG.tile, H = CONFIG.wallH, S = this.chunkTiles;
+    const x0 = cx * S, z0 = cz * S;
+    const x1 = Math.min(this.cols, x0 + S), z1 = Math.min(this.rows, z0 + S);
+    if (x0 >= this.cols || z0 >= this.rows) return;
+    const g = new THREE.Group();
+    g.name = "L0_" + key;
+    const minx = x0 * T, minz = z0 * T, maxx = x1 * T, maxz = z1 * T;
+    const fw = maxx - minx, fd = maxz - minz;
+    if (fw > 0.05 && fd > 0.05) {
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), Materials.carpet);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.set((minx + maxx) * 0.5, 0, (minz + maxz) * 0.5);
+      g.add(floor);
+      const ceil = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), Materials.ceiling);
+      ceil.rotation.x = Math.PI / 2;
+      ceil.position.set((minx + maxx) * 0.5, H, (minz + maxz) * 0.5);
+      g.add(ceil);
+    }
+    const used = [];
+    for (let z = z0; z < z1; z++) used.push(new Array(x1 - x0).fill(false));
+    for (let z = z0; z < z1; z++) {
+      for (let x = x0; x < x1; x++) {
+        if (used[z - z0][x - x0] || !this.isSolidTile(this.getTile(x, z))) continue;
+        let x2 = x;
+        while (x2 + 1 < x1 && this.isSolidTile(this.getTile(x2 + 1, z)) && !used[z - z0][x2 + 1 - x0]) x2++;
+        let z2 = z, canGrow = true;
+        while (canGrow && z2 + 1 < z1) {
+          for (let xx = x; xx <= x2; xx++) {
+            if (!this.isSolidTile(this.getTile(xx, z2 + 1)) || used[z2 + 1 - z0][xx - x0]) { canGrow = false; break; }
+          }
+          if (canGrow) z2++;
+        }
+        for (let zz = z; zz <= z2; zz++) for (let xx = x; xx <= x2; xx++) used[zz - z0][xx - x0] = true;
+        const sx = (x2 - x + 1) * T, sz = (z2 - z + 1) * T;
+        const mesh = new THREE.Mesh(makeWorldBox(sx, H, sz, 0.5), Materials.wall);
+        mesh.position.set((x + x2 + 1) * T * 0.5, H * 0.5, (z + z2 + 1) * T * 0.5);
+        g.add(mesh);
+      }
+    }
+    const lights = [];
+    for (let z = z0; z < z1; z++) {
+      for (let x = x0; x < x1; x++) {
+        if (this.getTile(x, z) === TILE.COLUMN) {
+          const w = this.tileToWorld(x, z);
+          const col = new THREE.Mesh(Geometries.column, Materials.column);
+          col.position.set(w.x, H * 0.5, w.z);
+          g.add(col);
+        }
+      }
+    }
     if (LevelGenerator.last && LevelGenerator.last.beta) {
-      const beta = LevelGenerator.last;
-      const arch = beta.architectural || {};
-      const zones = arch.zones || [];
-      const usedBetaLights = [];
-      const spacing = 4; // Integer step so getTile always receives whole tile indices.
-      const maxFixtures = 340; // More visible fixtures; dynamic point lights remain separately capped.
-
-      function nearestBetaZone(tx, tz) {
-        let best = null, bd = Infinity;
-        for (let zi = 0; zi < zones.length; zi++) {
-          const z = zones[zi];
-          const dx = tx - z.cx, dz = tz - z.cy;
-          const d = dx * dx + dz * dz;
-          if (d < bd) { bd = d; best = z; }
-        }
-        return best;
-      }
-
-      const betaCandidates = [];
-      const spawnLights = [];
-      for (let z = 4; z < this.rows - 4; z += spacing) {
-        for (let x = 4; x < this.cols - 4; x += spacing) {
-          const tx = x | 0, tz = z | 0;
-          if (this.getTile(tx, tz) === TILE.WALL || this.getTile(tx, tz) === TILE.COLUMN) continue;
-          const wp = this.tileToWorld(tx, tz);
-          const rec = { x: tx, z: tz, wp, d: (wp.x-this.startPos.x)**2 + (wp.z-this.startPos.z)**2 };
-          betaCandidates.push(rec);
-          if (rec.d < 28 * 28) spawnLights.push(rec);
+      for (let z = z0 + 2; z < z1 - 1; z += 4) {
+        for (let x = x0 + 2; x < x1 - 1; x += 4) {
+          if (this.getTile(x, z) === TILE.WALL || this.getTile(x, z) === TILE.COLUMN) continue;
+          const w = this.tileToWorld(x, z);
+          const unit = LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, true, 1.16);
+          if (unit) lights.push(unit);
         }
       }
-      spawnLights.sort((a, b) => a.d - b.d);
-      // Keep a guaranteed ring of lights around spawn, then spread the rest.
-      // A full shuffle was leaving the start in a black gap.
-      const ordered = spawnLights.slice(0, 18);
-      for (let i = betaCandidates.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const temp = betaCandidates[i]; betaCandidates[i] = betaCandidates[j]; betaCandidates[j] = temp;
-      }
-      for (let i = 0; i < betaCandidates.length; i++) ordered.push(betaCandidates[i]);
-      let betaDynamicLights = 0;
-      const maxBetaDynamicLights = 90;
-      for (let bi = 0; bi < ordered.length && usedBetaLights.length < maxFixtures; bi++) {
-          const x = ordered[bi].x, z = ordered[bi].z;
-          const zone = nearestBetaZone(x, z);
-          if (zone && zone.type && zone.type.name === "alcoves" && ((x + z) % 4 === 0)) {
-            // BRIGHT zone: keep the denser sampling.
-          }
-
-          let duplicate = false;
-          for (let i = 0; i < usedBetaLights.length; i++) {
-            const dx = usedBetaLights[i][0] - x, dz = usedBetaLights[i][1] - z;
-            if (dx * dx + dz * dz < 9) { duplicate = true; break; }
-          }
-          if (duplicate) continue;
-          usedBetaLights.push([x, z]);
-
-          const w = ordered[bi].wp;
-          const bright = zone && zone.type && zone.type.name === "alcoves";
-          const nearSpawn = ordered[bi].d < 28 * 28;
-          // Most fixtures receive a real point light. Spawn always does.
-          const withPoint = nearSpawn || (betaDynamicLights < maxBetaDynamicLights && Math.random() >= 0.12);
-          if (withPoint) betaDynamicLights++;
-          LightingSystem.addFluorescent(
-            scene, w.x, H - 0.06, w.z,
-            withPoint,
-            bright ? 1.42 : 1.16
-          );
-      }
-    } else {
-      // Standard module-based lighting.
+    } else if (typeof MapGraph !== "undefined") {
       for (let ni = 0; ni < MapGraph.nodes.length; ni++) {
         const mod = MapGraph.nodes[ni];
-        if (!mod) continue;
-        const profile = mod.lightProfile || "NORMAL";
-        if (profile === "DARK") continue;
-
-        const centerX = Math.floor(mod.gx + mod.w * 0.5) * LevelGenerator.CELL + 2;
-        const centerZ = Math.floor(mod.gz + mod.h * 0.5) * LevelGenerator.CELL + 2;
-        const candidates = [];
-
-        candidates.push([centerX, centerZ]);
-        if (profile === "BRIGHT" && (mod.w * mod.h >= 2)) {
-          candidates.push([mod.gx * LevelGenerator.CELL + 2, mod.gz * LevelGenerator.CELL + 2]);
-          if (mod.w * mod.h >= 4) {
-            candidates.push([(mod.gx + mod.w - 1) * LevelGenerator.CELL + 3,
-                             (mod.gz + mod.h - 1) * LevelGenerator.CELL + 3]);
-          }
-        }
-
-        const usedLightTiles = [];
-        for (let ci = 0; ci < candidates.length; ci++) {
-          const tx = candidates[ci][0], tz = candidates[ci][1];
-          if (!this.inBounds(tx, tz) || this.getTile(tx, tz) === TILE.WALL || this.getTile(tx, tz) === TILE.COLUMN) continue;
-          let duplicate = false;
-          for (let ui = 0; ui < usedLightTiles.length; ui++) {
-            if (usedLightTiles[ui][0] === tx && usedLightTiles[ui][1] === tz) { duplicate = true; break; }
-          }
-          if (duplicate) continue;
-          usedLightTiles.push([tx, tz]);
-          const w = this.tileToWorld(tx, tz);
-          const scale = profile === "BRIGHT" ? 1.42 : 1.16;
-          const withPoint = profile !== "DARK" && LightingSystem.lights.length < 120;
-          LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, scale);
-        }
+        if (!mod || mod.lightProfile === "DARK") continue;
+        const tx = Math.floor(mod.gx + mod.w * 0.5) * LevelGenerator.CELL + 2;
+        const tz = Math.floor(mod.gz + mod.h * 0.5) * LevelGenerator.CELL + 2;
+        if (tx < x0 || tx >= x1 || tz < z0 || tz >= z1) continue;
+        if (!this.inBounds(tx, tz) || this.getTile(tx, tz) === TILE.WALL) continue;
+        const w = this.tileToWorld(tx, tz);
+        const unit = LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, true, mod.lightProfile === "BRIGHT" ? 1.42 : 1.16);
+        if (unit) lights.push(unit);
       }
     }
-
-    // ------------------------------------------------------------------
-    // DARK FOG VOLUMES
-    // ------------------------------------------------------------------
-    // DARK modules are not just unlit rooms anymore. Each one gets a
-    // translucent fog volume so the darkness reads as a physical pocket
-    // of dense haze when viewed from outside. The material is deliberately
-    // subtle so walls remain visible through it. A weak side tint is added
-    // on connected sides that lead into a lit module, giving the fog a
-    // slight sense of illumination without adding expensive volumetric fog.
-    this.darkFogGroup = new THREE.Group();
-    this.darkFogGroup.name = "Level0DarkFog";
-
-    const darkFogMaterial = new THREE.MeshBasicMaterial({
-      color: 0x17191c,
-      transparent: true,
-      opacity: 0.23,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
-
-    const darkFogEdgeMaterial = new THREE.MeshBasicMaterial({
-      color: 0x2a2d30,
-      transparent: true,
-      opacity: 0.11,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
-
-    const fogGlowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xb5b0a0,
-      transparent: true,
-      opacity: 0.065,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
-
-    for (let ni = 0; ni < MapGraph.nodes.length; ni++) {
-      const mod = MapGraph.nodes[ni];
-      if (!mod || mod.lightProfile !== "DARK") continue;
-
-      const minX = mod.gx * LevelGenerator.CELL * T + 0.35;
-      const minZ = mod.gz * LevelGenerator.CELL * T + 0.35;
-      const width = Math.max(2, mod.w * LevelGenerator.CELL * T - 0.70);
-      const depth = Math.max(2, mod.h * LevelGenerator.CELL * T - 0.70);
-      const fogHeight = Math.max(2.8, H - 0.55);
-
-      // Main volume. Slightly inset from the walls so it feels like haze
-      // occupying the room rather than a black wall pasted over it.
-      const volume = new THREE.Mesh(
-        new THREE.BoxGeometry(width, fogHeight, depth),
-        darkFogMaterial
-      );
-      volume.position.set(minX + width * 0.5, 0.08 + fogHeight * 0.5, minZ + depth * 0.5);
-      this.darkFogGroup.add(volume);
-
-      // A larger, much weaker shell softens the visible boundary from
-      // outside the room.
-      const edge = new THREE.Mesh(
-        new THREE.BoxGeometry(width + 0.8, fogHeight + 0.35, depth + 0.8),
-        darkFogEdgeMaterial
-      );
-      edge.position.copy(volume.position);
-      edge.position.y += 0.20;
-      this.darkFogGroup.add(edge);
-
-      // Connected modules are effectively doorways. Put a very subtle
-      // lighter vertical sheet just inside the dark room on lit sides.
-      // This makes the fog closest to a fluorescent-lit room look a little
-      // less opaque on that side without turning the room bright.
-      for (let ci = 0; ci < mod.connections.length; ci++) {
-        const neighbor = MapGraph.nodes[mod.connections[ci]];
-        if (!neighbor || neighbor.lightProfile === "DARK") continue;
-
-        const dx = neighbor.gx - mod.gx;
-        const dz = neighbor.gz - mod.gz;
-        let glow;
-
-        if (Math.abs(dx) >= Math.abs(dz) && dx !== 0) {
-          const x = dx > 0 ? minX + width - 0.28 : minX + 0.28;
-          glow = new THREE.Mesh(new THREE.PlaneGeometry(depth * 0.72, fogHeight * 0.72), fogGlowMaterial);
-          glow.rotation.y = dx > 0 ? -Math.PI / 2 : Math.PI / 2;
-          glow.position.set(x, fogHeight * 0.52, minZ + depth * 0.5);
-        } else if (dz !== 0) {
-          const z = dz > 0 ? minZ + depth - 0.28 : minZ + 0.28;
-          glow = new THREE.Mesh(new THREE.PlaneGeometry(width * 0.72, fogHeight * 0.72), fogGlowMaterial);
-          glow.rotation.y = dz > 0 ? 0 : Math.PI;
-          glow.position.set(minX + width * 0.5, fogHeight * 0.52, z);
-        }
-
-        if (glow) this.darkFogGroup.add(glow);
-      }
-    }
-
-    scene.add(this.darkFogGroup);
-
-    // A small number of structural beams are placed per module instead of
-    // per tile. This preserves the industrial ceiling language without
-    // creating thousands of separate THREE.Mesh objects during startup.
-    for (let ni = 0; ni < MapGraph.nodes.length; ni++) {
-      const mod = MapGraph.nodes[ni];
-      if (!mod || mod.lightProfile === "DARK") continue;
-      const tx = Math.floor(mod.gx + mod.w * 0.5) * LevelGenerator.CELL + 2;
-      const tz = Math.floor(mod.gz + mod.h * 0.5) * LevelGenerator.CELL + 2;
-      if (!this.inBounds(tx, tz) || this.getTile(tx, tz) === TILE.WALL || this.getTile(tx, tz) === TILE.COLUMN) continue;
-      const w = this.tileToWorld(tx, tz);
-      if (Stairwell.containsWorld(w.x, w.z)) continue;
-      const beam = new THREE.Mesh(Geometries.beam, Materials.beam);
-      beam.scale.set(T * Math.min(4.2, Math.max(2.0, mod.w * 1.8)), 1, T * 0.28);
-      beam.position.set(w.x, H - 0.14, w.z);
-      this.group.add(beam);
-    }
-
-    // Rare anomaly props (no gameplay effect)
-    for (let i = 0; i < MapGraph.nodes.length; i++) {
-      const n = MapGraph.nodes[i];
-      if (n.anomaly !== "object" && n.anomaly !== "odd_door") continue;
-      const w = this.tileToWorld(n.gx * LevelGenerator.CELL + 3, n.gz * LevelGenerator.CELL + 3);
-      if (n.anomaly === "object") {
-        const box = new THREE.Mesh(Geometries.box, Materials.frame);
-        box.scale.set(0.7, 1.15, 0.45);
-        box.position.set(w.x, 0.58, w.z);
-        this.group.add(box);
-      } else {
-        const frame = new THREE.Mesh(Geometries.box, Materials.wallTrim);
-        frame.scale.set(1.6, 2.4, 0.12);
-        frame.position.set(w.x, 1.2, w.z);
-        this.group.add(frame);
-      }
-    }
-
-    scene.add(this.group);
+    this.group.add(g);
+    this.chunks.set(key, { group: g, lights });
   },
-
+  unloadChunk(key) {
+    const rec = this.chunks.get(key);
+    if (!rec) return;
+    if (rec.group && rec.group.parent) rec.group.parent.remove(rec.group);
+    if (rec.lights) {
+      for (const u of rec.lights) {
+        if (u.panel && u.panel.parent) u.panel.parent.remove(u.panel);
+        if (u.light && u.light.parent) u.light.parent.remove(u.light);
+        const li = LightingSystem.lights.indexOf(u.light);
+        if (li >= 0) LightingSystem.lights.splice(li, 1);
+        const ui = LightingSystem.units.indexOf(u);
+        if (ui >= 0) LightingSystem.units.splice(ui, 1);
+      }
+    }
+    this.chunks.delete(key);
+  },
+  stream(force) {
+    if (!this.group || !this.tiles || !this.tiles.length) return;
+    if (!force && GameState.level !== 0) return;
+    const S = this.chunkTiles, T = CONFIG.tile;
+    const px = (Player && Player.position) ? Player.position.x : this.startPos.x;
+    const pz = (Player && Player.position) ? Player.position.z : this.startPos.z;
+    const cx = Math.floor(px / (S * T));
+    const cz = Math.floor(pz / (S * T));
+    const key = cx + "," + cz;
+    if (!force && key === this.lastChunk) return;
+    this.lastChunk = key;
+    for (let dz = -this.streamRadius; dz <= this.streamRadius; dz++) {
+      for (let dx = -this.streamRadius; dx <= this.streamRadius; dx++) this.buildChunk(cx + dx, cz + dz);
+    }
+    for (const k of Array.from(this.chunks.keys())) {
+      const parts = k.split(",");
+      const dx = (parts[0] | 0) - cx, dz = (parts[1] | 0) - cz;
+      if (Math.max(Math.abs(dx), Math.abs(dz)) > this.streamRadius) this.unloadChunk(k);
+    }
+  },
   buildHandcrafted(sceneRef) {
     this.buildProcedural(sceneRef, GameState.seed || 483921);
   },
