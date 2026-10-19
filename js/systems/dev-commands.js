@@ -1,5 +1,71 @@
 "use strict";
 
+const DevMap = {
+  visible: false,
+  timer: 0,
+  show() {
+    this.visible = true;
+    this.timer = 0;
+    const el = document.getElementById("dev-map");
+    if (el) el.style.display = "block";
+    this.draw();
+    if (typeof HUD !== "undefined") HUD.toast("MAP ON");
+  },
+  hide() {
+    this.visible = false;
+    const el = document.getElementById("dev-map");
+    if (el) el.style.display = "none";
+    if (typeof HUD !== "undefined") HUD.toast("MAP OFF");
+  },
+  update(dt) {
+    if (!this.visible) return;
+    this.timer -= dt;
+    if (this.timer <= 0) { this.timer = 0.5; this.draw(); }
+  },
+  draw() {
+    const canvas = document.getElementById("dev-map");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const size = 250, span = 500, scale = size / span;
+    const px = Player.position.x, pz = Player.position.z;
+    ctx.fillStyle = "#12100c";
+    ctx.fillRect(0, 0, size, size);
+    const toX = (x) => (x - px + span * 0.5) * scale;
+    const toY = (z) => (z - pz + span * 0.5) * scale;
+    if (GameState.level === 0 && Level.tiles && Level.tiles.length) {
+      const T = CONFIG.tile;
+      const x0 = Math.max(0, Math.floor((px - span * 0.5) / T));
+      const x1 = Math.min(Level.cols, Math.ceil((px + span * 0.5) / T));
+      const z0 = Math.max(0, Math.floor((pz - span * 0.5) / T));
+      const z1 = Math.min(Level.rows, Math.ceil((pz + span * 0.5) / T));
+      for (let z = z0; z < z1; z++) {
+        for (let x = x0; x < x1; x++) {
+          const t = Level.getTile(x, z);
+          ctx.fillStyle = (t === TILE.WALL || t === TILE.COLUMN) ? "#3a3424" : "#8a7a4a";
+          ctx.fillRect(toX(x * T), toY(z * T), Math.max(1, T * scale), Math.max(1, T * scale));
+        }
+      }
+    } else if (GameState.level === 1 && typeof Level1 !== "undefined") {
+      ctx.fillStyle = "#2a2c2e";
+      for (const rec of Level1.chunks.values()) {
+        const S = Level1.microSize || 60;
+        ctx.fillRect(toX(rec.cx * S), toY(rec.cz * S), S * scale, S * scale);
+      }
+    }
+    let exit = null;
+    if (GameState.level === 1 && Level1.exitPosition) exit = Level1.exitPosition;
+    else if (Stairwell.exits && Stairwell.exits.length) exit = Stairwell.exits[0].origin;
+    if (exit) {
+      ctx.fillStyle = "#7ec8ff";
+      ctx.fillRect(toX(exit.x) - 2, toY(exit.z) - 2, 5, 5);
+    }
+    ctx.fillStyle = "#efe6b0";
+    ctx.beginPath();
+    ctx.arc(size * 0.5, size * 0.5, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+};
+
 const DevCommands = {
   open: false,
   last: null,
@@ -98,6 +164,9 @@ const DevCommands = {
       if (cmd === "blackout") return this.blackout();
       if (cmd === "clear") return this.clearInv();
       if (cmd === "undo") return this.undoLast();
+      if (cmd === "showmap") return DevMap.show();
+      if (cmd === "hidemap") return DevMap.hide();
+      if (cmd === "exit") return this.exitInfo();
       this.toast("UNKNOWN COMMAND · TYPE HELP");
     } catch (err) {
       console.error(err);
@@ -106,7 +175,7 @@ const DevCommands = {
   },
 
   help() {
-    this.toast("LEVEL SPAWN DESPAWN GIVE HP STAMINA SANITY GOD KILL TP SEED POS TIMESCALE BLACKOUT CLEAR UNDO");
+    this.toast("LEVEL SPAWN DESPAWN GIVE HP STAMINA SANITY GOD KILL TP SEED POS TIMESCALE BLACKOUT CLEAR UNDO SHOWMAP HIDEMAP EXIT");
   },
 
   level(args) {
@@ -264,6 +333,25 @@ const DevCommands = {
     if (GameState.level === 1) this.goLevel1();
     else this.goLevel0();
     this.toast("SEEDED " + (GameState.seed >>> 0));
+  },
+  exitInfo() {
+    let target = null;
+    if (GameState.level === 1 && typeof Level1 !== "undefined" && Level1.exitPosition) target = Level1.exitPosition;
+    else if (typeof Stairwell !== "undefined" && Stairwell.exits && Stairwell.exits.length) {
+      let best = Stairwell.exits[0].origin, bestD = Infinity;
+      for (const st of Stairwell.exits) {
+        const d = Math.hypot(st.origin.x - Player.position.x, st.origin.z - Player.position.z);
+        if (d < bestD) { best = st.origin; bestD = d; }
+      }
+      target = best;
+    }
+    if (!target) return this.toast("NO EXIT");
+    const dx = target.x - Player.position.x, dz = target.z - Player.position.z;
+    const dist = Math.hypot(dx, dz);
+    const ang = Math.atan2(dx, dz) * 180 / Math.PI;
+    const dirs = ["N","NE","E","SE","S","SW","W","NW"];
+    const dir = dirs[Math.round(((ang % 360) + 360) % 360 / 45) % 8];
+    this.toast("EXIT " + dist.toFixed(0) + " M " + dir);
   },
   pos() {
     this.toast("X " + Player.position.x.toFixed(1) + "  Z " + Player.position.z.toFixed(1));
