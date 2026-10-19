@@ -124,6 +124,16 @@ const PassC = {
     g.add(root);
   },
 
+  placeWorldCrate(g, x, z, id) {
+    const root = new THREE.Group();
+    root.position.set(x, 0, z);
+    this.addBox(root, Materials.crate, 0, 0.43, 0, 0.82, 0.86, 0.82);
+    this.addBox(root, Materials.crateDark, 0, 0.45, -0.425, 0.68, 0.07, 0.05);
+    this.addBox(root, Materials.crateDark, -0.425, 0.45, 0, 0.05, 0.07, 0.68);
+    this.addBox(root, Materials.crateDark, 0.425, 0.45, 0, 0.05, 0.07, 0.68);
+    g.add(root);
+    this.crates.push({ id, tx: 0, tz: 0, x, z, mesh: root, opened: false });
+  },
   placeCrate(g, tx, tz, id) {
     const w = Level.tileToWorld(tx, tz);
     const root = new THREE.Group();
@@ -150,10 +160,11 @@ const PassC = {
   rollCrate(crate) {
     const rng = mulberry32((this.seed ^ ((crate.tx * 73856093) >>> 0) ^ ((crate.tz * 19349663) >>> 0)) >>> 0);
     const found = [];
-    if (rng() < CONFIG.passC.almondSpawnChance) found.push({ id: "almondWater", name: "Almond Water", qty: 1 });
-    let mushrooms = 0;
-    for (let i = 0; i < CONFIG.passC.mushroomAttempts; i++) if (rng() < CONFIG.passC.mushroomChance) mushrooms++;
-    if (mushrooms > 0) found.push({ id: "mushroom", name: "Mushrooms", qty: mushrooms });
+    const almondChance = 0.10 + rng() * 0.20;
+    const energyChance = 0.10 + rng() * 0.20;
+    if (rng() < almondChance) found.push({ id: "almondWater", name: "Almond Water", qty: 1 + ((rng() < 0.35) ? 1 : 0) });
+    if (rng() < energyChance) found.push({ id: "energyBar", name: "Energy Bar", qty: 1 + ((rng() < 0.35) ? 1 : 0) });
+    for (const item of found) item.qty = Math.min(CONFIG.passC.crateItemCap || 2, item.qty);
     return found;
   },
 
