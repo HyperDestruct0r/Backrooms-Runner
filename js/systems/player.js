@@ -596,47 +596,84 @@ const Flashlight = {
    INVENTORY / PICKUPS / HUD
    ------------------------------------------------------------------ */
 const Inventory = {
-  items: Object.create(null),
+  slots: 18,
+  stacks: new Array(18).fill(null),
+  selected: 0,
   defs: {
-    almondWater: { name: "Almond Water", max: null, consumeSanity: 10 }
+    almondWater: { name: "Almond Water", short: "AW", max: 5, use: "sanity" },
+    energyBar: { name: "Energy Bar", short: "EB", max: 5, use: "stamina" }
   },
+  init() {
+    this.stacks = new Array(this.slots).fill(null);
+  },
+  def(id) { return this.defs[id] || null; },
   addItem(id, amount) {
-    const n = amount == null ? 1 : amount;
-    const cap = id === "almondWater" ? CONFIG.items.maxCarry : 99;
-    const have = this.getItemCount(id);
-    if (have >= cap) return 0;
-    const add = Math.min(n, cap - have);
-    this.items[id] = have + add;
+    const def = this.def(id);
+    if (!def) return 0;
+    let left = amount == null ? 1 : amount;
+    let added = 0;
+    for (let i = 0; i < this.slots && left > 0; i++) {
+      const s = this.stacks[i];
+      if (!s || s.id !== id || s.count >= def.max) continue;
+      const room = def.max - s.count;
+      const take = Math.min(room, left);
+      s.count += take; left -= take; added += take;
+    }
+    for (let i = 0; i < this.slots && left > 0; i++) {
+      if (this.stacks[i]) continue;
+      const take = Math.min(def.max, left);
+      this.stacks[i] = { id, count: take };
+      left -= take; added += take;
+    }
     this.refresh();
-    return add;
+    return added;
   },
   removeItem(id, amount) {
-    const n = amount == null ? 1 : amount;
-    const have = this.getItemCount(id);
-    const take = Math.min(n, have);
-    this.items[id] = have - take;
+    let left = amount == null ? 1 : amount;
+    let taken = 0;
+    for (let i = this.slots - 1; i >= 0 && left > 0; i--) {
+      const s = this.stacks[i];
+      if (!s || s.id !== id) continue;
+      const take = Math.min(s.count, left);
+      s.count -= take; left -= take; taken += take;
+      if (s.count <= 0) this.stacks[i] = null;
+    }
     this.refresh();
-    return take;
+    return taken;
   },
   hasItem(id) { return this.getItemCount(id) > 0; },
-  getItemCount(id) { return this.items[id] | 0; },
+  getItemCount(id) {
+    let n = 0;
+    for (const s of this.stacks) if (s && s.id === id) n += s.count;
+    return n;
+  },
   reset() {
-    this.items = Object.create(null);
+    this.stacks = new Array(this.slots).fill(null);
+    this.selected = 0;
     this.refresh();
   },
   use(id) {
-    if (id !== "almondWater") return false;
-    if (!this.hasItem("almondWater")) {
-      HUD.toast("No Almond Water");
-      AudioSystem._tone && AudioSystem._tone(90, "sine", 0.05, 0.02, "events");
+    const def = this.def(id);
+    if (!def || !this.hasItem(id)) {
+      HUD.toast(def ? "No " + def.name : "Empty");
       return false;
     }
-    this.removeItem("almondWater", 1);
-    Player.addSanity(CONFIG.sanity.restoreDrink);
-    HUD.toast("+" + CONFIG.sanity.restoreDrink + " sanity");
+    this.removeItem(id, 1);
+    if (def.use === "sanity") {
+      Player.addSanity(CONFIG.sanity.restoreDrink);
+      HUD.toast("+" + CONFIG.sanity.restoreDrink + " SANITY");
+    } else if (def.use === "stamina") {
+      Player.stamina = Math.min(CONFIG.stamina.max, Player.stamina + 25);
+      Player.stamAcc = 0;
+      HUD.toast("+25 STAMINA");
+    }
     AudioSystem._tone && AudioSystem._tone(220, "sine", 0.12, 0.03, "events");
-    AudioSystem._noise && AudioSystem._noise(0.1, 0.02, "events", null, 200, 900);
     return true;
+  },
+  useSelected() {
+    const s = this.stacks[this.selected];
+    if (!s) { HUD.toast("EMPTY SLOT"); return false; }
+    return this.use(s.id);
   },
   toggle() {
     GameState.inventoryOpen = !GameState.inventoryOpen;
@@ -668,22 +705,19 @@ const Inventory = {
   refresh() {
     const list = document.getElementById("inv-list");
     if (!list) return;
-    const n = this.getItemCount("almondWater");
     list.innerHTML = "";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = "Almond Water   ×" + n + " / " + CONFIG.items.maxCarry;
-    btn.addEventListener("click", () => this.use("almondWater"));
-    list.appendChild(btn);
-    const energyNote = document.createElement("div");
-    energyNote.style.opacity = "0.65";
-    energyNote.textContent = "Energy Bars: E pickup restores +25 stamina";
-    list.appendChild(energyNote);
-    if (n === 0) {
-      const empty = document.createElement("div");
-      empty.style.opacity = "0.55";
-      empty.textContent = "Empty";
-      list.appendChild(empty);
+    for (let i = 0; i < this.slots; i++) {
+      const s = this.stacks[i];
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "inv-slot" + (i === this.selected ? " selected" : "");
+      btn.title = s ? (this.def(s.id).name + " ×" + s.count) : "Empty";
+      if (s) {
+        const def = this.def(s.id);
+        btn.innerHTML = '<span class="mark">' + def.short + '</span><span class="count">' + s.count + '</span>';
+      }
+      btn.addEventListener("click", () => { this.selected = i; this.useSelected(); });
+      list.appendChild(btn);
     }
   }
 };
@@ -822,15 +856,12 @@ const PickupSystem = {
   tryPickup() {
     const p=this.nearest(); if(!p) return false;
     if(p.kind==='energy'){
-      if(Player.stamina >= CONFIG.stamina.max){ HUD.toast('Energy already full'); return false; }
-      Player.stamina=Math.min(CONFIG.stamina.max,Player.stamina+25);
-      Player.stamAcc=0; Player.stamDelay=0; Player.stamRegenOn=false;
+      if(!Inventory.addItem('energyBar',1)){ HUD.toast('Inventory Full'); return false; }
       p.taken=true; if(p.mesh)p.mesh.visible=false;
-      HUD.toast('+25 stamina');
+      HUD.toast('Energy Bar ×'+Inventory.getItemCount('energyBar'));
       AudioSystem._tone&&AudioSystem._tone(420,'sine',0.10,0.025,'events');
       return true;
     }
-    if(Inventory.getItemCount('almondWater') >= CONFIG.items.maxCarry){HUD.toast('Inventory Full');return false;}
     if(!Inventory.addItem('almondWater',1)){HUD.toast('Inventory Full');return false;}
     p.taken=true; if(p.mesh)p.mesh.visible=false;
     HUD.toast('Almond Water ×'+Inventory.getItemCount('almondWater'));
@@ -912,7 +943,7 @@ const HUD = {
     const near = PickupSystem.nearest && PickupSystem.nearest();
     if (near && !GameState.inventoryOpen && this.toastT <= 0) {
       if (this.toastEl) {
-        this.toastEl.textContent = near.kind === "energy" ? "E  Energy Bar (+25 stamina)" : "E  Almond Water";
+        this.toastEl.textContent = near.kind === "energy" ? "E  Energy Bar" : "E  Almond Water";
         this.toastEl.style.opacity = "0.7";
       }
     }
