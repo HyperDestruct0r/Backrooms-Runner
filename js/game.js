@@ -20,6 +20,34 @@ const Game = {
     if (pct) pct.textContent = Math.round(progress) + "%";
     if (st) st.textContent = status;
   },
+  _loadingTips: [
+    "Some corridors may look familiar. They are not.",
+    "The layout is generated for this run.",
+    "Fluorescent lights fail. The rooms do not.",
+    "If a hallway feels wrong, it probably is.",
+    "The exit is real. The distance is not honest."
+  ],
+  _betaTips: [
+    "Test Beta uses the architectural generator. This can take a moment.",
+    "A long pause here means the maze is still being built.",
+    "Experimental layouts can be tighter and less predictable.",
+    "The seed stays with this run if you need to report a layout."
+  ],
+  _startLoadingTips(beta) {
+    this._stopLoadingTips();
+    const tips = beta ? this._betaTips : this._loadingTips;
+    const el = document.getElementById("game-load-tip");
+    if (!el) return;
+    let i = 0;
+    el.textContent = tips[0];
+    this._tipTimer = setInterval(() => {
+      i = (i + 1) % tips.length;
+      el.textContent = tips[i];
+    }, 3200);
+  },
+  _stopLoadingTips() {
+    if (this._tipTimer) { clearInterval(this._tipTimer); this._tipTimer = null; }
+  },
   _newRunSeed() {
     return (typeof SeedSystem !== "undefined")
       ? SeedSystem.random()
@@ -123,6 +151,8 @@ const Game = {
   async init() {
     const boot = document.getElementById("boot-loading");
     this._setBoot(4, "INITIALIZING RENDERER...");
+    const bootTip = document.getElementById("boot-tip");
+    if (bootTip) bootTip.textContent = "Some corridors may look familiar. They are not.";
     await this._nextFrame();
     initAssets();
     this._setBoot(12, "LOADING MATERIALS...");
@@ -230,10 +260,17 @@ const Game = {
     if (startOverlay) startOverlay.style.display = "none";
     setPauseOverlay(false);
     if (loadOverlay) loadOverlay.style.display = "flex";
+    const title = document.getElementById("game-load-title");
+    const subtitle = document.getElementById("game-load-subtitle");
+    const seedLine = document.getElementById("game-load-seed");
+    if (title) title.textContent = testBeta ? "TEST BETA" : (tutorial ? "TUTORIAL" : "ENTERING LEVEL 0");
+    if (subtitle) subtitle.textContent = testBeta ? "ARCHITECTURAL GENERATOR" : "PLEASE WAIT";
+    if (seedLine) seedLine.textContent = "SEED —";
+    this._startLoadingTips(testBeta);
     this._setGameLoading(8, "LOADING PLAYER STATE...");
     await this._nextFrame();
     if (runId !== GameState.runId || GameState.phase !== "loading") return;
-    this._setGameLoading(65, "INITIALIZING RUN...");
+    this._setGameLoading(28, testBeta ? "CHOOSING SEED..." : "INITIALIZING RUN...");
     await this._nextFrame();
     if (runId !== GameState.runId || GameState.phase !== "loading") return;
     document.getElementById("complete-overlay").style.display = "none";
@@ -245,7 +282,10 @@ const Game = {
     const selectedSeed = tutorial
       ? 13371337
       : (isCustom ? (customSeed >>> 0) : this._newRunSeed());
-    if (testBeta) this._setGameLoading(65, "INITIALIZING TEST BETA...");
+    if (seedLine) seedLine.textContent = "SEED " + selectedSeed;
+    this._setGameLoading(42, testBeta ? "BUILDING ARCHITECTURAL MAZE..." : "GENERATING LEVEL 0...");
+    await this._nextFrame();
+    if (runId !== GameState.runId || GameState.phase !== "loading") return;
 
     try {
       GameState.testBeta = testBeta;
@@ -258,18 +298,21 @@ const Game = {
       // who cannot access browser developer tools (e.g. Chromebook).
       if (testBeta) {
         const message = (err && err.message) ? err.message : String(err || "Unknown error");
-        const startSeed = document.getElementById("start-seed");
-        if (startSeed) startSeed.textContent = "TEST BETA ERROR: " + message.slice(0, 140);
         if (typeof HUD !== "undefined" && HUD.toast) HUD.toast("TEST BETA FAILED: " + message.slice(0, 110));
+        console.error("Test Beta failed:", err);
       }
       GameState.phase = "start";
       GameState.testBeta = false;
       const betaBanner = document.getElementById("beta-run-warning");
       if (betaBanner) betaBanner.style.display = "none";
       if (loadOverlay) loadOverlay.style.display = "none";
+      this._stopLoadingTips();
 
       if (typeof MenuSystem !== "undefined") {
-        if (isCustom) {
+        if (testBeta) {
+          MenuSystem.showPage("play-select");
+          MenuSystem.showSeedError("Test Beta failed: " + ((err && err.message) ? err.message : String(err || "unknown error")).slice(0, 160));
+        } else if (isCustom) {
           MenuSystem.showPage("play-select");
           MenuSystem.showSeedError(
             "Seed " + selectedSeed + " failed to generate a valid Level 0. Try another seed."
@@ -301,23 +344,25 @@ const Game = {
     Flashlight.reset();
     GameState.exitReached = false;
     GameState.level = 0;
-    GameState.testBeta = false;
+    GameState.testBeta = testBeta;
     if (tutorial) GameState.tutorial = true;
     const betaBanner = document.getElementById("beta-run-warning");
-    if (betaBanner) betaBanner.style.display = "none";
+    if (betaBanner) betaBanner.style.display = testBeta ? "block" : "none";
+    if (typeof HUD !== "undefined" && HUD.setFpsVisible) HUD.setFpsVisible(testBeta || !!(typeof MenuSystem !== "undefined" && MenuSystem.settings && MenuSystem.settings.showFps));
     GameState.cinematicCamera = false;
     GameState.cutscene = false;
     // Level1 was already fully reset before Level 0 was rebuilt. Do not call
     // resetVisuals() here: Level1.enter() aliases Level.colliders/triggers to
     // its streaming arrays, so resetting it after Level 0 is built would wipe
     // the freshly generated Level 0 collision state and scene atmosphere.
-    this._setGameLoading(78, "STARTING ATMOSPHERE...");
+    this._setGameLoading(78, "WIRING LIGHTS...");
     await this._nextFrame();
     AudioSystem.resume();
     AudioSystem.ambientHumStart();
     this._setGameLoading(100, "ENTERING LEVEL 0");
     // No artificial delay here: once the run is initialized, enter immediately.
     await this._nextFrame();
+    this._stopLoadingTips();
     if (loadOverlay) loadOverlay.style.display = "none";
     GameState.phase = "playing";
     if (tutorial) {
@@ -498,6 +543,8 @@ const Game = {
     let dt = (now - GameState.lastTime) / 1000;
     GameState.lastTime = now;
     if (dt > 0.05) dt = 0.05;
+    const scale = (GameState.timeScale == null ? 1 : GameState.timeScale);
+    if (scale !== 1) dt *= scale;
 
     if (GameState.phase === "playing" && Stairwell.sequenceActive) {
       GameState.elapsed += dt;
@@ -542,15 +589,15 @@ const Game = {
     }
     if (GameState.tutorial && typeof TutorialSystem !== "undefined") TutorialSystem.update(dt);
     HUD.update();
-    if (GameState.debug) {
-      GameState._fpsN = (GameState._fpsN || 0) + 1;
-      GameState._fpsT = (GameState._fpsT || 0) + dt;
-      if (GameState._fpsT >= 0.4) {
-        GameState.fps = GameState._fpsN / GameState._fpsT;
-        GameState._fpsN = 0;
-        GameState._fpsT = 0;
-      }
+    GameState._fpsN = (GameState._fpsN || 0) + 1;
+    GameState._fpsT = (GameState._fpsT || 0) + dt;
+    if (GameState._fpsT >= 0.5) {
+      GameState.fps = GameState._fpsN / GameState._fpsT;
+      GameState._fpsN = 0;
+      GameState._fpsT = 0;
+      if (typeof HUD !== "undefined" && HUD.updateFps) HUD.updateFps(GameState.fps);
     }
+    if (GameState.debug) { /* debug panel reads GameState.fps */ }
     renderer.render(scene, CameraRig.camera);
   }
 };
