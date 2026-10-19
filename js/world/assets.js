@@ -301,5 +301,14 @@ function initAssets() {
   Materials.tube = new THREE.MeshStandardMaterial({
     color: 0xf4f0d8, emissive: 0xfff4c8, emissiveIntensity: 1.6, roughness: 0.25
   });
+  Materials.crate = new THREE.MeshStandardMaterial({
+    color: 0x8a6a3a, roughness: 0.82, metalness: 0.04
+  });
+  Materials.crateDark = new THREE.MeshStandardMaterial({
+    color: 0x4a3820, roughness: 0.9, metalness: 0.02
+  });
+  Materials.passCBlack = new THREE.MeshStandardMaterial({
+    color: 0x11100c, roughness: 0.95, metalness: 0.0
+  });
 }
 
