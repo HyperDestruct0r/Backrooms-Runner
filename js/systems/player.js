@@ -152,6 +152,7 @@ const Player = {
   },
 
   damagePlayer(amount) {
+    if (GameState.god) return this.hp;
     const dmg = Math.max(0, amount | 0);
     if (dmg > 0) {
       this.hp = Math.max(0, Math.min(this.maxHp, this.hp - dmg));
@@ -851,7 +852,17 @@ const HUD = {
     this.hpEl = document.getElementById("hud-hp");
     this.sanEl = document.getElementById("hud-san");
     this.toastEl = document.getElementById("toast-note");
+    this.fpsEl = document.getElementById("hud-fps");
+    this.fpsVal = document.getElementById("hud-fps-val");
     ChaseFx.init();
+  },
+  setFpsVisible(on) {
+    if (!this.fpsEl) this.fpsEl = document.getElementById("hud-fps");
+    if (this.fpsEl) this.fpsEl.style.display = on ? "block" : "none";
+  },
+  updateFps(fps) {
+    if (!this.fpsVal) this.fpsVal = document.getElementById("hud-fps-val");
+    if (this.fpsVal) this.fpsVal.textContent = String(Math.round(fps || 0));
   },
   toast(msg) {
     if (!this.toastEl) this.toastEl = document.getElementById("toast-note");
