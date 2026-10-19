@@ -126,11 +126,17 @@ const MenuSystem = {
       this.saveSettings();
     });
 
-    const fullscreen = document.getElementById("setting-fullscreen");
-    if (fullscreen) fullscreen.addEventListener("change", () => {
-      this.settings.fullscreen = fullscreen.checked;
+    const fs = document.getElementById("setting-fullscreen");
+    if (fs) fs.addEventListener("change", () => {
+      this.settings.fullscreen = fs.checked;
       this.saveSettings();
-      this.setFullscreen(fullscreen.checked);
+      this.setFullscreen(fs.checked);
+    });
+    const showFps = document.getElementById("setting-show-fps");
+    if (showFps) showFps.addEventListener("change", () => {
+      this.settings.showFps = showFps.checked;
+      this.saveSettings();
+      if (typeof HUD !== "undefined" && HUD.setFpsVisible) HUD.setFpsVisible(showFps.checked || !!GameState.testBeta);
     });
 
     const mobileLook = document.getElementById("setting-mobile-look");
@@ -168,6 +174,12 @@ const MenuSystem = {
     if (runFullscreen) runFullscreen.addEventListener("change", () => {
       this.settings.fullscreen = runFullscreen.checked;
       this.saveSettings(); this.setFullscreen(runFullscreen.checked);
+    });
+    const runShowFps = document.getElementById("run-setting-show-fps");
+    if (runShowFps) runShowFps.addEventListener("change", () => {
+      this.settings.showFps = runShowFps.checked;
+      this.saveSettings();
+      if (typeof HUD !== "undefined" && HUD.setFpsVisible) HUD.setFpsVisible(runShowFps.checked || !!GameState.testBeta);
     });
     const runMobileLook = document.getElementById("run-setting-mobile-look");
     if (runMobileLook) runMobileLook.addEventListener("change", () => {
@@ -276,6 +288,10 @@ const MenuSystem = {
     if (overlay) overlay.style.display = "none";
     if (GameState.phase === "playing") setPauseOverlay(true);
   },
+  isRunSettingsOpen() {
+    const overlay = document.getElementById("run-settings-overlay");
+    return !!(overlay && overlay.style.display === "flex");
+  },
 
   syncRunSettingsUI() {
     ["master", "ambient", "footsteps", "events"].forEach(k => {
@@ -290,6 +306,8 @@ const MenuSystem = {
     if (sout) sout.textContent = Number(this.settings.sensitivity).toFixed(3);
     const fs = document.getElementById("run-setting-fullscreen");
     if (fs) fs.checked = !!this.settings.fullscreen;
+    const showFps = document.getElementById("run-setting-show-fps");
+    if (showFps) showFps.checked = !!this.settings.showFps;
     const ml = document.getElementById("run-setting-mobile-look");
     if (ml) ml.value = this.settings.mobileLook === "swipe" ? "swipe" : "joystick";
   },
@@ -307,7 +325,7 @@ const MenuSystem = {
   },
 
   defaultSettings() {
-    return { master: 0.55, ambient: 0.028, footsteps: 0.22, events: 0.18, sensitivity: 0.00215, fullscreen: false, mobileLook: "joystick" };
+    return { master: 0.55, ambient: 0.028, footsteps: 0.22, events: 0.18, sensitivity: 0.00215, fullscreen: false, mobileLook: "joystick", showFps: false };
   },
 
   settings: {},
@@ -331,6 +349,8 @@ const MenuSystem = {
     if (sout) sout.textContent = Number(this.settings.sensitivity).toFixed(3);
     const fs = document.getElementById("setting-fullscreen");
     if (fs) fs.checked = !!this.settings.fullscreen;
+    const showFps = document.getElementById("setting-show-fps");
+    if (showFps) showFps.checked = !!this.settings.showFps;
     const mobileLook = document.getElementById("setting-mobile-look");
     if (mobileLook) mobileLook.value = this.settings.mobileLook === "swipe" ? "swipe" : "joystick";
   },
