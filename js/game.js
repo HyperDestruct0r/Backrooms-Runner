@@ -564,10 +564,12 @@ const Game = {
         GameState.levelTimes[1] = Level1.levelTime;
       } else if (GameState.level === 0) {
         GameState.levelTimes[0] += dt;
+        if (typeof Level !== "undefined" && Level.stream) Level.stream(false);
       }
       Player.update(dt);
       if (GameState.level === 1) {
         ChaseFx.update(dt);
+        if (typeof DebugPath !== "undefined") DebugPath.update(dt);
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
       } else {
@@ -584,11 +586,19 @@ const Game = {
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
       }
+    } else if (GameState.phase === "playing" && !Input.locked && GameState.level === 0 && !GameState.tutorial && EntitySystem.spawned && (EntitySystem.state === "PURSUING" || EntitySystem.inContact)) {
+      // A chase should not freeze just because the mouse unlocked.
+      GameState.elapsed += dt;
+      GameState.levelTimes[0] += dt;
+      EntitySystem.update(dt, Player);
+      ChaseFx.update(dt);
+      CameraRig.update(dt);
     } else {
       CameraRig.update(0);
     }
     if (GameState.tutorial && typeof TutorialSystem !== "undefined") TutorialSystem.update(dt);
     HUD.update();
+    if (typeof DevMap !== "undefined") DevMap.update(dt);
     GameState._fpsN = (GameState._fpsN || 0) + 1;
     GameState._fpsT = (GameState._fpsT || 0) + dt;
     if (GameState._fpsT >= 0.5) {
