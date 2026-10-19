@@ -97,6 +97,7 @@
       <div id="dev-console-hint">DEV · ENTER TO RUN · ESC OR ` TO CLOSE</div>
       <input id="dev-console-input" type="text" autocomplete="off" spellcheck="false" placeholder="level 1">
     </div>
+    <canvas id="dev-map" width="250" height="250" style="display:none"></canvas>
     <div id="toast-note"></div>
     <div id="crosshair"></div>
     <div id="dark-fog"></div>
@@ -330,8 +331,9 @@
 
   <div id="gameover-overlay" class="overlay" style="display:none">
     <div class="panel">
-      <h1>GAME OVER</h1>
-      <p>The entity reached you.</p>
+      <div class="gameover-kicker">SIGNAL LOST // RUN TERMINATED</div>
+      <h1>YOU WERE FOUND</h1>
+      <p>The halls fall silent. Your run has ended.</p>
       <div class="stats">
         <div>Time: <span id="go-time">—</span></div>
         <div>Distance: <span id="go-dist">—</span></div>
