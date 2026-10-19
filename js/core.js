@@ -167,7 +167,9 @@ const CONFIG = {
     mushroomChance: 0.70,
     mushroomEnergyMin: 1,
     mushroomEnergyMax: 3,
-    almondSpawnChance: 0.60
+    almondSpawnChance: 0.22,
+    energySpawnChance: 0.18,
+    crateItemCap: 2
   },
   hudColors: {
     green: [61, 186, 92],
