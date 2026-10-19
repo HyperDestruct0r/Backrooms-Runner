@@ -193,10 +193,9 @@ const DevCommands = {
       return this.toast(added ? "GAVE ALMOND WATER ×" + added : "INVENTORY FULL");
     }
     if (item === "energy") {
-      const before = Player.stamina;
-      Player.stamina = Math.min(CONFIG.stamina.max, Player.stamina + 25 * count);
-      this.undo = { type: "stamina", value: before };
-      return this.toast("ENERGY +" + (25 * count) + " STAMINA");
+      const added = Inventory.addItem("energyBar", count);
+      this.undo = { type: "give", id: "energyBar", count: added };
+      return this.toast(added ? "GAVE ENERGY BAR ×" + added : "INVENTORY FULL");
     }
     this.toast("UNKNOWN ITEM");
   },
@@ -283,9 +282,9 @@ const DevCommands = {
     this.toast("BLACKOUT STARTED");
   },
   clearInv() {
-    const before = Object.assign({}, Inventory.items);
+    const before = this.stacks.slice();
     Inventory.reset();
-    this.undo = { type: "clear", items: before };
+    this.undo = { type: "clear", stacks: before };
     this.toast("INVENTORY CLEARED");
   },
   undoLast() {
@@ -311,7 +310,7 @@ const DevCommands = {
       return this.toast("UNDID SPAWN");
     }
     if (u.type === "clear") {
-      Inventory.items = u.items || {};
+      Inventory.stacks = u.stacks || new Array(Inventory.slots).fill(null);
       Inventory.refresh();
       return this.toast("UNDID CLEAR");
     }
