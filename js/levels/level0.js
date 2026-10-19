@@ -1268,6 +1268,7 @@ const Stairwell = {
     }
     const transitionToken = this.transitionToken;
     this.sequenceActive=true; this.sequenceT=0; this.sequenceExitIndex=index|0; this.reached=true; GameState.exitReached=true;
+    GameState.cinematicCamera=true;
     clearInput();
     pair.opening=true; pair.openT=0;
     const ov=document.getElementById('elevator-sequence');
@@ -1297,7 +1298,7 @@ const Stairwell = {
     if(t>=0.85){
       const status=document.getElementById('elevator-status'); if(status)status.textContent='GENERATING LEVEL 1';
       const bar=document.getElementById('elevator-fill'); if(bar)bar.style.width='22%';
-      if(ov)ov.style.background='rgba(3,4,5,.78)';
+      const ov=document.getElementById('elevator-sequence'); if(ov)ov.style.background='rgba(3,4,5,.78)';
     }
     if(t<1.0)return;
     const elapsed=GameState.elapsed;
@@ -1402,9 +1403,11 @@ const Level = {
   worldMax: new THREE.Vector3(),
 
   inBounds(tx, tz) {
+    tx = tx | 0; tz = tz | 0;
     return tz >= 0 && tz < this.rows && tx >= 0 && tx < this.cols;
   },
   getTile(tx, tz) {
+    tx = tx | 0; tz = tz | 0;
     if (!this.inBounds(tx, tz)) return TILE.WALL;
     return this.tiles[tz][tx];
   },
@@ -1753,7 +1756,7 @@ const Level = {
       const arch = beta.architectural || {};
       const zones = arch.zones || [];
       const usedBetaLights = [];
-      const spacing = 3.5; // Denser ceiling fixture candidates, aligned to the tiled ceiling.
+      const spacing = 4; // Integer step so getTile always receives whole tile indices.
       const maxFixtures = 340; // More visible fixtures; dynamic point lights remain separately capped.
 
       function nearestBetaZone(tx, tz) {
@@ -1768,24 +1771,30 @@ const Level = {
       }
 
       const betaCandidates = [];
+      const spawnLights = [];
       for (let z = 4; z < this.rows - 4; z += spacing) {
         for (let x = 4; x < this.cols - 4; x += spacing) {
-          if (this.getTile(x, z) === TILE.WALL || this.getTile(x, z) === TILE.COLUMN) continue;
-          const wp = this.tileToWorld(x, z);
-          betaCandidates.push({ x, z, wp, d: (wp.x-this.startPos.x)**2 + (wp.z-this.startPos.z)**2 });
+          const tx = x | 0, tz = z | 0;
+          if (this.getTile(tx, tz) === TILE.WALL || this.getTile(tx, tz) === TILE.COLUMN) continue;
+          const wp = this.tileToWorld(tx, tz);
+          const rec = { x: tx, z: tz, wp, d: (wp.x-this.startPos.x)**2 + (wp.z-this.startPos.z)**2 };
+          betaCandidates.push(rec);
+          if (rec.d < 28 * 28) spawnLights.push(rec);
         }
       }
-      // Shuffle candidates before selecting fixtures so the fixture field spans
-      // the entire maze instead of clustering around spawn. A stable spatial
-      // spread matters even more than adding lots of lights to one area.
+      spawnLights.sort((a, b) => a.d - b.d);
+      // Keep a guaranteed ring of lights around spawn, then spread the rest.
+      // A full shuffle was leaving the start in a black gap.
+      const ordered = spawnLights.slice(0, 18);
       for (let i = betaCandidates.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         const temp = betaCandidates[i]; betaCandidates[i] = betaCandidates[j]; betaCandidates[j] = temp;
       }
+      for (let i = 0; i < betaCandidates.length; i++) ordered.push(betaCandidates[i]);
       let betaDynamicLights = 0;
-      const maxBetaDynamicLights = 70;
-      for (let bi = 0; bi < betaCandidates.length && usedBetaLights.length < maxFixtures; bi++) {
-          const x = betaCandidates[bi].x, z = betaCandidates[bi].z;
+      const maxBetaDynamicLights = 90;
+      for (let bi = 0; bi < ordered.length && usedBetaLights.length < maxFixtures; bi++) {
+          const x = ordered[bi].x, z = ordered[bi].z;
           const zone = nearestBetaZone(x, z);
           if (zone && zone.type && zone.type.name === "alcoves" && ((x + z) % 4 === 0)) {
             // BRIGHT zone: keep the denser sampling.
@@ -1799,11 +1808,11 @@ const Level = {
           if (duplicate) continue;
           usedBetaLights.push([x, z]);
 
-          const w = betaCandidates[bi].wp;
+          const w = ordered[bi].wp;
           const bright = zone && zone.type && zone.type.name === "alcoves";
-          // Most fixtures receive a real point light. A small minority remain
-          // unlit for atmosphere, and a hard cap keeps dynamic lighting bounded.
-          const withPoint = betaDynamicLights < maxBetaDynamicLights && Math.random() >= 0.12;
+          const nearSpawn = ordered[bi].d < 28 * 28;
+          // Most fixtures receive a real point light. Spawn always does.
+          const withPoint = nearSpawn || (betaDynamicLights < maxBetaDynamicLights && Math.random() >= 0.12);
           if (withPoint) betaDynamicLights++;
           LightingSystem.addFluorescent(
             scene, w.x, H - 0.06, w.z,
