@@ -69,7 +69,7 @@ const CONFIG = {
     searchTime: 11,
     pauseMin: 0.7,
     pauseMax: 2.4,
-    contactDist: 1.28,
+    contactDist: 1.78, // Start capture before the player has to physically overlap the entity.
     damagePerSec: 100,
     damageChunk: 10,
     stumbleChance: 0.40,
