@@ -254,8 +254,8 @@ function tryConnector(mask,w,h,a,b,width){
 }
 function generate(seed,opts={}){
   const p=Object.assign({},DEFAULTS,opts),w=p.width,h=p.height,s=seed>>>0,r=rng(s);
-  const broad=fbm(s,w,h,p.broadFreq,4,.55,2,0xA1B2C3);
-  const detail=fbm(s,w,h,p.detailFreq,4,.52,2,0xD4E5F6);
+  const broad=fbm(s,w,h,p.broadFreq,3,.55,2,0xA1B2C3);
+  const detail=fbm(s,w,h,p.detailFreq,3,.52,2,0xD4E5F6);
   const fine=fbm(s,w,h,p.fineFreq,2,.50,2,0x778899);
   const regionNoise=fbm(s,w,h,p.regionFreq,p.regionOctaves,p.regionPersistence,p.regionLacunarity,0x13579BDF);
   const regionField=new Float32Array(w*h);
@@ -669,7 +669,7 @@ if(typeof window!=="undefined")window.NoiseArchitectural={generate,DEFAULTS,fbm}
 const NoiseArchitecturalAPI = (typeof window!=="undefined" ? window.NoiseArchitectural : (typeof module!=="undefined" ? module.exports : null));
 if (NoiseArchitecturalAPI) {
   NoiseArchitecturalAPI.generatePlayable = function(seed, opts={}) {
-    const p = Object.assign({}, DEFAULTS, opts, { width: 250, height: 250, cellMeters: 2 });
+    const p = Object.assign({}, DEFAULTS, opts, { width: 180, height: 180, cellMeters: 2 });
     const base = generate(seed >>> 0, p);
     const w = base.width, h = base.height, mask = base.walls;
     const tiles = new Array(h);
