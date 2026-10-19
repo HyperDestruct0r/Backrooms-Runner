@@ -655,50 +655,57 @@ const Level1 = {
     this.exitPosition=new THREE.Vector3(x,this.baseY,z);
 
     const g=new THREE.Group(); g.name='Level1_StairExit'; this.group.add(g);
-    const W=7.0, wallH=8.4, wallT=2.4, openingW=4.2, openingH=7.0;
-    const steps=24, stepD=0.82, drop=0.22;
+    const core=4.2, h=5.55, opening=1.7;
+    const steps=16, stepD=0.55, drop=0.22;
     const rot=Math.atan2(dx,dz);
-    const wallMat=this.shared.concrete;
+    const wallMat=this.shared.concretePillar || this.shared.concrete;
 
-    // A single heavy wall surrounds a real opening. The central opening is
-    // left empty so the stairs visually disappear into the structure.
-    const sideW=(W-openingW)/2;
+    // Square service core on the garage grid. One face is open.
+    const side=(core-opening)/2;
     for(const sign of [-1,1]){
-      const px=x+rightX*sign*(openingW/2+sideW/2), pz=z+rightZ*sign*(openingW/2+sideW/2);
-      const col=this.addBox(g,wallMat,px,this.baseY+wallH/2,pz,sideW,wallH,wallT); col.rotation.y=rot;
+      const px=x+rightX*sign*(opening/2+side/2), pz=z+rightZ*sign*(opening/2+side/2);
+      const col=this.addBox(g,wallMat,px,this.baseY+h/2,pz,side,h,0.42); col.rotation.y=rot;
     }
-    const lintelH=wallH-openingH;
-    const lintel=this.addBox(g,wallMat,x,this.baseY+openingH+lintelH/2,z,W,lintelH,wallT); lintel.rotation.y=rot;
+    const back=this.addBox(g,wallMat,x-dx*1.7,this.baseY+h/2,z-dz*1.7,core,h,0.42); back.rotation.y=rot;
+    const lintel=this.addBox(g,wallMat,x,this.baseY+h-0.28,z,core,0.36,core);
+    const base=this.addBox(g,this.shared.concreteDark,x,this.baseY+0.12,z,core+0.2,0.24,core+0.2);
 
-    // Extend the wall sideways so the portal is unmistakably embedded.
-    // The back remains dark, giving a clear visual transition to Level 2.
-    const backX=x+dx*(steps*stepD+1.0), backZ=z+dz*(steps*stepD+1.0);
-    const shaftMat=new THREE.MeshBasicMaterial({color:0x020303,toneMapped:false});
-    const shaft=this.addBox(g,shaftMat,backX,this.baseY-steps*drop/2+0.1,backZ,openingW,steps*drop+1.2,steps*stepD+2.0); shaft.rotation.y=rot;
+    // Cool tube over the opening. The warmer shaft light is only visible close.
+    const panel=new THREE.Mesh(Geometries.lightPanel,this.shared.light.clone());
+    panel.scale.set(1.4,1,0.26); panel.position.set(x+dx*0.15,this.baseY+h-0.42,z+dz*0.15); g.add(panel);
+    const over=new THREE.PointLight(0xf7f8ff,2.1,14,1.2);
+    over.position.set(x+dx*0.2,this.baseY+h-0.7,z+dz*0.2); g.add(over);
 
-    // First tread starts exactly at floor level; every following tread drops.
+    const shaftMat=new THREE.MeshBasicMaterial({color:0x1a1410,toneMapped:false});
+    const shaft=this.addBox(g,shaftMat,x+dx*1.4,this.baseY-steps*drop*0.45,z+dz*1.4,opening-0.2,steps*drop+1.4,steps*stepD); shaft.rotation.y=rot;
+
     for(let i=0;i<steps;i++){
       const along=(i+0.5)*stepD;
       const px=x+dx*along, pz=z+dz*along;
-      const yy=this.baseY - i*drop + 0.07;
-      const st=this.addBox(g,wallMat,px,yy,pz,openingW,0.14,stepD+0.04); st.rotation.y=rot;
+      const yy=this.baseY - i*drop + 0.06;
+      const st=this.addBox(g,wallMat,px,yy,pz,opening-0.15,0.12,stepD+0.02); st.rotation.y=rot;
     }
-
-    // Thick retaining walls run down both sides of the stairwell.
-    const railLen=steps*stepD+1.4;
     for(const sign of [-1,1]){
-      const px=x+dx*(railLen/2)+rightX*sign*(openingW/2+wallT/2);
-      const pz=z+dz*(railLen/2)+rightZ*sign*(openingW/2+wallT/2);
-      const wall=this.addBox(g,wallMat,px,this.baseY-steps*drop/2+0.75,pz,wallT,1.5+steps*drop,railLen); wall.rotation.y=rot;
+      const px=x+dx*(steps*stepD*0.5)+rightX*sign*(opening/2+0.18);
+      const pz=z+dz*(steps*stepD*0.5)+rightZ*sign*(opening/2+0.18);
+      const wall=this.addBox(g,wallMat,px,this.baseY-steps*drop*0.5+0.6,pz,0.28,1.2+steps*drop,steps*stepD+0.6); wall.rotation.y=rot;
     }
 
-    // Subtle sign at the bottom: this is the Level 2 destination, not a
-    // floating exit object in the middle of Level 1.
-    const signMat=new THREE.MeshBasicMaterial({color:0x9fe8ff,toneMapped:false});
-    const sign=this.addBox(g,signMat,backX,this.baseY-steps*drop+1.15,backZ+rightZ*0.02,2.7,0.34,0.06); sign.rotation.y=rot;
-    // Small light just inside the Level 2 threshold.
-    const bottomLight=new THREE.PointLight(0x8ed8ff,0.75,8,1.7);
-    bottomLight.position.set(backX-dx*0.7,this.baseY-steps*drop+0.7,backZ-dz*0.7); g.add(bottomLight);
+    // Yellow mark, same family as the pillar letters, so the core can be spotted.
+    const mark=document.createElement("canvas"); mark.width=128; mark.height=128;
+    const ctx=mark.getContext("2d");
+    ctx.fillStyle="#d6c24a"; ctx.font="bold 72px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("2",64,68);
+    const markTex=new THREE.CanvasTexture(mark); markTex.colorSpace=THREE.SRGBColorSpace;
+    const markMat=new THREE.MeshBasicMaterial({map:markTex,transparent:true,depthWrite:false,toneMapped:false});
+    const decal=new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.7),markMat);
+    decal.position.set(x+rightX*(core/2+0.02),this.baseY+1.6,z+rightZ*(core/2+0.02));
+    decal.rotation.y=Math.atan2(rightX,rightZ);
+    g.add(decal);
+
+    const warm=new THREE.PointLight(0xffb36a,0.85,7,1.6);
+    warm.position.set(x+dx*(steps*stepD-0.4),this.baseY-steps*drop+0.8,z+dz*(steps*stepD-0.4));
+    g.add(warm);
   },
   build(seed,origin){
     this.resetVisuals(); this.materialSet(); this.active=true; this.seed=seed>>>0;
