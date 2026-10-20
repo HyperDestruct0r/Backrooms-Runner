@@ -669,7 +669,7 @@ if(typeof window!=="undefined")window.NoiseArchitectural={generate,DEFAULTS,fbm}
 const NoiseArchitecturalAPI = (typeof window!=="undefined" ? window.NoiseArchitectural : (typeof module!=="undefined" ? module.exports : null));
 if (NoiseArchitecturalAPI) {
   NoiseArchitecturalAPI.generatePlayable = function(seed, opts={}) {
-    const p = Object.assign({}, DEFAULTS, opts, { width: 180, height: 180, cellMeters: 2 });
+    const p = Object.assign({}, DEFAULTS, opts, { width: 120, height: 120, cellMeters: 2 });
     const base = generate(seed >>> 0, p);
     const w = base.width, h = base.height, mask = base.walls;
     const tiles = new Array(h);
