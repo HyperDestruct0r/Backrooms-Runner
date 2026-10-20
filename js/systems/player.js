@@ -26,6 +26,8 @@ function resolveAxis(pos, radius, height, axis) {
   const boxes = (typeof Level1 !== "undefined" && Level1.active) ? Level1.colliders : Level.colliders;
   for (let i = 0; i < boxes.length; i++) {
     const b = boxes[i];
+    if (axis === "x" && (b.max.x < min.x - 1 || b.min.x > max.x + 1)) continue;
+    if (axis === "z" && (b.max.z < min.z - 1 || b.min.z > max.z + 1)) continue;
     if (!aabbOverlap(min, max, b.min, b.max)) continue;
     if (axis === "x") {
       const penL = max.x - b.min.x;
