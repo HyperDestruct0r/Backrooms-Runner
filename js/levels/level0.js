@@ -1663,13 +1663,14 @@ const Level = {
       }
     }
     if (LevelGenerator.last && LevelGenerator.last.beta) {
-      for (let z = z0 + 4; z < z1 - 1; z += 8) {
-        for (let x = x0 + 4; x < x1 - 1; x += 8) {
+      let points = 0;
+      for (let z = z0 + 3; z < z1 - 1; z += 6) {
+        for (let x = x0 + 3; x < x1 - 1; x += 6) {
           if (this.getTile(x, z) === TILE.WALL || this.getTile(x, z) === TILE.COLUMN) continue;
           const w = this.tileToWorld(x, z);
-          // Emissive panels only. A point light per fixture was compiling a
-          // huge shader and freezing the machine on Test Beta load.
-          const unit = LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, false, 1.16);
+          const withPoint = points < 3 && LightingSystem.lights.length < 28;
+          if (withPoint) points++;
+          const unit = LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, 1.16);
           if (unit) lights.push(unit);
         }
       }
