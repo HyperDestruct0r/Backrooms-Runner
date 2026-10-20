@@ -48,6 +48,24 @@ Level 0 is based around the familiar Backrooms environment:
 
 The goal is to find a way out while navigating an environment that intentionally feels repetitive and difficult to memorize.
 
+* **Level 2** — dark industrial maintenance tunnels
+
+## Level 2
+
+Level 2 is a network of narrow industrial tunnels. It is entered from the developer console.
+
+Commands:
+
+* `/level 2` — enter Level 2 at its normal spawn
+* `/level 2 tps` — enter Level 2 at the test spawn
+* `/level2` — alias for `/level 2`
+* `/level 2 reset` — regenerate with a new seed
+* `/level 2 seed <number>` — enter with a specific seed
+* `/level 2 info` — seed and graph size
+* `/level 2 exit` — teleport to the main-route end
+
+The main route is generated first. Branches are mostly dead ends. A few are alternate or anomalous placeholders. Clues are pipe side, light warmth, and damp ends. They are consistent with the route, not arrows.
+
 ## Level 1
 
 Level 1 is a much larger concrete and maintenance environment.
