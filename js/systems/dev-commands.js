@@ -151,6 +151,7 @@ const DevCommands = {
     try {
       if (cmd === "help") return this.help();
       if (cmd === "level") return this.level(args);
+      if (cmd === "level2") return this.level(["2"].concat(args));
       if (cmd === "spawn") return this.spawn(args);
       if (cmd === "despawn") return this.despawn(args);
       if (cmd === "give") return this.give(args);
@@ -176,17 +177,50 @@ const DevCommands = {
 
   help() {
     this.toast("LEVEL SPAWN DESPAWN GIVE HP STAMINA SANITY GOD KILL TP SEED POS TIMESCALE BLACKOUT CLEAR UNDO SHOWMAP HIDEMAP EXIT");
+    this.toast("LEVEL 2 · LEVEL 2 TPS · LEVEL2 · LEVEL 2 RESET · LEVEL 2 SEED N · LEVEL 2 INFO · LEVEL 2 EXIT");
   },
 
   level(args) {
     const n = parseInt(args[0], 10);
-    if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0 OR LEVEL 1");
+    if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0, LEVEL 1, OR LEVEL 2");
     if (n === 0) return this.goLevel0();
     if (n === 1) return this.goLevel1();
+    if (n === 2) return this.level2(args.slice(1));
     this.toast("LEVEL " + n + " IS NOT AVAILABLE");
+  },
+  level2(args) {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "info") {
+      if (!Level2.active) return this.toast("NOT IN LEVEL 2");
+      return this.toast("SEED " + Level2.seed + " · " + Level2.infoText);
+    }
+    if (sub === "exit") {
+      if (!Level2.active || !Level2.exitPos) return this.toast("NO LEVEL 2 EXIT");
+      Player.position.copy(Level2.exitPos);
+      Player.velocity.set(0, 0, 0);
+      Level2.stream(true);
+      return this.toast("TELEPORTED TO LEVEL 2 EXIT");
+    }
+    if (sub === "reset") {
+      const next = ((GameState.seed || 1) + 1) >>> 0;
+      GameState.seed = next;
+      Level2.enter(next);
+      return this.toast("LEVEL 2 RESET · SEED " + next);
+    }
+    if (sub === "seed") {
+      const n = Number(args[1]);
+      if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 2 SEED 12345");
+      GameState.seed = n >>> 0;
+      Level2.enter(GameState.seed);
+      return this.toast("LEVEL 2 · SEED " + (GameState.seed >>> 0));
+    }
+    if (sub && sub !== "tps") return this.toast("USAGE: LEVEL 2, LEVEL 2 TPS, RESET, SEED, INFO, EXIT");
+    Level2.enter((GameState.seed || 1) >>> 0);
+    return this.toast(sub === "tps" ? "LEVEL 2 · TEST SPAWN" : "ENTERED LEVEL 2");
   },
   goLevel0() {
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
+    if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof EntitySystem !== "undefined") EntitySystem.despawn();
     if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
     const seed = (GameState.seed || 1) >>> 0;
@@ -199,6 +233,7 @@ const DevCommands = {
     this.toast("ENTERED LEVEL 0");
   },
   goLevel1() {
+    if (typeof Level2 !== "undefined") Level2.reset();
     const origin = { x: Player.position.x, z: Player.position.z };
     const fake = { origin: { x: origin.x, z: origin.z }, fx: 0, fz: 1 };
     Level1.enter((GameState.seed || 1) >>> 0, fake);
@@ -210,6 +245,7 @@ const DevCommands = {
     const kind = (args[0] || "").toLowerCase();
     if (!kind) return this.toast("MISSING TARGET");
     if (kind === "entity") {
+      if (GameState.level === 1) return this.toast("ENTITY IS LEVEL 0 ONLY");
       const ahead = this.ahead(4);
       EntitySystem.spawn(new THREE.Vector3(ahead.x, 0, ahead.z), Player.yaw);
       this.undo = { type: "spawn-entity" };
@@ -218,7 +254,8 @@ const DevCommands = {
     if (kind === "smiler") {
       if (!Level1.active) return this.toast("SMILERS ARE LEVEL 1 ONLY");
       const ahead = this.ahead(8);
-      SmilerSystem.makeSmiler({ x: ahead.x, z: ahead.z });
+      const s = SmilerSystem.makeSmiler({ x: ahead.x, z: ahead.z });
+      if (s) s.forced = true;
       this.undo = { type: "spawn-smiler" };
       return this.toast("SPAWNED SMILER");
     }
@@ -331,12 +368,14 @@ const DevCommands = {
     if (!Number.isFinite(n)) return this.toast("USAGE: SEED OR SEED 12345");
     GameState.seed = n >>> 0;
     if (GameState.level === 1) this.goLevel1();
+    else if (GameState.level === 2) Level2.enter(GameState.seed);
     else this.goLevel0();
     this.toast("SEEDED " + (GameState.seed >>> 0));
   },
   exitInfo() {
     let target = null;
-    if (GameState.level === 1 && typeof Level1 !== "undefined" && Level1.exitPosition) target = Level1.exitPosition;
+    if (GameState.level === 2 && typeof Level2 !== "undefined" && Level2.exitPos) target = Level2.exitPos;
+    else if (GameState.level === 1 && typeof Level1 !== "undefined" && Level1.exitPosition) target = Level1.exitPosition;
     else if (typeof Stairwell !== "undefined" && Stairwell.exits && Stairwell.exits.length) {
       let best = Stairwell.exits[0].origin, bestD = Infinity;
       for (const st of Stairwell.exits) {
