@@ -1663,11 +1663,13 @@ const Level = {
       }
     }
     if (LevelGenerator.last && LevelGenerator.last.beta) {
-      for (let z = z0 + 2; z < z1 - 1; z += 4) {
-        for (let x = x0 + 2; x < x1 - 1; x += 4) {
+      for (let z = z0 + 4; z < z1 - 1; z += 8) {
+        for (let x = x0 + 4; x < x1 - 1; x += 8) {
           if (this.getTile(x, z) === TILE.WALL || this.getTile(x, z) === TILE.COLUMN) continue;
           const w = this.tileToWorld(x, z);
-          const unit = LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, true, 1.16);
+          // Emissive panels only. A point light per fixture was compiling a
+          // huge shader and freezing the machine on Test Beta load.
+          const unit = LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, false, 1.16);
           if (unit) lights.push(unit);
         }
       }
@@ -1706,6 +1708,7 @@ const Level = {
   stream(force) {
     if (!this.group || !this.tiles || !this.tiles.length) return;
     if (!force && GameState.level !== 0) return;
+    const radius = (LevelGenerator.last && LevelGenerator.last.beta) ? 1 : this.streamRadius;
     const S = this.chunkTiles, T = CONFIG.tile;
     const px = (Player && Player.position) ? Player.position.x : this.startPos.x;
     const pz = (Player && Player.position) ? Player.position.z : this.startPos.z;
@@ -1714,13 +1717,13 @@ const Level = {
     const key = cx + "," + cz;
     if (!force && key === this.lastChunk) return;
     this.lastChunk = key;
-    for (let dz = -this.streamRadius; dz <= this.streamRadius; dz++) {
-      for (let dx = -this.streamRadius; dx <= this.streamRadius; dx++) this.buildChunk(cx + dx, cz + dz);
+    for (let dz = -radius; dz <= radius; dz++) {
+      for (let dx = -radius; dx <= radius; dx++) this.buildChunk(cx + dx, cz + dz);
     }
     for (const k of Array.from(this.chunks.keys())) {
       const parts = k.split(",");
       const dx = (parts[0] | 0) - cx, dz = (parts[1] | 0) - cz;
-      if (Math.max(Math.abs(dx), Math.abs(dz)) > this.streamRadius) this.unloadChunk(k);
+      if (Math.max(Math.abs(dx), Math.abs(dz)) > radius) this.unloadChunk(k);
     }
   },
   buildHandcrafted(sceneRef) {
@@ -1754,7 +1757,6 @@ const Level = {
       Stairwell.build(sceneRef);
       SpawnManager.apply(beta);
       PickupSystem.generate(beta.seed);
-      if (typeof PassC !== "undefined") PassC.generate(beta.seed);
       const seedEl = document.getElementById("hud-seed-val");
       if (seedEl) seedEl.textContent = String(beta.seed);
       const startSeed = document.getElementById("start-seed");
