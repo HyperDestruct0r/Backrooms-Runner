@@ -23,7 +23,8 @@ function resolveAxis(pos, radius, height, axis) {
   const min = new THREE.Vector3(pos.x - radius, pos.y, pos.z - radius);
   const max = new THREE.Vector3(pos.x + radius, pos.y + height, pos.z + radius);
   let pushed = 0;
-  const boxes = (typeof Level1 !== "undefined" && Level1.active) ? Level1.colliders : Level.colliders;
+  const boxes = (typeof Level2 !== "undefined" && Level2.active) ? Level2.colliders
+    : (typeof Level1 !== "undefined" && Level1.active) ? Level1.colliders : Level.colliders;
   for (let i = 0; i < boxes.length; i++) {
     const b = boxes[i];
     if (axis === "x" && (b.max.x < min.x - 1 || b.min.x > max.x + 1)) continue;
@@ -68,7 +69,8 @@ const Physics = {
     }
 
     // Current level's start position. Level 1 uses its own floor height.
-    const levelFloor = (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
+    const levelFloor = (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
+      : (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
     if (pos.y < levelFloor - 12) {
       Player.position.copy(Level.startPos);
       Player.position.y = levelFloor;
@@ -132,7 +134,8 @@ const Player = {
 
   resetToStart() {
     this.position.copy(Level.startPos);
-    this.position.y = (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
+    this.position.y = (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
+      : (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
     this.velocity.set(0, 0, 0);
     this.yaw = 0;
     this.pitch = 0;
