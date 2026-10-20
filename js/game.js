@@ -58,6 +58,7 @@ const Game = {
     // run must explicitly tear that world down and rebuild Level 0 before the
     // player is reset.
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
+    if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof Level !== "undefined" && typeof Level.buildProcedural === "function") {
       const requestedSeed = (seed >>> 0);
       const built = !!Level.buildProcedural(scene, requestedSeed, { strictSeed: !!strictSeed, testBeta: !!testBeta });
@@ -252,6 +253,7 @@ const Game = {
     }
     if (typeof Level1 !== "undefined" && Level1.active) {
       Level1.resetVisuals();
+      if (typeof Level2 !== "undefined") Level2.reset();
     }
 
     GameState.phase = "loading";
@@ -403,6 +405,7 @@ const Game = {
       Stairwell.cancelPendingTransition();
     }
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
+    if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof Level !== "undefined") {
       // IMPORTANT: do not merely null Level.group here. Level.clear() removes
       // the old Level 0 meshes/lights from the scene and disposes the per-run
@@ -441,6 +444,7 @@ const Game = {
     // collision/trigger arrays, so no Level 0 state can be invalidated after
     // the new map has been built.
     if (typeof Level1 !== 'undefined') Level1.resetVisuals();
+    if (typeof Level2 !== "undefined") Level2.reset();
     const next = (Math.imul((GameState.seed || 1) ^ 0x9E3779B9, 1664525) + 1013904223 + (performance.now() | 0)) >>> 0;
     const newSeed = next || 483921;
     let built = false;
@@ -557,11 +561,15 @@ const Game = {
       if (GameState.level === 0) GameState.levelTimes[0] += dt;
       else if (GameState.level === 1) GameState.levelTimes[1] += dt;
       if (typeof CutsceneSystem !== "undefined") CutsceneSystem.update(dt);
+      if (typeof SmilerDeath !== "undefined") SmilerDeath.update(dt);
     } else if (GameState.phase === "playing" && Input.locked) {
       GameState.elapsed += dt;
       if (GameState.level === 1 && Level1.active) {
         Level1.update(dt);
         GameState.levelTimes[1] = Level1.levelTime;
+      } else if (GameState.level === 2 && typeof Level2 !== "undefined" && Level2.active) {
+        Level2.update(dt);
+        GameState.levelTimes[2] = (GameState.levelTimes[2] || 0) + dt;
       } else if (GameState.level === 0) {
         GameState.levelTimes[0] += dt;
         if (typeof Level !== "undefined" && Level.stream) Level.stream(false);
@@ -570,6 +578,9 @@ const Game = {
       if (GameState.level === 1) {
         ChaseFx.update(dt);
         if (typeof DebugPath !== "undefined") DebugPath.update(dt);
+        AudioSystem.setListener(Player.position, Player.yaw);
+        CameraRig.update(dt);
+      } else if (GameState.level === 2) {
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
       } else {
