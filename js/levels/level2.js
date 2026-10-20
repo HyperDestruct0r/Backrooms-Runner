@@ -108,43 +108,28 @@ const Level2 = {
 
   materialSet() {
     if (this.shared) return;
-    const brick = document.createElement("canvas");
-    brick.width = brick.height = 256;
-    const bctx = brick.getContext("2d");
-    bctx.fillStyle = "#5a4036";
-    bctx.fillRect(0, 0, 256, 256);
-    for (let y = 0; y < 8; y++) {
-      for (let x = 0; x < 8; x++) {
-        const ox = (y % 2) * 16;
-        bctx.fillStyle = (x + y) % 3 === 0 ? "#6a4a3c" : "#4e382f";
-        bctx.fillRect(ox + x * 32 + 1, y * 32 + 1, 30, 14);
-        bctx.fillStyle = "#3c2c26";
-        bctx.fillRect(ox + x * 32, y * 32 + 15, 32, 2);
-      }
-    }
-    const brickTex = new THREE.CanvasTexture(brick);
-    brickTex.wrapS = brickTex.wrapT = THREE.RepeatWrapping;
-    brickTex.colorSpace = THREE.SRGBColorSpace;
-    const floor = document.createElement("canvas");
-    floor.width = floor.height = 128;
-    const fctx = floor.getContext("2d");
-    fctx.fillStyle = "#3a3a38";
-    fctx.fillRect(0, 0, 128, 128);
-    fctx.fillStyle = "#2e2e2c";
-    for (let i = 0; i < 40; i++) fctx.fillRect((i * 17) % 128, (i * 29) % 128, 6, 2);
-    const floorTex = new THREE.CanvasTexture(floor);
-    floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
-    floorTex.colorSpace = THREE.SRGBColorSpace;
+    const load = (file, repeat) => {
+      const tex = new THREE.TextureLoader().load(file);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(repeat[0], repeat[1]);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      return tex;
+    };
+    const blockTex = load("assets/level2-block.jpg", [1.4, 1.1]);
+    const floorTex = load("assets/level2-block.jpg", [2, 2]);
+    const rustTex = load("assets/level2-rust.jpg", [1, 3]);
     this.shared = {
-      brick: new THREE.MeshStandardMaterial({ map: brickTex, roughness: 0.92, metalness: 0.02 }),
-      floor: new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.88, metalness: 0.04 }),
-      ceil: new THREE.MeshStandardMaterial({ color: 0x2a2826, roughness: 0.9 }),
-      pipe: new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 0.55, metalness: 0.35 }),
-      rust: new THREE.MeshStandardMaterial({ color: 0x7a4a32, roughness: 0.8, metalness: 0.1 }),
-      light: new THREE.MeshBasicMaterial({ color: 0xffc98a, toneMapped: false }),
+      brick: new THREE.MeshStandardMaterial({ map: blockTex, roughness: 0.9, metalness: 0.02 }),
+      floor: new THREE.MeshStandardMaterial({ map: floorTex, color: 0xb0aaa4, roughness: 0.92, metalness: 0.02 }),
+      ceil: new THREE.MeshStandardMaterial({ color: 0x1c1b1a, roughness: 0.95 }),
+      pipe: new THREE.MeshStandardMaterial({ map: rustTex, color: 0xc4b8ae, roughness: 0.46, metalness: 0.55 }),
+      rust: new THREE.MeshStandardMaterial({ map: rustTex, color: 0xb86a3a, roughness: 0.62, metalness: 0.32 }),
+      light: new THREE.MeshBasicMaterial({ color: 0xfff4dd, toneMapped: false }),
       damp: new THREE.MeshStandardMaterial({ color: 0x3a4038, roughness: 1 })
     };
-    this.pipeGeo = new THREE.CylinderGeometry(0.08, 0.08, 1, 6);
+    this.pipeGeo = new THREE.CylinderGeometry(0.34, 0.34, 1, 14);
+    this.flangeGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.07, 14);
     this.box = Geometries.box;
   },
 
@@ -243,6 +228,11 @@ const Level2 = {
     ceil.position.set(mx, this.baseY + H, mz);
     g.add(ceil);
     const colliders = [];
+    const floorPad = this.addBox(g, this.shared.floor, mx, this.baseY - 0.08, mz, alongX ? span + 4 : W + 1.2, 0.16, alongX ? W + 1.2 : span + 4);
+    colliders.push({
+      min: new THREE.Vector3(mx - (alongX ? span / 2 + 2 : W / 2 + 0.6), this.baseY - 0.4, mz - (alongX ? W / 2 + 0.6 : span / 2 + 2)),
+      max: new THREE.Vector3(mx + (alongX ? span / 2 + 2 : W / 2 + 0.6), this.baseY + 0.02, mz + (alongX ? W / 2 + 0.6 : span / 2 + 2))
+    });
     for (const sign of [-1, 1]) {
       const wx = alongX ? mx : mx + sign * (W / 2 + 0.18);
       const wz = alongX ? mz + sign * (W / 2 + 0.18) : mz;
@@ -255,17 +245,33 @@ const Level2 = {
       });
     }
     const pipeSide = edge.main ? 1 : -1;
-    const steps = Math.max(2, Math.floor(span / 6));
-    for (let i = 0; i < steps; i++) {
-      const t = (i + 0.5) / steps;
-      const px = x0 + (x1 - x0) * t + rx * pipeSide * 1.15;
-      const pz = z0 + (z1 - z0) * t + rz * pipeSide * 1.15;
-      const pipe = new THREE.Mesh(this.pipeGeo, edge.main ? this.shared.pipe : this.shared.rust);
-      pipe.scale.set(1, 4.2, 1);
-      pipe.rotation.z = Math.PI / 2;
-      pipe.rotation.y = alongX ? 0 : Math.PI / 2;
-      pipe.position.set(px, this.baseY + H - 0.35, pz);
+    const pipeRuns = [
+      { side: pipeSide, y: 0.55, r: 0.28, mat: "rust" },
+      { side: pipeSide, y: 1.25, r: 0.38, mat: "pipe" },
+      { side: pipeSide, y: 2.05, r: 0.24, mat: "rust" }
+    ];
+    for (const run of pipeRuns) {
+      const offset = 1.15;
+      const px = mx + rx * run.side * offset;
+      const pz = mz + rz * run.side * offset;
+      const pipe = new THREE.Mesh(this.pipeGeo, this.shared[run.mat]);
+      pipe.scale.set(run.r / 0.34, span, run.r / 0.34);
+      if (alongX) pipe.rotation.z = Math.PI / 2;
+      else pipe.rotation.x = Math.PI / 2;
+      pipe.position.set(px, this.baseY + run.y, pz);
       g.add(pipe);
+      const flanges = Math.max(2, Math.floor(span / 10));
+      for (let i = 0; i < flanges; i++) {
+        const t = (i + 0.5) / flanges;
+        const fx = x0 + (x1 - x0) * t + rx * run.side * offset;
+        const fz = z0 + (z1 - z0) * t + rz * run.side * offset;
+        const flange = new THREE.Mesh(this.flangeGeo, this.shared.pipe);
+        flange.scale.set(run.r / 0.34, 1, run.r / 0.34);
+        if (alongX) flange.rotation.z = Math.PI / 2;
+        else flange.rotation.x = Math.PI / 2;
+        flange.position.set(fx, this.baseY + run.y, fz);
+        g.add(flange);
+      }
     }
     if (!edge.main) {
       const capX = alongX ? 0.4 : W + 0.4;
@@ -285,10 +291,9 @@ const Level2 = {
     for (let i = 0; i < lightCount; i++) {
       const t = (i + 0.5) / lightCount;
       const lx = x0 + (x1 - x0) * t, lz = z0 + (z1 - z0) * t;
-      const panel = new THREE.Mesh(Geometries.lightPanel, this.shared.light);
-      panel.position.set(lx, this.baseY + H - 0.08, lz);
-      panel.rotation.x = Math.PI / 2;
-      g.add(panel);
+      const tube = new THREE.Mesh(new THREE.BoxGeometry(alongX ? 2.4 : 0.16, 0.08, alongX ? 0.16 : 2.4), this.shared.light);
+      tube.position.set(lx, this.baseY + H - 0.12, lz);
+      g.add(tube);
       if (lights.length < 1 && this.countLights() < 14) {
         const color = edge.main ? 0xffc48a : 0xc8b8a0;
         const L = new THREE.PointLight(color, edge.main ? 0.7 : 0.4, 10, 1.6);
