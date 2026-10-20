@@ -71,6 +71,11 @@ const Physics = {
     // Current level's start position. Level 1 uses its own floor height.
     const levelFloor = (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
       : (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
+    if (typeof Level2 !== "undefined" && Level2.active && pos.y < levelFloor) {
+      pos.y = levelFloor;
+      if (vel.y < 0) vel.y = 0;
+      onGround = true;
+    }
     if (pos.y < levelFloor - 12) {
       Player.position.copy(Level.startPos);
       Player.position.y = levelFloor;
