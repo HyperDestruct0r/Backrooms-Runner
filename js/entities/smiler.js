@@ -295,6 +295,21 @@ const SmilerSystem = {
         s.visibleToPlayer = this.lineOfSight(s);
         s.mesh.visible = true;
         s.mesh.lookAt(Player.position.x, Player.position.y + 1.25, Player.position.z);
+        if (!s.forced) continue;
+        const dx = Player.position.x - s.x, dz = Player.position.z - s.z;
+        const d = Math.hypot(dx, dz);
+        if (this.flashlightHits(s)) {
+          s.exposureT += dt;
+          const fade = Math.max(0, 1 - s.exposureT / CONFIG.flashlight.smilerExposureTime);
+          s.mesh.traverse(o => { if (o.material && o.material.transparent) o.material.opacity = fade; });
+          s.x += (-dx / (d || 1)) * 12.5 * dt;
+          s.z += (-dz / (d || 1)) * 12.5 * dt;
+          s.mesh.position.set(s.x, 0.15, s.z);
+          if (s.exposureT >= CONFIG.flashlight.smilerExposureTime) this.deactivate(s);
+        } else {
+          s.exposureT = 0;
+          s.mesh.traverse(o => { if (o.material && o.material.transparent) o.material.opacity = 1; });
+        }
       }
       this.applyCorruption();
       return;
