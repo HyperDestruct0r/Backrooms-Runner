@@ -189,9 +189,9 @@ const Player = {
       : 0;
     // Class 0: Level 0 does not drain sanity on its own. The entity does.
     // Class 1: Level 1 has a small ambient drain, plus Smilers.
-    const ambient = GameState.level === 1 ? (C.level1Drain == null ? 0.04 : C.level1Drain)
-      : GameState.level === 0 ? (C.level0Drain == null ? 0 : C.level0Drain)
-      : C.drain;
+    const ambient = (typeof Sanity !== "undefined")
+      ? Sanity.ambient(GameState.level)
+      : (GameState.level === 1 ? 0.02 : GameState.level === 0 ? 0 : C.drain);
     const rate = ambient + (chasing ? C.chaseDrain : 0) + smilerDrain;
     this.sanityAcc += rate * dt;
     this.lastDamageAgo += dt;
@@ -203,7 +203,8 @@ const Player = {
     if (this.sanity > C.hpRegenSanityNeed &&
         this.stamina > C.hpRegenStaminaNeed &&
         this.lastDamageAgo >= C.hpRegenDelay &&
-        this.hp < this.maxHp) {
+        this.hp < this.maxHp &&
+        !(typeof Sanity !== "undefined" && Sanity.blocksHeal(GameState.level))) {
       this.hpRegenAcc += C.hpRegenRate * dt;
       while (this.hpRegenAcc >= 1 && this.hp < this.maxHp) {
         this.hpRegenAcc -= 1;
