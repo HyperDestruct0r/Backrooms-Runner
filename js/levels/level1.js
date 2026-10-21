@@ -112,8 +112,8 @@ const Level1 = {
     const blackout=this.blackoutState==='flicker'||this.blackoutState==='outage';
     panelMat.emissiveIntensity=blackout?0:3.4*bright;
     rec.fixtures.push({panel,housing,base:bright,mat:panelMat});
-    if(rng()<0.82 && this.lights.length<64){
-      const L=new THREE.PointLight(0xf7f8ff,blackout?0:2.35*bright,38,1.15);
+    if(rng()<0.28 && this.lights.length<16){
+      const L=new THREE.PointLight(0xf7f8ff,blackout?0:2.8*bright,56,1.7);
       L.position.set(x,y-0.35,z); scene.add(L); this.lights.push(L); rec.pointLights.push(L);
     }
   },
@@ -520,7 +520,7 @@ const Level1 = {
         else f.panel.material.emissiveIntensity=e;
         f.panel.visible=true; f.housing.visible=true;
       }
-      for(const L of rec.pointLights) L.intensity=on ? 2.35*dim : 0;
+      for(const L of rec.pointLights) L.intensity=on ? 2.8*dim : 0;
     }
     for(const L of this.ambientLights){
       if(L.isHemisphereLight) L.intensity = on ? 0.22*dim : 0.04;
