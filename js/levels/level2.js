@@ -62,7 +62,7 @@ const Level2 = {
       const roll = r();
       const span = roll < 0.4 ? 12 + Math.floor(r() * 8) : roll < 0.75 ? 28 + Math.floor(r() * 16) : 48 + Math.floor(r() * 24);
       const nx = from.x + dx * span, nz = from.z + dz * span;
-      if (occ.has(key(nx, nz))) return;
+      if (occ.has(key(nx, nz)) || nz <= 0) return;
       const end = addNode(nx, nz);
       const hasDoor = r() < 0.04;
       const dest = r() < 0.65 ? 1 : 0;
@@ -89,14 +89,18 @@ const Level2 = {
       }
       let nx = cur.x + dx * span, nz = cur.z + dz * span;
       let guard = 0;
-      while (occ.has(key(nx, nz)) && guard++ < 4) {
+      while ((occ.has(key(nx, nz)) || nz <= 0) && guard++ < 12) {
         const d = dirs[Math.floor(r() * 4)];
         dx = d[0]; dz = d[1];
         nx = cur.x + dx * span; nz = cur.z + dz * span;
       }
+      if (occ.has(key(nx, nz)) || nz <= 0) { dx = 0; dz = 1; nx = cur.x; nz = cur.z + span; }
       const next = addNode(nx, nz);
-      const sideDoor = i > 0 && r() < 0.22;
-      const dest = r() < 0.6 ? 1 : 0;
+      // Guaranteed exits on the main route: leg 2 -> Level 1, leg 4 -> Level 0,
+      // final leg -> Level 3. Other main-route doors are random extras to 0 or 1.
+      const forced = { 2: 1, 4: 0, 5: 3 }[i];
+      const sideDoor = forced != null || (i > 0 && r() < 0.15);
+      const dest = forced != null ? forced : (r() < 0.6 ? 1 : 0);
       link(cur, next, sideDoor ? "door" : "main", true, r() < 0.3, sideDoor ? dest : 0);
       route.push(next);
       cur = next;
@@ -121,7 +125,9 @@ const Level2 = {
 
     const mirrored = [];
     const map = new Map();
-    for (const n of nodes) {
+    // Snapshot the array: addNode() pushes onto `nodes`, and iterating the live
+    // array would mirror each new mirror forever (infinite loop on level entry).
+    for (const n of nodes.slice()) {
       if (n.z === 0) { map.set(n.id, n); continue; }
       const m = addNode(n.x, -n.z);
       map.set(n.id, m);
@@ -146,14 +152,20 @@ const Level2 = {
     const c = document.createElement("canvas");
     c.width = c.height = 128;
     const ctx = c.getContext("2d");
-    ctx.fillStyle = level === 0 ? "#6a6248" : "#5a5c5e";
+    ctx.fillStyle = level === 0 ? "#6a6248" : level === 3 ? "#6e4a2c" : "#5a5c5e";
     ctx.fillRect(0, 0, 128, 128);
     ctx.strokeStyle = "#2a2824";
     ctx.lineWidth = 6;
     ctx.strokeRect(8, 8, 112, 112);
     ctx.strokeStyle = level === 0 ? "#c2b48a" : "#b0b4b6";
     ctx.lineWidth = 5;
-    if (level === 0) {
+    if (level === 3) {
+      ctx.fillStyle = "#e6c46a";
+      ctx.font = "bold 84px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("3", 64, 68);
+    } else if (level === 0) {
       ctx.beginPath(); ctx.moveTo(24, 52); ctx.lineTo(104, 52); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(24, 76); ctx.lineTo(104, 76); ctx.stroke();
     } else {
@@ -203,6 +215,7 @@ const Level2 = {
       handle: new THREE.MeshStandardMaterial({ color: 0x8a8278, metalness: 0.6, roughness: 0.35 }),
       mark0: this.markTex(0),
       mark1: this.markTex(1),
+      mark3: this.markTex(3),
       rust: new THREE.MeshStandardMaterial({ color: 0x7a5340, roughness: 0.62, metalness: 0.28 }),
       light: new THREE.MeshBasicMaterial({ color: 0xfff1d2, toneMapped: false }),
       dead: new THREE.MeshStandardMaterial({ color: 0x3a3834, roughness: 0.8 })
@@ -253,8 +266,9 @@ const Level2 = {
     }
   },
 
-  enter(seed) {
+  enter(seed, from) {
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
+    if (typeof Level3 !== "undefined") Level3.reset();
     if (typeof Level !== "undefined" && Level.clear) Level.clear(scene);
     if (typeof EntitySystem !== "undefined") EntitySystem.despawn();
     if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
@@ -285,14 +299,16 @@ const Level2 = {
     Player.onGround = true;
     Player.yaw = Math.PI;
     const obj = document.getElementById("hud-obj");
-    if (obj) obj.textContent = "Objective: find a way through";
+    if (obj) obj.textContent = "Objective: find a door out (0, 1, or 3)";
     const lvl = document.getElementById("hud-level-label");
     if (lvl) lvl.textContent = "LEVEL 2";
     const seedEl = document.getElementById("hud-seed-val");
     if (seedEl) seedEl.textContent = String(this.seed);
+    const arrival = (from === 3 && this.exitPos) ? this.exitPos : this.spawn;
+    Player.position.copy(arrival);
     this.stream(true);
     this.placeBottles();
-    Player.position.copy(this.spawn);
+    Player.position.copy(arrival);
     Player.yaw = Math.PI;
   },
 
@@ -417,7 +433,7 @@ const Level2 = {
       handle.scale.set(0.08, 0.16, 0.05);
       handle.position.set(alongX ? leafW * 0.78 : doorSide * 0.05, 1.05, alongX ? doorSide * 0.05 : leafW * 0.78);
       pivot.add(handle);
-      const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), edge.dest === 0 ? this.shared.mark0 : this.shared.mark1);
+      const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), edge.dest === 0 ? this.shared.mark0 : edge.dest === 3 ? this.shared.mark3 : this.shared.mark1);
       mark.position.set(alongX ? leafW * 0.5 : doorSide * 0.04, 1.55, alongX ? doorSide * 0.04 : leafW * 0.5);
       if (!alongX) mark.rotation.y = doorSide > 0 ? Math.PI / 2 : -Math.PI / 2;
       if (alongX) mark.rotation.y = doorSide > 0 ? 0 : Math.PI;
@@ -450,6 +466,40 @@ const Level2 = {
     this.segments.set(key, { group: g, colliders, hotBoxes, lights, edge });
   },
 
+  buildNode(node) {
+    const key = "n" + node.id;
+    if (this.segments.has(key)) return;
+    const g = new THREE.Group();
+    const colliders = [];
+    const W = this.width, H = this.height;
+    const half = W / 2 + 0.16, full = W + 0.64;
+    const has = {};
+    for (const id of node.edges) {
+      const e = this.edges[id];
+      const ox = e.a === node.id ? e.bx : e.ax;
+      const oz = e.a === node.id ? e.bz : e.az;
+      has[Math.sign(ox - node.x) + "," + Math.sign(oz - node.z)] = true;
+    }
+    this.addBox(g, this.shared.ceil, node.x, this.baseY + H + 0.1, node.z, full, 0.2, full);
+    colliders.push({
+      min: new THREE.Vector3(node.x - full / 2, this.baseY + H - 0.05, node.z - full / 2),
+      max: new THREE.Vector3(node.x + full / 2, this.baseY + H + 0.2, node.z + full / 2)
+    });
+    for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (has[d[0] + "," + d[1]]) continue;
+      const wx = node.x + d[0] * half, wz = node.z + d[1] * half;
+      const sx = d[0] !== 0 ? 0.32 : full, sz = d[0] !== 0 ? full : 0.32;
+      this.addBox(g, this.shared.wall, wx, this.baseY + H / 2, wz, sx, H, sz);
+      colliders.push({
+        min: new THREE.Vector3(wx - sx / 2, this.baseY, wz - sz / 2),
+        max: new THREE.Vector3(wx + sx / 2, this.baseY + H, wz + sz / 2)
+      });
+    }
+    this.group.add(g);
+    this.segments.set(key, { group: g, colliders, hotBoxes: [], lights: [],
+      edge: { ax: node.x, az: node.z, bx: node.x, bz: node.z } });
+  },
+
   countLights() {
     let n = 0;
     for (const rec of this.segments.values()) n += rec.lights.length;
@@ -465,6 +515,9 @@ const Level2 = {
     for (const e of this.edges) {
       const mx = (e.ax + e.bx) * 0.5, mz = (e.az + e.bz) * 0.5;
       if (Math.hypot(mx - px, mz - pz) < 70) this.buildEdge(e);
+    }
+    for (const n of this.nodes) {
+      if (Math.hypot(n.x - px, n.z - pz) < 70) this.buildNode(n);
     }
     for (const [k, rec] of Array.from(this.segments.entries())) {
       const e = rec.edge;
@@ -493,7 +546,7 @@ const Level2 = {
     }
     if (!best) return false;
     best.used = true;
-    if (typeof HUD !== "undefined") HUD.toast(best.dest === 0 ? "LEVEL 0" : "LEVEL 1");
+    if (typeof HUD !== "undefined") HUD.toast("LEVEL " + best.dest);
     return true;
   },
 
@@ -509,6 +562,7 @@ const Level2 = {
         if (d.open >= 1 && !d.gone) {
           d.gone = true;
           if (d.dest === 0 && typeof DevCommands !== "undefined") DevCommands.goLevel0();
+          else if (d.dest === 3 && typeof DevCommands !== "undefined") DevCommands.goLevel3();
           else if (typeof DevCommands !== "undefined") DevCommands.goLevel1();
         }
       }
