@@ -7,36 +7,46 @@
       font-family: Consolas, "Segoe UI", monospace;
     }
     .loading-bg {
-      position: absolute; inset: -8%;
+      position: absolute; inset: -4%;
       background:
-        linear-gradient(90deg, rgba(0,0,0,.74), transparent 28%, transparent 72%, rgba(0,0,0,.78)),
-        linear-gradient(180deg, rgba(0,0,0,.55), transparent 40%, rgba(0,0,0,.84)),
+        linear-gradient(180deg, rgba(0,0,0,.18), transparent 30%, rgba(0,0,0,.55)),
         url("../../assets/menu-wallpaper-v3.png") center / cover no-repeat,
-        linear-gradient(180deg, #47421f 0%, #262414 42%, #11100b 100%);
-      filter: saturate(.72) brightness(.42);
-      transform: scale(1.04);
+        #1a160c;
+      filter: saturate(.9) brightness(.72);
+      transform: scale(1.02);
     }
     #boot-loading::after, #game-loading::after {
       content: ""; position: absolute; inset: 0;
-      background:
-        radial-gradient(ellipse at 50% 42%, rgba(235,223,142,.18) 0 8%, rgba(235,223,142,.05) 26%, transparent 50%),
-        radial-gradient(ellipse at center, transparent 22%, rgba(0,0,0,.82) 100%);
+      background: radial-gradient(ellipse at 50% 38%, rgba(255,236,170,.16) 0 10%, transparent 42%);
       pointer-events: none;
     }
-    .loading-card {
+    .loading-center {
+      position: relative; z-index: 2; width: min(420px, 78vw); text-align: center;
+    }
+    .loading-title {
+      font-size: clamp(22px, 5vw, 34px); letter-spacing: .22em; text-transform: uppercase;
+      margin-bottom: 22px; text-shadow: 0 2px 18px rgba(0,0,0,.65);
+    }
+    .loading-track { height: 4px; background: rgba(0,0,0,.45); border: 1px solid rgba(239,230,176,.2); overflow: hidden; }
+    .loading-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #c4ae62, #f3e7b0); box-shadow: 0 0 12px rgba(232,214,140,.4); transition: width .18s ease; }
+    .loading-percent { margin-top: 10px; font-size: 12px; letter-spacing: .18em; opacity: .8; }
+    .loading-status { margin-top: 14px; font-size: 11px; letter-spacing: .16em; opacity: .7; }
+    .loading-tip { margin-top: 8px; font-size: 11px; line-height: 1.5; letter-spacing: .04em; opacity: .55; min-height: 32px; }
+    .loading-credit {
+      position: absolute; z-index: 2; left: 0; right: 0; bottom: 28px;
+      text-align: center; font-size: 10px; letter-spacing: .32em; opacity: .45;
+    }
+    #game-loading .loading-card {
       position: relative; z-index: 2; width: min(560px, 88vw); padding: 30px 32px 26px;
       border: 1px solid rgba(203,184,90,.38); background: rgba(16,14,8,.78);
-      box-shadow: 0 22px 80px rgba(0,0,0,.62), inset 0 0 40px rgba(255,235,140,.03);
-      backdrop-filter: blur(4px);
+      box-shadow: 0 22px 80px rgba(0,0,0,.62);
     }
-    .loading-kicker { font-size: 10px; letter-spacing: .28em; opacity: .48; margin-bottom: 10px; }
-    .loading-title { font-size: clamp(20px, 5vw, 28px); letter-spacing: .16em; text-transform: uppercase; margin-bottom: 6px; white-space: nowrap; }
-    .loading-subtitle { font-size: 10px; letter-spacing: .18em; opacity: .55; margin-bottom: 8px; }
-    .loading-seed { font-size: 11px; letter-spacing: .14em; opacity: .7; margin-bottom: 18px; color: #f0e6b4; }
-    .loading-status { min-height: 18px; font-size: 11px; letter-spacing: .08em; opacity: .82; }
-    .loading-track { height: 5px; margin-top: 12px; background: rgba(0,0,0,.58); border: 1px solid rgba(239,230,176,.14); overflow: hidden; }
-    .loading-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #a8923e, #e4d47a); box-shadow: 0 0 16px rgba(203,184,90,.45); transition: width .18s ease; }
-    .loading-percent { margin-top: 8px; font-size: 10px; letter-spacing: .12em; opacity: .52; text-align: right; }
+    #game-loading .loading-kicker { font-size: 10px; letter-spacing: .28em; opacity: .48; margin-bottom: 10px; }
+    #game-loading .loading-title { font-size: clamp(20px, 5vw, 28px); letter-spacing: .16em; margin-bottom: 6px; text-shadow: none; }
+    #game-loading .loading-subtitle { font-size: 10px; letter-spacing: .18em; opacity: .55; margin-bottom: 8px; }
+    #game-loading .loading-seed { font-size: 11px; letter-spacing: .14em; opacity: .7; margin-bottom: 18px; color: #f0e6b4; }
+    #game-loading .loading-track { margin-top: 12px; }
+    #game-loading .loading-percent { text-align: right; opacity: .52; }
     #game-loading { display: none; background: #080704; }
     #game-loading .loading-card { width: min(560px, 88vw); }
     .loading-tip { margin-top: 20px; font-size: 11px; line-height: 1.6; letter-spacing: .04em; opacity: .5; min-height: 34px; }
