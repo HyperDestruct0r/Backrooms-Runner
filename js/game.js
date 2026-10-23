@@ -59,6 +59,7 @@ const Game = {
     // player is reset.
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level2 !== "undefined") Level2.reset();
+    if (typeof Level3 !== "undefined") Level3.reset();
     if (typeof Level !== "undefined" && typeof Level.buildProcedural === "function") {
       const requestedSeed = (seed >>> 0);
       const built = !!Level.buildProcedural(scene, requestedSeed, { strictSeed: !!strictSeed, testBeta: !!testBeta });
@@ -238,6 +239,7 @@ const Game = {
     GameState.lastTime = performance.now();
     this._setBoot(100, "READY");
     await this._nextFrame();
+    if (this._bootTipTimer) { clearInterval(this._bootTipTimer); this._bootTipTimer = null; }
     if (boot) boot.style.display = "none";
     setPauseOverlay(false);
     if (typeof MenuSystem !== "undefined") MenuSystem.showMain();
@@ -263,6 +265,7 @@ const Game = {
     if (typeof Level1 !== "undefined" && Level1.active) {
       Level1.resetVisuals();
       if (typeof Level2 !== "undefined") Level2.reset();
+    if (typeof Level3 !== "undefined") Level3.reset();
     }
 
     GameState.phase = "loading";
@@ -270,18 +273,15 @@ const Game = {
     const runId = ++GameState.runId;
     if (startOverlay) startOverlay.style.display = "none";
     setPauseOverlay(false);
-    if (loadOverlay) loadOverlay.style.display = "flex";
-    const title = document.getElementById("game-load-title");
-    const subtitle = document.getElementById("game-load-subtitle");
-    const seedLine = document.getElementById("game-load-seed");
-    if (title) title.textContent = testBeta ? "TEST BETA" : (tutorial ? "TUTORIAL" : "ENTERING LEVEL 0");
-    if (subtitle) subtitle.textContent = testBeta ? "ARCHITECTURAL GENERATOR" : "PLEASE WAIT";
-    if (seedLine) seedLine.textContent = "SEED —";
-    this._startLoadingTips(testBeta);
-    this._setGameLoading(8, "LOADING PLAYER STATE...");
+    if (loadOverlay) {
+      loadOverlay.style.display = "flex";
+      const err = document.getElementById("noclip-error");
+      const back = document.getElementById("noclip-back");
+      if (err) { err.hidden = true; err.textContent = ""; }
+      if (back) back.hidden = true;
+    }
     await this._nextFrame();
     if (runId !== GameState.runId || GameState.phase !== "loading") return;
-    this._setGameLoading(28, testBeta ? "CHOOSING SEED..." : "INITIALIZING RUN...");
     await this._nextFrame();
     if (runId !== GameState.runId || GameState.phase !== "loading") return;
     document.getElementById("complete-overlay").style.display = "none";
@@ -293,8 +293,6 @@ const Game = {
     const selectedSeed = tutorial
       ? 13371337
       : (isCustom ? (customSeed >>> 0) : this._newRunSeed());
-    if (seedLine) seedLine.textContent = "SEED " + selectedSeed;
-    this._setGameLoading(42, testBeta ? "BUILDING ARCHITECTURAL MAZE..." : "GENERATING LEVEL 0...");
     await this._nextFrame();
     if (runId !== GameState.runId || GameState.phase !== "loading") return;
 
@@ -305,39 +303,20 @@ const Game = {
       if (betaBanner) betaBanner.style.display = testBeta ? "block" : "none";
     } catch (err) {
       console.error("Could not generate Level 0 for new run:", err);
-      // Test Beta diagnostics: show the actual failure on-screen for players
-      // who cannot access browser developer tools (e.g. Chromebook).
-      if (testBeta) {
-        const message = (err && err.message) ? err.message : String(err || "Unknown error");
-        if (typeof HUD !== "undefined" && HUD.toast) HUD.toast("TEST BETA FAILED: " + message.slice(0, 110));
-        console.error("Test Beta failed:", err);
-      }
       GameState.phase = "start";
       GameState.testBeta = false;
       const betaBanner = document.getElementById("beta-run-warning");
       if (betaBanner) betaBanner.style.display = "none";
-      if (loadOverlay) loadOverlay.style.display = "none";
-      this._stopLoadingTips();
-
-      if (typeof MenuSystem !== "undefined") {
-        if (testBeta) {
-          MenuSystem.showPage("play-select");
-          MenuSystem.showSeedError("Test Beta failed: " + ((err && err.message) ? err.message : String(err || "unknown error")).slice(0, 160));
-        } else if (isCustom) {
-          MenuSystem.showPage("play-select");
-          MenuSystem.showSeedError(
-            "Seed " + selectedSeed + " failed to generate a valid Level 0. Try another seed."
-          );
-          const input = document.getElementById("custom-seed-input");
-          if (input) {
-            input.value = String(selectedSeed);
-            input.focus();
-            input.select();
-          }
-        } else {
-          MenuSystem.showMain();
-          HUD.toast("RANDOM SEED FAILED — CHOOSE RANDOM SEED TO TRY AGAIN");
-        }
+      const message = (err && err.message) ? err.message : String(err || "The seed could not be built.");
+      const errEl = document.getElementById("noclip-error");
+      const back = document.getElementById("noclip-back");
+      if (errEl) { errEl.hidden = false; errEl.textContent = "The seed could not be built. " + message.slice(0, 140); }
+      if (back) {
+        back.hidden = false;
+        back.onclick = () => {
+          if (loadOverlay) loadOverlay.style.display = "none";
+          if (typeof MenuSystem !== "undefined") MenuSystem.showPage(testBeta || isCustom ? "play-select" : "main");
+        };
       }
       return;
     }
@@ -362,18 +341,10 @@ const Game = {
     if (typeof HUD !== "undefined" && HUD.setFpsVisible) HUD.setFpsVisible(testBeta || !!(typeof MenuSystem !== "undefined" && MenuSystem.settings && MenuSystem.settings.showFps));
     GameState.cinematicCamera = false;
     GameState.cutscene = false;
-    // Level1 was already fully reset before Level 0 was rebuilt. Do not call
-    // resetVisuals() here: Level1.enter() aliases Level.colliders/triggers to
-    // its streaming arrays, so resetting it after Level 0 is built would wipe
-    // the freshly generated Level 0 collision state and scene atmosphere.
-    this._setGameLoading(78, "WIRING LIGHTS...");
     await this._nextFrame();
     AudioSystem.resume();
     AudioSystem.ambientHumStart();
-    this._setGameLoading(100, "ENTERING LEVEL 0");
-    // No artificial delay here: once the run is initialized, enter immediately.
     await this._nextFrame();
-    this._stopLoadingTips();
     if (loadOverlay) loadOverlay.style.display = "none";
     GameState.phase = "playing";
     if (tutorial) {
@@ -415,6 +386,7 @@ const Game = {
     }
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level2 !== "undefined") Level2.reset();
+    if (typeof Level3 !== "undefined") Level3.reset();
     if (typeof Level !== "undefined") {
       // IMPORTANT: do not merely null Level.group here. Level.clear() removes
       // the old Level 0 meshes/lights from the scene and disposes the per-run
@@ -454,6 +426,7 @@ const Game = {
     // the new map has been built.
     if (typeof Level1 !== 'undefined') Level1.resetVisuals();
     if (typeof Level2 !== "undefined") Level2.reset();
+    if (typeof Level3 !== "undefined") Level3.reset();
     const next = (Math.imul((GameState.seed || 1) ^ 0x9E3779B9, 1664525) + 1013904223 + (performance.now() | 0)) >>> 0;
     const newSeed = next || 483921;
     let built = false;
@@ -579,6 +552,9 @@ const Game = {
       } else if (GameState.level === 2 && typeof Level2 !== "undefined" && Level2.active) {
         Level2.update(dt);
         GameState.levelTimes[2] = (GameState.levelTimes[2] || 0) + dt;
+      } else if (GameState.level === 3 && typeof Level3 !== "undefined" && Level3.active) {
+        Level3.update(dt);
+        GameState.levelTimes[3] = (GameState.levelTimes[3] || 0) + dt;
       } else if (GameState.level === 0) {
         GameState.levelTimes[0] += dt;
         if (typeof Level !== "undefined" && Level.stream) Level.stream(false);
@@ -589,7 +565,7 @@ const Game = {
         if (typeof DebugPath !== "undefined") DebugPath.update(dt);
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
-      } else if (GameState.level === 2) {
+      } else if (GameState.level === 2 || GameState.level === 3) {
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
       } else {
