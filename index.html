@@ -3,6 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="theme-color" content="#d4bd70">
+  <meta name="description" content="Procedural liminal-space exploration. Enter the Backrooms.">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <title>Backrooms Runner — Infinite Level 1</title>
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/systems/transitions.css">
@@ -176,6 +181,7 @@
           <button class="menu-option" type="button" data-menu-index="3" data-menu-action="controls">CONTROLS</button>
           <button class="menu-option" type="button" data-menu-index="4" data-menu-action="credits">CREDITS</button>
         </div>
+        <button id="install-app-button" class="app-install-button" type="button" hidden>INSTALL BACKROOMS RUNNER</button>
         <div class="menu-footer">W/S OR ARROWS TO SELECT · ENTER TO CONFIRM</div>
       </div>
 
@@ -411,5 +417,40 @@
 <script src="js/systems/menu.js"></script>
 <script src="js/systems/dev-commands.js"></script>
 <script src="js/game.js"></script>
+  <script>
+    // Progressive Web App support. The game remains playable as a normal website.
+    (() => {
+      const installButton = document.getElementById('install-app-button');
+      let installPrompt = null;
+
+      window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault();
+        installPrompt = event;
+        if (installButton) installButton.hidden = false;
+      });
+
+      if (installButton) {
+        installButton.addEventListener('click', async () => {
+          if (!installPrompt) return;
+          installPrompt.prompt();
+          await installPrompt.userChoice;
+          installPrompt = null;
+          installButton.hidden = true;
+        });
+      }
+
+      window.addEventListener('appinstalled', () => {
+        installPrompt = null;
+        if (installButton) installButton.hidden = true;
+      });
+
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./service-worker.js', { scope: './' })
+            .catch((error) => console.warn('Backrooms Runner offline support could not start:', error));
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
