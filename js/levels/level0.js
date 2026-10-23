@@ -1621,11 +1621,23 @@ const Level = {
     const minx = x0 * T, minz = z0 * T, maxx = x1 * T, maxz = z1 * T;
     const fw = maxx - minx, fd = maxz - minz;
     if (fw > 0.05 && fd > 0.05) {
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), Materials.carpet);
+      const floorMap = Materials.carpet.map.clone();
+      floorMap.wrapS = floorMap.wrapT = THREE.RepeatWrapping;
+      floorMap.repeat.set(Math.max(1, fw / 2.2), Math.max(1, fd / 2.2));
+      floorMap.needsUpdate = true;
+      const floorMat = Materials.carpet.clone();
+      floorMat.map = floorMap;
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), floorMat);
       floor.rotation.x = -Math.PI / 2;
       floor.position.set((minx + maxx) * 0.5, 0, (minz + maxz) * 0.5);
       g.add(floor);
-      const ceil = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), Materials.ceiling);
+      const ceilMap = Materials.ceiling.map.clone();
+      ceilMap.wrapS = ceilMap.wrapT = THREE.RepeatWrapping;
+      ceilMap.repeat.set(Math.max(1, fw / 2.4), Math.max(1, fd / 2.4));
+      ceilMap.needsUpdate = true;
+      const ceilMat = Materials.ceiling.clone();
+      ceilMat.map = ceilMap;
+      const ceil = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), ceilMat);
       ceil.rotation.x = Math.PI / 2;
       ceil.position.set((minx + maxx) * 0.5, H, (minz + maxz) * 0.5);
       g.add(ceil);
