@@ -153,6 +153,15 @@ const Game = {
     const boot = document.getElementById("boot-loading");
     this._setBoot(4, "INITIALIZING RENDERER...");
     const bootTip = document.getElementById("boot-tip");
+    if (bootTip) {
+      const tips = this._loadingTips;
+      let i = 0;
+      bootTip.textContent = tips[0];
+      this._bootTipTimer = setInterval(() => {
+        i = (i + 1) % tips.length;
+        bootTip.textContent = tips[i];
+      }, 2800);
+    }
     if (bootTip) bootTip.textContent = "Some corridors may look familiar. They are not.";
     await this._nextFrame();
     initAssets();
