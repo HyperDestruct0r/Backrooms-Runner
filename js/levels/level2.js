@@ -23,6 +23,12 @@ const Level2 = {
   lastKey: "",
   infoText: "",
 
+  hash(x, z, salt) {
+    let h = (this.seed >>> 0) ^ Math.imul((x | 0) + (salt || 0), 0x45d9f3b) ^ Math.imul((z | 0) - (salt || 0), 0x27d4eb2d);
+    h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  },
+
   rng(seed) {
     let a = (seed >>> 0) || 1;
     return () => { a ^= a << 13; a ^= a >>> 17; a ^= a << 5; return (a >>> 0) / 4294967296; };
