@@ -1,133 +1,46 @@
 # Backrooms Runner
 
-**Backrooms Runner** is a browser-based first-person exploration/horror game inspired by the Backrooms. Explore procedurally generated environments, manage your resources, survive strange entities and environmental events, and find your way to the next level.
+**Backrooms Runner** is a browser-based first-person exploration game inspired by the Backrooms. Explore procedurally generated environments, manage your resources, and find your way onward.
 
 **Play:** https://hyperdestruct0r.github.io/Backrooms-Runner/
 
 ## Current Features
 
 * First-person 3D gameplay powered by **Three.js**
-* **Level 0** — the classic yellow Backrooms environment
-* **Level 1** — a large procedurally generated concrete/maintenance environment
-* Procedural world generation with deterministic seeds
-* Streaming environments that generate as the player explores
-* Flashlight system
-* Sprinting, crouching, jumping, and movement mechanics
+* Several distinct levels, each generated from a seed
+* Streaming environments that build as you explore
+* Flashlight, sprint, crouch, and jump
 * Inventory and consumable items
-* Almond Water
-* Smiler entity
-* Dynamic lighting
-* Level 1 electrical blackout events
-* Level transitions
-* Exit detection and navigation assistance
-* Atmospheric effects and environmental audio
-* HUD and gameplay notifications
+* Dynamic lighting and atmospheric effects
+* A heads-up display
 
 ## Gameplay
 
-The basic objective is simple:
+> **Find a way through.**
 
-> **Find the exit.**
+The layout is generated for each run. You cannot rely on a fixed map. What a level contains, and how you leave it, is for you to find.
 
-Getting there is not necessarily simple.
+## Levels
 
-The Backrooms are designed to be confusing and disorienting. Corridors, rooms, maintenance areas, and other environments are procedurally generated, meaning the player cannot rely on a single fixed map.
+* **Level 0** — yellow rooms, fluorescent lights, repeating corridors
+* **Level 1** — a much larger concrete and service space
+* **Level 2** — narrow industrial tunnels
+* **Level 3** — an electrical station
 
-As development continues, different levels will have increasingly distinct environments, mechanics, and threats.
-
-##  Level 0
-
-Level 0 is based around the familiar Backrooms environment:
-
-* Yellow wallpaper
-* Repeating rooms and corridors
-* Fluorescent lighting
-* Large procedurally generated spaces
-* Disorienting layouts
-* Smilers and other hazards
-
-The goal is to find a way out while navigating an environment that intentionally feels repetitive and difficult to memorize.
-
-* **Level 2** — dark industrial maintenance tunnels
-
-## Level 2
-
-Level 2 is a network of narrow industrial tunnels. It is entered from the developer console.
-
-Commands:
-
-* `/level 2` — enter Level 2 at its normal spawn
-* `/level 2 tps` — enter Level 2 at the test spawn
-* `/level2` — alias for `/level 2`
-* `/level 2 reset` — regenerate with a new seed
-* `/level 2 seed <number>` — enter with a specific seed
-* `/level 2 info` — seed and graph size
-* `/level 2 exit` — teleport to the main-route end
-
-The main route is generated first. Branches are mostly dead ends. A few are alternate or anomalous placeholders. Clues are pipe side, light warmth, and damp ends. They are consistent with the route, not arrows.
-
-## Level 1
-
-Level 1 is a much larger concrete and maintenance environment.
-
-It features:
-
-* Procedurally generated maintenance areas
-* Concrete corridors and partitions
-* Large service/industrial spaces
-* Columns and pipes
-* Dynamic lighting
-* Electrical blackouts
-* Streaming world generation
-* A Level 1 exit
-
-Level 1 is intended to feel substantially different from Level 0 rather than simply being another maze with different textures.
-
-The generation system is deterministic: the same world seed and coordinates produce the same environment, while still allowing the game to create a very large world.
-
-## Blackout Events
-
-Level 1 contains a level-wide electrical outage system.
-
-When a blackout occurs:
-
-1. The lights begin to flicker.
-2. The electrical system shuts down.
-3. The environment remains dark for a period of time.
-4. The lights eventually return.
-
-The blackout system also accounts for newly generated areas while the event is active, so streaming into a new area does not immediately restore its lights.
-
-## Entities
-
-### Smiler
-
-Smilers are hostile entities that can appear while exploring.
-
-They are intended to make the player think carefully about lighting and their surroundings rather than simply turning exploration into constant combat.
-
-More entities are planned as development continues.
+Each level is meant to feel different. The same seed produces the same layout.
 
 ## Procedural Generation
 
-A major part of Backrooms Runner is its procedural generation system.
-
-Rather than storing one enormous predefined map, the game generates parts of the world as the player explores.
-
-This allows the game to create environments much larger than a traditional hand-built map while keeping the amount of geometry loaded at any one time manageable.
-
-The generation system is also deterministic, allowing the same seed and coordinates to reproduce the same environment.
+The world is not one stored map. It is generated as you move, so a run can be larger than a hand-built level while only keeping the nearby part loaded. Generation is deterministic: the same seed and coordinates reproduce the same place.
 
 ## Technology
-
-Backrooms Runner is built using:
 
 * **HTML**
 * **CSS**
 * **JavaScript**
 * **Three.js**
 
-The project currently uses a classic multi-file JavaScript architecture rather than ES modules. This keeps the different game systems separated while maintaining compatibility with the existing browser-based codebase.
+The project uses classic multi-file JavaScript rather than ES modules, so the existing browser setup stays intact.
 
 ## Running the Game
 
@@ -135,62 +48,59 @@ The easiest way to play is through GitHub Pages:
 
 **https://hyperdestruct0r.github.io/Backrooms-Runner/**
 
-To run the project locally, clone the repository and open `index.html` in a modern browser.
+To run it locally, clone the repository and open `index.html` in a modern browser. Three.js loads from jsDelivr, so the first visit needs a connection unless that library is hosted locally.
 
-The game currently loads Three.js from jsDelivr, so an internet connection is required unless the dependency is hosted locally.
+## Seed selection
 
-## Development Status
+The Play menu offers a generated seed and a custom seed.
 
-Backrooms Runner is an **active work in progress**.
+- A generated seed is chosen when you start that run.
+- A custom seed is an unsigned 32-bit integer and starts Level 0 from that value.
+- If a seed cannot produce a valid map, the run is rejected and you can try another.
+- Generation does not run during boot, so a bad seed cannot lock you out of the menu.
 
-The current focus is improving the procedural generation, atmosphere, performance, entity behavior, and level design before expanding the game with additional levels.
-
-### Planned Improvements
-
-* More Backrooms levels
-* More entities
-* Improved procedural generation
-* More environmental variety
-* Additional sound and atmospheric effects
-* Improved entity AI
-* More gameplay mechanics
-* Performance optimization
-* More detailed environments
-* Additional level-specific events
-
-## License
-
-This project is currently a personal development project.
-
-See the repository for the latest source code and project information.
-
----
-
-**Backrooms Runner**
-*You weren't supposed to find this place.*
-
-
-## Seed selection and TypeScript
-
-The Play menu now offers **Random Seed** and **Custom Seed**.
-
-- Random Seed chooses a new seed only when Random Seed is selected.
-- Custom Seed accepts an unsigned 32-bit integer and deterministically starts the Level 0 generation process from that value.
-- If the selected seed cannot produce a valid map within the generator's validation budget, the run is rejected and the player can try another custom seed.
-- Level generation is no longer performed during boot, so a failed run seed cannot make the main menu inaccessible.
-
-`ts/systems/seed.ts` is the typed TypeScript source for seed utilities, while `js/systems/seed.js` is the browser runtime counterpart. `tsconfig.json` is included for static type-checking the TypeScript source.
-
+`ts/systems/seed.ts` is the typed source for the seed utilities. `js/systems/seed.js` is what the browser runs. `tsconfig.json` is included for checking the TypeScript source.
 
 ## Chromebook installation (Progressive Web App)
 
 Backrooms Runner can be installed from Chrome on ChromeOS without Google Play.
 
-1. Publish the contents of this folder to the repository's GitHub Pages branch/location.
-2. Open the GitHub Pages site in Chrome over HTTPS and allow the first load to finish.
-3. If Chrome shows an install icon in the address bar, use it; otherwise open Chrome's three-dot menu and look for **Install Backrooms Runner** or **Save and share → Install page as app** (wording varies by Chrome version).
-4. After installation, launch **Backrooms Runner** from the Chromebook launcher.
+1. Publish this folder to the repository's GitHub Pages location.
+2. Open the Pages site in Chrome over HTTPS and let the first load finish.
+3. Use the install icon in the address bar, or Chrome's menu: **Install Backrooms Runner** or **Save and share → Install page as app**.
+4. Launch **Backrooms Runner** from the Chromebook launcher.
 
-The in-game **INSTALL BACKROOMS RUNNER** button appears only when Chrome exposes its installation prompt. The service worker caches the app shell and eligible assets after they load. Offline use is best-effort: account features and other server-dependent functionality still need internet, and external libraries must have been cached during an online visit.
+The in-game install button appears only when Chrome offers the prompt. The service worker caches the app after that first visit. Offline play works for a guest run. Accounts and anything that talks to a server still need the network.
 
-When publishing a future release, update `CACHE_VERSION` near the top of `service-worker.js` so installed copies refresh their cached files.
+When you publish a release, bump `CACHE_VERSION` at the top of `service-worker.js` so installed copies pick up the new files.
+
+## Development Status
+
+Backrooms Runner is an **active work in progress**.
+
+### Planned
+
+* More levels
+* More entities
+* More environmental variety and audio
+* Performance work
+
+## Developer console
+
+These commands are for testing. They are not part of play, and they will skip things you are meant to find.
+
+* `/level 0`, `/level 1`, `/level 2`, `/level 3` — enter a level
+* `/level 2 reset`, `/level 3 reset` — regenerate
+* `/level 2 seed <n>`, `/level 3 seed <n>` — enter with a seed
+* `/level 2 info`, `/level 3 info` — seed and size
+* `/level 2 exit`, `/level 3 exit` — jump to the end of that level
+* `/level 3 button`, `/level 3 power` — testing shortcuts for Level 3
+
+## License
+
+This project is a personal development project.
+
+---
+
+**Backrooms Runner**
+*You weren't supposed to find this place.*
