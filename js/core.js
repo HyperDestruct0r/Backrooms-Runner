@@ -718,6 +718,7 @@ window.addEventListener("keydown", (e) => {
   if (e.code === CONFIG.keys.use && GameState.ready && GameState.phase === "playing" && !GameState.inventoryOpen && !e.repeat) {
     e.preventDefault();
     if (typeof Level2 !== "undefined" && Level2.tryUse && Level2.tryUse()) return;
+    if (typeof Level3 !== "undefined" && Level3.tryUse && Level3.tryUse()) return;
     if (typeof PassC !== "undefined" && PassC.openNearestCrate && PassC.openNearestCrate()) return;
     PickupSystem.tryPickup();
   }
