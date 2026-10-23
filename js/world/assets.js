@@ -262,7 +262,8 @@ function initAssets() {
     map: carpetMap, roughness: 0.97, metalness: 0.0, color: 0x8f7a45
   });
   Materials.ceiling = new THREE.MeshStandardMaterial({
-    map: ceilingMap, roughness: 0.9, metalness: 0.0, color: 0xffffff
+    map: ceilingMap, roughness: 0.86, metalness: 0.0, color: 0xfff6e4,
+    emissive: 0x3a3424, emissiveIntensity: 0.35
   });
   Materials.column = new THREE.MeshStandardMaterial({
     map: wallMap, roughness: 0.84, metalness: 0.02, color: 0xc9bd8c
