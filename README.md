@@ -180,3 +180,17 @@ The Play menu now offers **Random Seed** and **Custom Seed**.
 - Level generation is no longer performed during boot, so a failed run seed cannot make the main menu inaccessible.
 
 `ts/systems/seed.ts` is the typed TypeScript source for seed utilities, while `js/systems/seed.js` is the browser runtime counterpart. `tsconfig.json` is included for static type-checking the TypeScript source.
+
+
+## Chromebook installation (Progressive Web App)
+
+Backrooms Runner can be installed from Chrome on ChromeOS without Google Play.
+
+1. Publish the contents of this folder to the repository's GitHub Pages branch/location.
+2. Open the GitHub Pages site in Chrome over HTTPS and allow the first load to finish.
+3. If Chrome shows an install icon in the address bar, use it; otherwise open Chrome's three-dot menu and look for **Install Backrooms Runner** or **Save and share → Install page as app** (wording varies by Chrome version).
+4. After installation, launch **Backrooms Runner** from the Chromebook launcher.
+
+The in-game **INSTALL BACKROOMS RUNNER** button appears only when Chrome exposes its installation prompt. The service worker caches the app shell and eligible assets after they load. Offline use is best-effort: account features and other server-dependent functionality still need internet, and external libraries must have been cached during an online visit.
+
+When publishing a future release, update `CACHE_VERSION` near the top of `service-worker.js` so installed copies refresh their cached files.
