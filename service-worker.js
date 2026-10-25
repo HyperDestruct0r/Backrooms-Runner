@@ -48,7 +48,6 @@ const APP_SHELL = [
   "./js/systems/sanity.js",
   "./js/systems/seed.js",
   "./js/systems/tutorial.js",
-  ".js/systems/passc.js",
   "./js/world/assets.js",
   "./manifest.json",
   "./ts/systems/seed.ts",
