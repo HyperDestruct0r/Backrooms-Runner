@@ -60,6 +60,9 @@ const Game = {
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof Level3 !== "undefined") Level3.reset();
+    if (typeof Level4 !== "undefined") Level4.reset();
+    if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+    if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
     if (typeof Level !== "undefined" && typeof Level.buildProcedural === "function") {
       const requestedSeed = (seed >>> 0);
       const built = !!Level.buildProcedural(scene, requestedSeed, { strictSeed: !!strictSeed, testBeta: !!testBeta });
@@ -266,6 +269,9 @@ const Game = {
       Level1.resetVisuals();
       if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof Level3 !== "undefined") Level3.reset();
+    if (typeof Level4 !== "undefined") Level4.reset();
+    if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+    if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
     }
 
     GameState.phase = "loading";
@@ -387,6 +393,9 @@ const Game = {
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof Level3 !== "undefined") Level3.reset();
+    if (typeof Level4 !== "undefined") Level4.reset();
+    if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+    if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
     if (typeof Level !== "undefined") {
       // IMPORTANT: do not merely null Level.group here. Level.clear() removes
       // the old Level 0 meshes/lights from the scene and disposes the per-run
@@ -427,6 +436,9 @@ const Game = {
     if (typeof Level1 !== 'undefined') Level1.resetVisuals();
     if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof Level3 !== "undefined") Level3.reset();
+    if (typeof Level4 !== "undefined") Level4.reset();
+    if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+    if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
     const next = (Math.imul((GameState.seed || 1) ^ 0x9E3779B9, 1664525) + 1013904223 + (performance.now() | 0)) >>> 0;
     const newSeed = next || 483921;
     let built = false;
@@ -544,6 +556,8 @@ const Game = {
       else if (GameState.level === 1) GameState.levelTimes[1] += dt;
       if (typeof CutsceneSystem !== "undefined") CutsceneSystem.update(dt);
       if (typeof SmilerDeath !== "undefined") SmilerDeath.update(dt);
+      // runs the Hound death fade; does nothing when no Hound is killing the player
+      if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
     } else if (GameState.phase === "playing" && Input.locked) {
       GameState.elapsed += dt;
       if (GameState.level === 1 && Level1.active) {
@@ -551,10 +565,20 @@ const Game = {
         GameState.levelTimes[1] = Level1.levelTime;
       } else if (GameState.level === 2 && typeof Level2 !== "undefined" && Level2.active) {
         Level2.update(dt);
+        if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
+        if (typeof SmilerSystem !== "undefined") SmilerSystem.update(dt);
         GameState.levelTimes[2] = (GameState.levelTimes[2] || 0) + dt;
       } else if (GameState.level === 3 && typeof Level3 !== "undefined" && Level3.active) {
         Level3.update(dt);
+        if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
+        if (typeof SmilerSystem !== "undefined") SmilerSystem.update(dt);
         GameState.levelTimes[3] = (GameState.levelTimes[3] || 0) + dt;
+      } else if (GameState.level === 4 && typeof Level4 !== "undefined" && Level4.active) {
+        Level4.update(dt);
+        // only the system this level attached does anything; the other is detached
+        if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
+        if (typeof SmilerSystem !== "undefined") SmilerSystem.update(dt);
+        GameState.levelTimes[4] = (GameState.levelTimes[4] || 0) + dt;
       } else if (GameState.level === 0) {
         GameState.levelTimes[0] += dt;
         if (typeof Level !== "undefined" && Level.stream) Level.stream(false);
@@ -565,7 +589,7 @@ const Game = {
         if (typeof DebugPath !== "undefined") DebugPath.update(dt);
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
-      } else if (GameState.level === 2 || GameState.level === 3) {
+      } else if (GameState.level === 2 || GameState.level === 3 || GameState.level === 4) {
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
       } else {
