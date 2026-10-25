@@ -58,25 +58,105 @@ const SmilerCorruption = {
   }
 };
 
+/* SmilerSystem is level-agnostic. A level calls attach(opts) with its own live
+   collider array and rules, and calls update(dt) while it is the active level.
+   Nothing in here reads which level is running.
+
+   attach(opts)
+     colliders      live collider array. Read every frame, never copied.
+     cap            max active Smilers.
+     graceSeconds   nothing spawns for this long after attach.
+     minDist/maxDist  spawn distance band from the player (default 15 / 32).
+     seed           deterministic placement.
+     allow()        owned by the level. False means: do not spawn, and non-forced
+                    Smilers retreat and despawn after 1.5 s. Forced ones stay.
+     isDark(x, z)   optional. A candidate is refused when it returns false.
+   Optional, for levels that need them (defaults match the old Level 1 numbers):
+     margin         clearance from walls, default 0.9. The face is 1.7 m wide.
+     interval       [min, max] seconds between spawn tries, default [6, 9].
+     firstDelay     seconds from allow() turning true to the first try. Default:
+                    one interval. Level 1 passes 1.5 and [1.8, 2.2] to keep its pace.
+
+   Colliders. A collider blocks a Smiler when max.y > 0.6 and min.y < 0.7, so a
+   ceiling slab is not a wall. Floors are colliders whose top is at about y = 0; if
+   the list has any, a spawn point must be over one, so nothing appears in the void
+   outside a level. */
 const SmilerSystem = {
   list: [],
   group: null,
-  spawnTimer: 0,
-  outageSpawned: false,
-  rng: null,
-  // Keep blackout encounters threatening without flooding the player.
-  maxActive: 7,
+  attached: false,
+  opts: null,
+  t: 0,
+  spawnT: 0,
+  armed: false,
+  _rand: null,
   damageAcc: 0,
   sanityPulseAcc: 0,
 
+  attach(opts) {
+    this.reset();
+    const o = opts || {};
+    this.opts = {
+      colliders: o.colliders || [],
+      cap: o.cap == null ? 2 : o.cap,
+      graceSeconds: o.graceSeconds || 0,
+      minDist: o.minDist == null ? 15 : o.minDist,
+      maxDist: o.maxDist == null ? 32 : o.maxDist,
+      allow: typeof o.allow === "function" ? o.allow : null,
+      isDark: typeof o.isDark === "function" ? o.isDark : null,
+      margin: o.margin == null ? 0.9 : o.margin,
+      interval: o.interval || [6, 9],
+      firstDelay: o.firstDelay == null ? null : o.firstDelay
+    };
+    let a = ((o.seed == null ? 1 : o.seed) ^ 0x7F4A7C15) >>> 0 || 1;
+    this._rand = () => { a ^= a << 13; a >>>= 0; a ^= a >>> 17; a ^= a << 5; a >>>= 0; return a / 4294967296; };
+    this.t = 0;
+    this.armed = false;
+    this.spawnT = 0;
+    this.attached = true;
+  },
+
+  detach() {
+    this.reset();
+    this.attached = false;
+    this.opts = null;
+  },
+
+  // Removes every Smiler. Stays attached and does not restart the grace.
   reset() {
-    if (this.group && scene) scene.remove(this.group);
+    for (const s of this.list) this._dispose(s);
+    if (this.group && typeof scene !== "undefined" && scene) scene.remove(this.group);
     this.group = null;
     this.list = [];
-    this.spawnTimer = 0;
-    this.outageSpawned = false;
+    this.armed = false;
+    this.spawnT = 0;
     this.damageAcc = 0;
     this.sanityPulseAcc = 0;
+    if (typeof SmilerCorruption !== "undefined") SmilerCorruption.reset();
+  },
+
+  count() {
+    let n = 0;
+    for (const s of this.list) if (s.active) n++;
+    return n;
+  },
+
+  // Remove up to `count` active Smilers, most recent first. Returns how many went.
+  despawn(count) {
+    const active = this.list.filter(s => s.active);
+    const n = Math.min(active.length, Math.max(1, (count == null ? 1 : count) | 0));
+    for (let i = 0; i < n; i++) this.deactivate(active[active.length - 1 - i]);
+    return n;
+  },
+
+  // Spawn at a point. Returns the Smiler or null. `forced` ignores the view cone,
+  // grace, distances, isDark, cap, and spacing. It still needs open space.
+  spawnAt(x, z, forced) {
+    if (!this.attached || !this.opts) return null;
+    if (!this._valid(x, z, !!forced)) return null;
+    const s = this.makeSmiler({ x, z });
+    s.forced = !!forced;
+    return s;
   },
 
   applyCorruption() {
@@ -95,15 +175,12 @@ const SmilerSystem = {
     return n;
   },
 
-  _rng() {
-    if (!this.rng) this.rng = Level1.rngFor(Math.floor(Level1.levelTime), 0, 911);
-    return this.rng();
-  },
+  _between(a, b) { return a + (this._rand ? this._rand() : Math.random()) * (b - a); },
 
   ensureGroup() {
     if (!this.group) {
       this.group = new THREE.Group();
-      this.group.name = "Level1_Smilers";
+      this.group.name = "Smilers";
       if (scene) scene.add(this.group);
     }
   },
@@ -159,24 +236,43 @@ const SmilerSystem = {
     return s;
   },
 
-  lineOfSight(s) {
-    if (!s.active) return false;
-    const dx=Player.position.x-s.x, dz=Player.position.z-s.z;
-    const d=Math.hypot(dx,dz);
-    if (d>42) return false;
-    // Horizontal sight check against Level 1 wall/pillar AABBs.
-    for(const c of Level1.colliders){
-      if(c.max.y <= 0.6) continue;
-      const minX=Math.min(s.x,Player.position.x), maxX=Math.max(s.x,Player.position.x);
-      const minZ=Math.min(s.z,Player.position.z), maxZ=Math.max(s.z,Player.position.z);
-      if(c.max.x < minX || c.min.x > maxX || c.max.z < minZ || c.min.z > maxZ) continue;
-      const steps=Math.max(4,Math.ceil(d/1.0));
-      for(let i=1;i<steps;i++){
-        const t=i/steps, x=s.x+dx*t, z=s.z+dz*t;
-        if(x>=c.min.x && x<=c.max.x && z>=c.min.z && z<=c.max.z) return false;
+  /* ------------------------------------------------------------------
+     SIGHT AND SPACE
+     ------------------------------------------------------------------ */
+  // Does a straight line between two points clear everything at face height?
+  _sight(x0, z0, x1, z1) {
+    const cs = this.opts.colliders;
+    const dx = x1 - x0, dz = z1 - z0;
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i];
+      if (!(c.max.y > 0.6 && c.min.y < 1.5)) continue;
+      let t0 = 0, t1 = 1;
+      if (Math.abs(dx) < 1e-9) { if (x0 < c.min.x || x0 > c.max.x) continue; }
+      else {
+        let a = (c.min.x - x0) / dx, b = (c.max.x - x0) / dx;
+        if (a > b) { const q = a; a = b; b = q; }
+        if (a > t0) t0 = a;
+        if (b < t1) t1 = b;
+        if (t0 > t1) continue;
       }
+      if (Math.abs(dz) < 1e-9) { if (z0 < c.min.z || z0 > c.max.z) continue; }
+      else {
+        let a = (c.min.z - z0) / dz, b = (c.max.z - z0) / dz;
+        if (a > b) { const q = a; a = b; b = q; }
+        if (a > t0) t0 = a;
+        if (b < t1) t1 = b;
+        if (t0 > t1) continue;
+      }
+      return false;
     }
     return true;
+  },
+
+  lineOfSight(s) {
+    if (!s.active || !this.opts) return false;
+    const d = Math.hypot(Player.position.x - s.x, Player.position.z - s.z);
+    if (d > 42) return false;
+    return this._sight(s.x, s.z, Player.position.x, Player.position.z);
   },
 
   flashlightHits(s) {
@@ -190,96 +286,124 @@ const SmilerSystem = {
     return this.lineOfSight(s);
   },
 
+  _dispose(s) {
+    if (!s || !s.mesh || s.disposed) return;
+    s.disposed = true;
+    s.mesh.traverse(o => {
+      if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+      if (o.material) {
+        if (o.material.map && o.material.map.dispose) o.material.map.dispose();
+        if (o.material.dispose) o.material.dispose();
+      }
+    });
+  },
+
   deactivate(s) {
     s.active=false;
     if(s.mesh && this.group) this.group.remove(s.mesh);
+    this._dispose(s);
   },
 
-  spawnOne() {
-  if (!Level1.active || Level1.blackoutState !== 'outage') return;
+  _isFloor(c) { return c.max.y <= 0.1 && c.max.y >= -0.05 && c.min.y < 0; },
 
-  if (this.list.filter(s => s.active).length >= this.maxActive) return;
-
-  // Search a large number of candidate positions around the player.
-  // The new Level 1 maze has much denser wall coverage, so 18 random
-  // attempts can occasionally miss every open corridor.
-  //
-  // Candidates are biased toward 15–32m away so Smilers appear nearby
-  // enough to be threatening, but not directly on top of the player.
-  for (let k = 0; k < 80; k++) {
-    const a = Math.random() * Math.PI * 2;
-    const dd = 15 + Math.random() * 17;
-
-    const px = Player.position.x + Math.cos(a) * dd;
-    const pz = Player.position.z + Math.sin(a) * dd;
-
-    if (!this.isOpen(px, pz)) continue;
-
-    // Avoid spawning practically on top of another Smiler.
-    let tooClose = false;
-
-    for (const s of this.list) {
-      if (!s.active) continue;
-
-      const dx = s.x - px;
-      const dz = s.z - pz;
-
-      if (Math.hypot(dx, dz) < 7) {
-        tooClose = true;
-        break;
-      }
-    }
-
-    if (tooClose) continue;
-
-    this.makeSmiler({ x: px, z: pz });
-    return;
-  }
-
-  // If random sampling failed, search outward in a deterministic grid.
-  // This makes spawning much more reliable in extremely dense sections.
-  for (let radius = 12; radius <= 36; radius += 4) {
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-
-      const px = Player.position.x + Math.cos(a) * radius;
-      const pz = Player.position.z + Math.sin(a) * radius;
-
-      if (!this.isOpen(px, pz)) continue;
-
-      let tooClose = false;
-
-      for (const s of this.list) {
-        if (!s.active) continue;
-
-        const dx = s.x - px;
-        const dz = s.z - pz;
-
-        if (Math.hypot(dx, dz) < 7) {
-          tooClose = true;
-          break;
-        }
-      }
-
-      if (tooClose) continue;
-
-      this.makeSmiler({ x: px, z: pz });
-      return;
-    }
-  }
-},
-
-  isOpen(x,z) {
-    for(const c of Level1.colliders){
-      if(c.max.y<=0.6) continue;
-      if(x>=c.min.x-0.9 && x<=c.max.x+0.9 && z>=c.min.z-0.9 && z<=c.max.z+0.9) return false;
+  // Not inside a wall-height collider, with clearance for a 1.7 m wide face.
+  isOpen(x, z) {
+    if (!this.opts) return false;
+    const m = this.opts.margin, cs = this.opts.colliders;
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i];
+      if (!(c.max.y > 0.6 && c.min.y < 0.7)) continue;
+      if (x >= c.min.x - m && x <= c.max.x + m && z >= c.min.z - m && z <= c.max.z + m) return false;
     }
     return true;
   },
 
+  // If the level has floor colliders, the point must be over one.
+  _onFloor(x, z) {
+    const cs = this.opts.colliders;
+    let any = false;
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i];
+      if (!this._isFloor(c)) continue;
+      any = true;
+      if (x > c.min.x && x < c.max.x && z > c.min.z && z < c.max.z) return true;
+    }
+    return !any;
+  },
+
+  _allowed() { return !this.opts.allow || !!this.opts.allow(); },
+
+  _viewHalf() {
+    const cam = (typeof CameraRig !== "undefined") ? CameraRig.camera : null;
+    if (!cam || !cam.fov || !cam.aspect) return 0.6;
+    const half = Math.atan(Math.tan(cam.fov * Math.PI / 360) * cam.aspect) + 0.12;
+    return Math.max(0.6, Math.min(1.45, half));
+  },
+
+  _valid(x, z, forced) {
+    const o = this.opts, P = Player.position;
+    if (!this.isOpen(x, z) || !this._onFloor(x, z)) return false;
+    if (forced) {
+      for (const s of this.list) if (s.active && Math.hypot(s.x - x, s.z - z) < 1) return false;
+      return true;
+    }
+    if (!this._allowed()) return false;
+    if (this.count() >= o.cap) return false;
+    if (this.t < o.graceSeconds) return false;
+    const dx = x - P.x, dz = z - P.z, d = Math.hypot(dx, dz);
+    if (d < 0.01 || d < o.minDist || d > o.maxDist) return false;
+    // never inside the view cone (same test as the Hound), nor anywhere in the
+    // real horizontal field of view that the player has a clear line to
+    const fx = -Math.sin(Player.yaw), fz = -Math.cos(Player.yaw);
+    const dot = (dx * fx + dz * fz) / d;
+    if (dot > Math.cos(0.6)) return false;
+    if (dot > Math.cos(this._viewHalf()) && this._sight(P.x, P.z, x, z)) return false;
+    for (const s of this.list) if (s.active && Math.hypot(s.x - x, s.z - z) < 7) return false;
+    if (o.isDark && !o.isDark(x, z)) return false;
+    return true;
+  },
+
+  spawnOne() {
+    if (!this.opts || !this._allowed()) return false;
+    const o = this.opts, P = Player.position, r = () => this._rand();
+    if (this.count() >= o.cap || this.t < o.graceSeconds) return false;
+    const place = (px, pz) => { const s = this.makeSmiler({ x: px, z: pz }); s.forced = false; return true; };
+
+    // Random candidates around the player, biased toward minDist..maxDist so a
+    // Smiler appears close enough to threaten but not on top of the player.
+    for (let k = 0; k < 80; k++) {
+      const a = r() * Math.PI * 2;
+      const dd = o.minDist + r() * (o.maxDist - o.minDist);
+      const px = P.x + Math.cos(a) * dd, pz = P.z + Math.sin(a) * dd;
+      if (this._valid(px, pz, false)) return place(px, pz);
+    }
+    // Deterministic rings, for dense sections.
+    for (let radius = o.minDist; radius <= o.maxDist; radius += 4) {
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        const px = P.x + Math.cos(a) * radius, pz = P.z + Math.sin(a) * radius;
+        if (this._valid(px, pz, false)) return place(px, pz);
+      }
+    }
+    // Narrow levels: random annuli rarely land on a corridor, so sample the floors.
+    const floors = o.colliders.filter(c => this._isFloor(c));
+    if (floors.length) {
+      for (let k = 0; k < 120; k++) {
+        const c = floors[Math.floor(r() * floors.length)];
+        const px = c.min.x + r() * (c.max.x - c.min.x), pz = c.min.z + r() * (c.max.z - c.min.z);
+        if (this._valid(px, pz, false)) return place(px, pz);
+      }
+    }
+    return false;
+  },
+
   update(dt) {
-    if(!Level1.active) { this.reset(); return; }
-    if(Level1.blackoutState !== 'outage') {
+    if (!this.attached || !this.opts) return;
+    const o = this.opts;
+    this.t += dt;
+
+    if (!this._allowed()) {
+      // Not allowed (Level 1: the lights are back). Non-forced Smilers retreat and go.
       if(this.list.length) {
         for(const s of this.list) {
           if(!s.active || s.forced) continue;
@@ -288,8 +412,8 @@ const SmilerSystem = {
         }
         this.list=this.list.filter(s => s.active);
       }
-      this.spawnTimer=0;
-      this.outageSpawned=false;
+      this.spawnT=0;
+      this.armed=false;
       for (const s of this.list) {
         if (!s.active) continue;
         s.visibleToPlayer = this.lineOfSight(s);
@@ -315,16 +439,17 @@ const SmilerSystem = {
       return;
     }
 
-    // Ensure the blackout has a Smiler presence without flooding the player.
-    if(!this.outageSpawned){
-      this.outageSpawned=true;
-      this.spawnTimer=1.5;
+    // Allowed. Arm the spawn schedule once per allowed stretch.
+    if(!this.armed){
+      this.armed=true;
+      this.spawnT = o.firstDelay != null ? o.firstDelay : this._between(o.interval[0], o.interval[1]);
     }
-    this.spawnTimer-=dt;
-    if(this.spawnTimer<=0) {
-      // Roughly 5–7 spawn attempts per 10 seconds, with a hard cap of 7 active.
-      this.spawnTimer=1.8+Math.random()*0.4;
-      this.spawnOne();
+    if (this.t >= o.graceSeconds) {
+      this.spawnT-=dt;
+      if(this.spawnT<=0) {
+        this.spawnT = this._between(o.interval[0], o.interval[1]);
+        this.spawnOne();
+      }
     }
 
     let visibleCount=0;
@@ -379,6 +504,7 @@ const SmilerSystem = {
         s.mesh.lookAt(Player.position.x,Player.position.y+1.25,Player.position.z);
       }
     }
+    this.list=this.list.filter(s => s.active);
 
     // Screen corruption scales with how many smilers can see you,
     // and how close the nearest one is.
@@ -389,7 +515,7 @@ const SmilerSystem = {
       this.damageAcc-=1;
       if(visibleCount>0) Player.damagePlayer(1);
     }
-    if(Player.getPlayerHP()<=0) SmilerDeath.start();
+    // another death sequence already running (a Hound's, say) owns the screen
+    if(Player.getPlayerHP()<=0 && !GameState.cutscene) SmilerDeath.start();
   }
 };
-
