@@ -23,7 +23,8 @@ function resolveAxis(pos, radius, height, axis) {
   const min = new THREE.Vector3(pos.x - radius, pos.y, pos.z - radius);
   const max = new THREE.Vector3(pos.x + radius, pos.y + height, pos.z + radius);
   let pushed = 0;
-  const boxes = (typeof Level3 !== "undefined" && Level3.active) ? Level3.colliders
+  const boxes = (typeof Level4 !== "undefined" && Level4.active) ? Level4.colliders
+    : (typeof Level3 !== "undefined" && Level3.active) ? Level3.colliders
     : (typeof Level2 !== "undefined" && Level2.active) ? Level2.colliders
     : (typeof Level1 !== "undefined" && Level1.active) ? Level1.colliders : Level.colliders;
   for (let i = 0; i < boxes.length; i++) {
@@ -70,10 +71,11 @@ const Physics = {
     }
 
     // Current level's start position. Level 1 uses its own floor height.
-    const levelFloor = (typeof Level3 !== "undefined" && Level3.active) ? Level3.baseY
+    const levelFloor = (typeof Level4 !== "undefined" && Level4.active) ? Level4.baseY
+      : (typeof Level3 !== "undefined" && Level3.active) ? Level3.baseY
       : (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
       : (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
-    if (((typeof Level2 !== "undefined" && Level2.active) || (typeof Level3 !== "undefined" && Level3.active)) && pos.y < levelFloor) {
+    if (((typeof Level2 !== "undefined" && Level2.active) || (typeof Level3 !== "undefined" && Level3.active) || (typeof Level4 !== "undefined" && Level4.active)) && pos.y < levelFloor) {
       pos.y = levelFloor;
       if (vel.y < 0) vel.y = 0;
       onGround = true;
@@ -141,7 +143,8 @@ const Player = {
 
   resetToStart() {
     this.position.copy(Level.startPos);
-    this.position.y = (typeof Level3 !== "undefined" && Level3.active) ? Level3.baseY
+    this.position.y = (typeof Level4 !== "undefined" && Level4.active) ? Level4.baseY
+      : (typeof Level3 !== "undefined" && Level3.active) ? Level3.baseY
       : (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
       : (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
     this.velocity.set(0, 0, 0);
