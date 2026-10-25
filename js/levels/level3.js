@@ -15,7 +15,13 @@
    Layout is a lattice graph. Every node is a small square room, every edge is a
    short corridor. Everything is generated from the seed and streamed by distance.
 
-   Not done yet: entities (Wretch etc.), level audio, Level 4 itself. */
+   Lighting note: lights are physically based and the scene has no environment map,
+   so materials stay at low metalness and a fixed pool of point lights follows the
+   player (the light count never changes, so streaming causes no shader recompiles).
+
+   The elevator leads to Level 4 (the office). Level 4's back door returns here, to the elevator.
+
+   Not done yet: entities (Wretch etc.). */
 const Level3 = {
   active: false,
   seed: 0,
@@ -39,9 +45,17 @@ const Level3 = {
   H: 2.9,       // ceiling height
   shared: null,
   ambient: [],
+  pool: [],
+  poolFx: [],
+  fixtures: [],
+  vents: [],
+  look: { ambient: 0.8, hemi: 0.5, poolSize: 10, fog: 0x1a140c, fogNear: 6, fogFar: 46 },
   lastKey: "",
   infoText: "",
   time: 0,
+  _poolT: 0,
+  _sfxT: 3,
+  _ventHurt: 0,
   _promptT: 0,
   _arrived: false,
 
@@ -193,9 +207,10 @@ const Level3 = {
       e.leak = r() < 0.35;
       e.pipeSide = r() < 0.5 ? -1 : 1;
       e.flip = r() < 0.5 ? -1 : 1;
+      e.steam = !first && r() < 0.2;
     }
     // never put an arc and a gate on the same short corridor
-    for (const e of edges) { if (e.arc && e.gate) e.gate = false; }
+    for (const e of edges) { if (e.arc && e.gate) e.gate = false; if (e.steam && (e.arc || e.gate)) e.steam = false; }
 
     this.nodes = nodes;
     this.edges = edges;
@@ -226,7 +241,7 @@ const Level3 = {
       for (let col = -1; col < size / bw + 1; col++) {
         const h = this.hash(row * 31 + col, row * 17 - col, 77);
         const base = 150 + Math.floor(h * 40);
-        const rr = base + 28, gg = base - 6 - Math.floor(h * 10), bb = base - 78;
+        const rr = base + 30, gg = base + 2 - Math.floor(h * 12), bb = base - 92;
         ctx.fillStyle = "rgb(" + rr + "," + gg + "," + bb + ")";
         ctx.fillRect(col * bw + off + 2, row * rowH + 2, bw - 4, rowH - 4);
         // chips and soot
@@ -267,33 +282,52 @@ const Level3 = {
     return tex;
   },
 
+  // Small engraved-looking plate, drawn on a canvas.
+  plaqueTex(text) {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 48;
+    const g = c.getContext("2d");
+    g.fillStyle = "#23282c"; g.fillRect(0, 0, 256, 48);
+    g.strokeStyle = "#8a949c"; g.lineWidth = 2; g.strokeRect(3, 3, 250, 42);
+    g.fillStyle = "#e4e8ea";
+    g.font = "bold 24px sans-serif";
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(text, 128, 26);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  },
+
   materialSet() {
     if (this.shared) return;
     const std = (o) => new THREE.MeshStandardMaterial(o);
     this.shared = {
-      brick: std({ map: this.brickTex(), color: 0xd8d0c0, roughness: 0.95, metalness: 0 }),
-      floor: std({ map: this.grimeTex(96), color: 0xb0a898, roughness: 0.98, metalness: 0 }),
-      ceil: std({ map: this.grimeTex(60), color: 0x8a847a, roughness: 0.95, metalness: 0.1 }),
-      pipe: std({ color: 0x7c8084, roughness: 0.45, metalness: 0.6 }),
-      pipeRust: std({ color: 0x74503a, roughness: 0.65, metalness: 0.3 }),
-      iron: std({ color: 0x2c2f31, roughness: 0.55, metalness: 0.7 }),
-      ironLight: std({ color: 0x4a4e50, roughness: 0.5, metalness: 0.7 }),
+      brick: std({ map: this.brickTex(), color: 0xe0d8c8, roughness: 0.95, metalness: 0 }),
+      floor: std({ map: this.grimeTex(130), color: 0xc8c0b0, roughness: 0.98, metalness: 0 }),
+      ceil: std({ map: this.grimeTex(150), color: 0xc0b8a8, roughness: 0.95, metalness: 0 }),
+      pipe: std({ color: 0xa0a6aa, roughness: 0.5, metalness: 0.15 }),
+      pipeRust: std({ color: 0x9a6a4c, roughness: 0.65, metalness: 0.1 }),
+      hotPipe: std({ color: 0xd8602f, emissive: 0x8a2c0c, emissiveIntensity: 0.9, roughness: 0.45, metalness: 0.1 }),
+      iron: std({ color: 0x4c5054, roughness: 0.55, metalness: 0.2 }),
+      ironLight: std({ color: 0x70767a, roughness: 0.5, metalness: 0.2 }),
       voidDark: new THREE.MeshBasicMaterial({ color: 0x000000 }),
       tube: new THREE.MeshBasicMaterial({ color: 0xfff0c8, toneMapped: false }),
-      tubeDead: std({ color: 0x2a2824, roughness: 0.8 }),
-      generator: std({ color: 0x5b6a4e, roughness: 0.6, metalness: 0.45 }),
-      panel: std({ color: 0x6d7174, roughness: 0.5, metalness: 0.5 }),
+      tubeDead: std({ color: 0x4a4640, roughness: 0.8 }),
+      generator: std({ color: 0x78906a, roughness: 0.6, metalness: 0.15 }),
+      panel: std({ color: 0x9aa0a4, roughness: 0.5, metalness: 0.15 }),
       screen: new THREE.MeshBasicMaterial({ color: 0x5cffa8, toneMapped: false }),
       screenOff: new THREE.MeshBasicMaterial({ color: 0x0a1410 }),
-      desk: std({ color: 0x3c342a, roughness: 0.85 }),
+      desk: std({ color: 0x5c5040, roughness: 0.85 }),
       warn: new THREE.MeshBasicMaterial({ color: 0xffb020, toneMapped: false }),
-      warnOff: std({ color: 0x4a3a18, roughness: 0.6 }),
+      warnOff: std({ color: 0x5a4a28, roughness: 0.6 }),
       red: new THREE.MeshBasicMaterial({ color: 0xff3a2a, toneMapped: false }),
       green: new THREE.MeshBasicMaterial({ color: 0x3aff6a, toneMapped: false }),
       arc: new THREE.MeshBasicMaterial({ color: 0xbfe4ff, toneMapped: false }),
-      puddle: new THREE.MeshStandardMaterial({ color: 0xb89a50, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.55 }),
-      elevator: std({ color: 0x8a8d90, roughness: 0.35, metalness: 0.75 }),
-      elevatorIn: std({ color: 0x3b3d3f, roughness: 0.5, metalness: 0.6 })
+      steam: new THREE.MeshBasicMaterial({ color: 0xe8ecee, transparent: true, opacity: 0, depthWrite: false }),
+      puddle: new THREE.MeshStandardMaterial({ color: 0xb89a50, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.55 }),
+      elevator: std({ color: 0xa8acb0, roughness: 0.4, metalness: 0.25 }),
+      elevatorIn: std({ color: 0x6a6e72, roughness: 0.5, metalness: 0.15 }),
+      plaque: new THREE.MeshBasicMaterial({ map: this.plaqueTex("OFFICE SECTOR") })
     };
     this.pipeGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
     this.planeGeo = new THREE.PlaneGeometry(1, 1);
@@ -307,8 +341,13 @@ const Level3 = {
     if (this.group && typeof scene !== "undefined" && scene) scene.remove(this.group);
     for (const rec of this.segments.values()) this.disposeSegment(rec);
     this.segments.clear();
+    this.vents = [];
     for (const L of this.ambient) if (L.parent) L.parent.remove(L);
     this.ambient.length = 0;
+    this.pool = [];
+    this.poolFx = [];
+    this.fixtures = [];
+    this.vents = [];
     this.colliders.length = 0;
     this.gates = [];
     this.locked = [];
@@ -322,6 +361,10 @@ const Level3 = {
     this._arrived = false;
     this.lastKey = "";
     this.time = 0;
+    if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+    if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
+    // Level 4 hangs off this reset, so every path that already resets Level 3 clears it too.
+    if (typeof Level4 !== "undefined") Level4.reset();
     if (typeof CameraRig !== "undefined" && CameraRig.camera && typeof CONFIG !== "undefined") {
       CameraRig.camera.far = CONFIG.cameraFar;
       CameraRig.camera.updateProjectionMatrix();
@@ -336,9 +379,10 @@ const Level3 = {
     if (rec.gates) this.gates = this.gates.filter(x => rec.gates.indexOf(x) < 0);
     if (rec.locked) this.locked = this.locked.filter(x => rec.locked.indexOf(x) < 0);
     if (rec.arcs) this.arcs = this.arcs.filter(x => rec.arcs.indexOf(x) < 0);
+    if (rec.vents) this.vents = this.vents.filter(x => rec.vents.indexOf(x) < 0);
   },
 
-  enter(seed) {
+  enter(seed, from) {
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof Level !== "undefined" && Level.clear) Level.clear(scene);
@@ -353,13 +397,21 @@ const Level3 = {
     this.group = new THREE.Group();
     this.group.name = "Level3_ElectricalStation";
     scene.add(this.group);
-    const hemi = new THREE.HemisphereLight(0xb09868, 0x1a1208, 0.26);
-    const amb = new THREE.AmbientLight(0x4a3a22, 0.3);
+    const lk = this.look;
+    const hemi = new THREE.HemisphereLight(0xd8c090, 0x6a5a40, lk.hemi);
+    const amb = new THREE.AmbientLight(0xb8a47c, lk.ambient);
     scene.add(hemi, amb);
     this.ambient.push(hemi, amb);
-    scene.fog = new THREE.Fog(0x14100a, 4, 34);
-    if (scene.background) scene.background.setHex(0x0c0a06);
-    if (CameraRig.camera) { CameraRig.camera.far = 90; CameraRig.camera.updateProjectionMatrix(); }
+    for (let i = 0; i < lk.poolSize; i++) {
+      const L = new THREE.PointLight(0xffd89a, 0, 16, 1.5);
+      scene.add(L);
+      this.ambient.push(L);
+      this.pool.push(L);
+      this.poolFx.push(null);
+    }
+    scene.fog = new THREE.Fog(lk.fog, lk.fogNear, lk.fogFar);
+    if (scene.background) scene.background.setHex(lk.fog);
+    if (CameraRig.camera) { CameraRig.camera.far = 80; CameraRig.camera.updateProjectionMatrix(); }
     GameState.level = 3;
     GameState.seed = this.seed;
     GameState.phase = "playing";
@@ -370,17 +422,64 @@ const Level3 = {
     Player.velocity.set(0, 0, 0);
     Player.onGround = true;
     Player.yaw = Math.PI;
+    // Coming back from Level 4 means the elevator already worked.
+    if (from === 4) this.powered = true;
     const obj = document.getElementById("hud-obj");
-    if (obj) obj.textContent = "Objective: restore power, find the elevator";
+    if (obj) obj.textContent = from === 4 ? "Objective: reach the elevator" : "Objective: restore power, find the elevator";
     const lvl = document.getElementById("hud-level-label");
     if (lvl) lvl.textContent = "LEVEL 3";
     const seedEl = document.getElementById("hud-seed-val");
     if (seedEl) seedEl.textContent = String(this.seed);
     this.stream(true);
+    this.assignLights();
     this.placeBottles();
     Player.position.copy(this.spawn);
     Player.yaw = Math.PI;
+    if (from === 4 && this.exitPos) this.stepOutOfElevator();
+    if (typeof HoundSystem !== "undefined") {
+      HoundSystem.attach({
+        colliders: this.colliders,
+        cap: 4,
+        graceSeconds: 5,
+        graceRadius: 50,
+        minDist: 18,
+        maxDist: 42,
+        seed: this.seed
+      });
+    }
+    if (typeof SmilerSystem !== "undefined") {
+      SmilerSystem.attach({
+        colliders: this.colliders,
+        cap: 3,
+        graceSeconds: 5,
+        minDist: 15,
+        maxDist: 32,
+        seed: this.seed,
+        margin: 0.55,
+        allow: () => true,
+        isDark: (x, z) => this.isDarkAt(x, z)
+      });
+    }
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 3 · ELECTRICAL STATION");
+  },
+
+  // Stand just outside the elevator doors, facing into the room. Not inside the
+  // car, or the elevator would send the player straight back.
+  stepOutOfElevator() {
+    // the exit room is far from the spawn, so it has to be streamed in before it can be found
+    Player.position.copy(this.exitPos);
+    this.stream(true);
+    if (this.elevator) {
+      const ux = this.elevator.doorX - this.elevator.innerX, uz = this.elevator.doorZ - this.elevator.innerZ;
+      const u = Math.hypot(ux, uz) || 1;
+      Player.position.set(this.elevator.doorX + ux / u * 1.4, this.baseY, this.elevator.doorZ + uz / u * 1.4);
+      Player.yaw = Math.atan2(-ux / u, -uz / u);
+    } else {
+      Player.position.copy(this.exitPos);
+    }
+    Player.velocity.set(0, 0, 0);
+    this.stream(true);
+    this.assignLights();
   },
 
   placeBottles() {
@@ -453,23 +552,43 @@ const Level3 = {
   },
 
   newRec() {
-    return { group: new THREE.Group(), colliders: [], lights: [], geos: [], gates: [], locked: [], arcs: [], edge: null };
+    return { group: new THREE.Group(), colliders: [], lights: [], fixtures: [], vents: [], geos: [], gates: [], locked: [], arcs: [], edge: null };
   },
 
+  // Register a light fixture. The actual PointLights are a small pool (see assignLights).
   addLight(rec, x, y, z, intensity, dist) {
-    if (this.countLights() + rec.lights.length >= 12) return null;
-    const L = new THREE.PointLight(0xffd89a, intensity, dist, 1.5);
-    L.position.set(x, y, z);
-    rec.group.add(L);
-    const info = { L, base: intensity, ph: this.hash(Math.round(x), Math.round(z), 3) * 40, x, z };
-    rec.lights.push(info);
+    const info = {
+      x, y, z, base: intensity * 3.4, dist: dist + 4,
+      ph: this.hash(Math.round(x * 3), Math.round(z * 3), 3) * 40,
+      bad: this.hash(Math.round(x * 3), Math.round(z * 3), 9) < 0.3
+    };
+    rec.fixtures.push(info);
     return info;
   },
 
-  countLights() {
-    let n = 0;
-    for (const rec of this.segments.values()) n += rec.lights.length;
-    return n;
+  // Dark when no working fixture in the fixture list is within 8 m.
+  isDarkAt(x, z) {
+    for (const f of this.fixtures) {
+      if (Math.hypot(f.x - x, f.z - z) <= 8) return false;
+    }
+    return true;
+  },
+
+  assignLights() {
+    if (!this.pool.length) return;
+    const p = Player.position;
+    const cand = [];
+    for (const f of this.fixtures) {
+      const d = (f.x - p.x) * (f.x - p.x) + (f.z - p.z) * (f.z - p.z);
+      if (d < 30 * 30) cand.push({ f, d });
+    }
+    cand.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < this.pool.length; i++) {
+      const c = cand[i];
+      this.poolFx[i] = c ? c.f : null;
+      if (c) { this.pool[i].position.set(c.f.x, c.f.y, c.f.z); this.pool[i].distance = c.f.dist; }
+      else this.pool[i].intensity = 0;
+    }
   },
 
   /* ------------------------------------------------------------------
@@ -642,6 +761,12 @@ const Level3 = {
     // status light above the doors
     const lamp = this.deco(rec, this.powered ? this.shared.green : this.shared.red,
       doorX - d[0] * 0.2, by + 2.45, doorZ - d[1] * 0.2, 0.3, 0.12, 0.3);
+    // plaque on the lintel above the doors, facing the room
+    const plaque = new THREE.Mesh(this.planeGeo, this.shared.plaque);
+    plaque.scale.set(1.0, 0.19, 1);
+    plaque.position.set(doorX - d[0] * 0.16, by + 2.68, doorZ - d[1] * 0.16);
+    plaque.rotation.y = Math.atan2(-d[0], -d[1]);
+    rec.group.add(plaque);
     rec.elevator = { leaves, lamp, dx, open: this.powered ? 1 : 0, wid };
     this.elevator = {
       rec: rec.elevator,
@@ -709,7 +834,7 @@ const Level3 = {
 
     // pipes: ceiling run, and two thin runs along the wall on the pipe side
     const ps = edge.pipeSide;
-    const pipeMat = this.shared.pipe, rustMat = this.shared.pipeRust;
+    const pipeMat = edge.steam ? this.shared.hotPipe : this.shared.pipe, rustMat = edge.steam ? this.shared.hotPipe : this.shared.pipeRust;
     {
       const X = wx(0, 0), Z = wz(0, 0);
       this.pipeRun(rec, pipeMat, X, by + H - 0.26, Z, alongX, L, 0.1);
@@ -734,6 +859,15 @@ const Level3 = {
       pud.scale.set(alongX ? pw : pl, alongX ? pl : pw, 1);
       pud.position.set(wx(a, ps * (W / 2 - 0.7)), by + 0.015, wz(a, ps * (W / 2 - 0.7)));
       rec.group.add(pud);
+    }
+
+    // hot pipe with a venting joint: a plume of steam on a cycle that hurts when you stand in it
+    if (edge.steam) {
+      const a = (this.hash(edge.id, 12, 28) - 0.5) * (L - 4);
+      abox(this.shared.hotPipe, a, by + 1.0, ps * (W / 2 - 0.12), 0.3, 0.3, 0.2, false);
+      const plume = abox(this.shared.steam.clone(), a, by + 1.0, ps * (W / 2 - 0.12) - ps * 0.7, 0.9, 1.7, 0.9, false);
+      plume.position.y = by + 1.0;
+      rec.vents.push({ x: wx(a, ps * (W / 2 - 0.7)), z: wz(a, ps * (W / 2 - 0.7)), plume, off: this.hash(edge.id, 13, 29) * 6, snd: -1 });
     }
 
     // locked iron doors: they only show a black void behind them
@@ -835,7 +969,11 @@ const Level3 = {
     this.arcs = [];
     this.buttonRec = null;
     this.backDoor = null;
+    this.fixtures = [];
+    this.vents = [];
     for (const rec of this.segments.values()) {
+      for (const f of rec.fixtures) this.fixtures.push(f);
+      for (const v of rec.vents) this.vents.push(v);
       if (rec.back) this.backDoor = rec.back;
       for (const c of rec.colliders) this.colliders.push(c);
       for (const g of rec.gates) this.gates.push(g);
@@ -901,6 +1039,11 @@ const Level3 = {
   arrive() {
     if (this._arrived) return;
     this._arrived = true;
+    if (typeof Level4 !== "undefined") {
+      const sd = this.seed;
+      setTimeout(() => Level4.enter(sd, 3), 0);
+      return;
+    }
     GameState.exitReached = true;
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 4 IS NOT BUILT YET");
     if (typeof Game !== "undefined" && Game.complete) Game.complete();
@@ -926,15 +1069,33 @@ const Level3 = {
     this.stream(false);
     const p = Player.position;
 
-    // flickering fluorescents near the player
-    for (const rec of this.segments.values()) {
-      for (const li of rec.lights) {
-        const d = Math.hypot(li.x - p.x, li.z - p.z);
-        if (d > 40) continue;
-        const t = this.time + li.ph;
-        const flick = Math.sin(t * 23.0) * Math.sin(t * 7.3) > 0.93 ? 0.25 : 1;
-        const slow = 0.88 + 0.12 * Math.sin(t * 1.7);
-        li.L.intensity = li.base * flick * slow;
+    // light pool: re-aim at the nearest fixtures, flicker the faulty ones
+    this._poolT -= dt;
+    if (this._poolT <= 0) { this._poolT = 0.2; this.assignLights(); }
+    for (let i = 0; i < this.pool.length; i++) {
+      const f = this.poolFx[i];
+      if (!f) continue;
+      const t = this.time + f.ph;
+      const sN = Math.sin(t * 23.0) * Math.sin(t * 7.3);
+      const flick = f.bad ? (sN > 0.3 ? 0.1 : 1) : (sN > 0.93 ? 0.25 : 1);
+      this.pool[i].intensity = f.base * flick * (0.9 + 0.1 * Math.sin(t * 1.7));
+    }
+
+    // steam vents: 5 s cycle, 2 s of venting (with a hiss at the start)
+    this._ventHurt -= dt;
+    for (const v of this.vents) {
+      const c = 5, t = (this.time + v.off) % c, idx = Math.floor((this.time + v.off) / c);
+      const on = t > 3 ? Math.min(1, (t - 3) / 0.25) * (t > 4.7 ? Math.max(0, (5 - t) / 0.3) : 1) : 0;
+      v.plume.material.opacity = on * 0.4;
+      if (t > 3 && v.snd !== idx) {
+        v.snd = idx;
+        if (typeof AudioSystem !== "undefined" && AudioSystem.playPositional && Math.hypot(p.x - v.x, p.z - v.z) < 30) {
+          AudioSystem.playPositional("flicker", v.x, 1.0, v.z, { gain: 0.25, bus: "events", max: 40 });
+        }
+      }
+      if (on > 0.5 && Math.hypot(p.x - v.x, p.z - v.z) < 1.1 && p.y < 2.2) {
+        Player.damagePlayer(Math.max(1, 14 * dt));
+        if (this._ventHurt <= 0) { this._ventHurt = 2.5; if (typeof HUD !== "undefined") HUD.toast("SCALDING STEAM"); }
       }
     }
 
@@ -966,10 +1127,25 @@ const Level3 = {
       a.bolt.visible = state === 2 && Math.floor(t * 40) % 3 !== 0;
       if (state === 2 && a.hitCycle !== idx) {
         a.hitCycle = idx;
+        if (typeof AudioSystem !== "undefined" && AudioSystem.playPositional && Math.hypot(p.x - a.x, p.z - a.z) < 40) {
+          AudioSystem.playPositional("impact", a.x, 1.4, a.z, { gain: 0.16, bus: "events", max: 50 });
+          AudioSystem.playPositional("pop", a.x, 1.4, a.z, { gain: 0.3, bus: "electrical", max: 50 });
+        }
         if (Math.hypot(p.x - a.x, p.z - a.z) < 2.3) {
           Player.damagePlayer(22);
           if (typeof HUD !== "undefined") HUD.toast("THE MACHINE ARCS");
         }
+      }
+    }
+
+    // the level is almost never quiet: distant machinery
+    this._sfxT -= dt;
+    if (this._sfxT <= 0) {
+      this._sfxT = 2.5 + Math.random() * 5;
+      if (typeof AudioSystem !== "undefined" && AudioSystem.playPositional) {
+        const ang = Math.random() * Math.PI * 2, rr = 8 + Math.random() * 16;
+        const k = ["thump", "metal", "pipe", "creak", "pop"][Math.floor(Math.random() * 5)];
+        AudioSystem.playPositional(k, p.x + Math.cos(ang) * rr, 1.5, p.z + Math.sin(ang) * rr, { gain: 0.06, bus: "events", max: 60 });
       }
     }
 
