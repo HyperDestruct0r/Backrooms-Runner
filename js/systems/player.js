@@ -19,6 +19,12 @@ function aabbOverlap(amin, amax, bmin, bmax) {
          amin.z < bmax.z && amax.z > bmin.z;
 }
 
+// Floors in Levels 2-4 sit a hair (0.02 m) above baseY, and the player is placed at exactly baseY
+// on entry/teleport. Without a tolerance, the horizontal passes see that sliver as a wall and shove
+// the player sideways out of the floor slab, i.e. outside the level. Anything whose top is within
+// STEP_TOLERANCE of the feet is treated as ground (the vertical pass lifts the player onto it).
+const STEP_TOLERANCE = 0.05;
+
 function resolveAxis(pos, radius, height, axis) {
   const min = new THREE.Vector3(pos.x - radius, pos.y, pos.z - radius);
   const max = new THREE.Vector3(pos.x + radius, pos.y + height, pos.z + radius);
@@ -32,6 +38,7 @@ function resolveAxis(pos, radius, height, axis) {
     if (axis === "x" && (b.max.x < min.x - 1 || b.min.x > max.x + 1)) continue;
     if (axis === "z" && (b.max.z < min.z - 1 || b.min.z > max.z + 1)) continue;
     if (!aabbOverlap(min, max, b.min, b.max)) continue;
+    if (axis !== "y" && b.max.y - min.y <= STEP_TOLERANCE) continue;
     if (axis === "x") {
       const penL = max.x - b.min.x;
       const penR = b.max.x - min.x;
