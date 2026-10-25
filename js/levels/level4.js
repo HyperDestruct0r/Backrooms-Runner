@@ -1,38 +1,63 @@
 "use strict";
 
-/* Level 2 — mirrored industrial tunnel network.
-   Spawn sits in a corridor. Both directions are mirror images.
-   Wrong paths are short or long, and every wrong path eventually ends. */
-const Level2 = {
+/* Level 4 — "Abandoned Office" (Class 1: habitable, the breather after the station).
+
+   An empty office on a rainy day. Cubicles are mostly gone. Grey-brown carpet, off-white
+   walls with a baseboard, a drop ceiling, a few working fluorescent panels. Not yellow,
+   not brick.
+
+   - A spine of rooms (about 10 m across, 2.8 m ceiling) joined by short 2.2 m corridors,
+     generated from the seed and streamed by distance. A few dead-end side rooms.
+   - Exterior walls have windows. Behind every pane is the same fogged grey backdrop, and
+     rain runs down the glass. The window light does more of the lighting than the tubes.
+   - Furniture is sparse: a desk, a chair, a dead monitor. Some rooms show a worn patch of
+     carpet where a desk used to be.
+   - Almond water is common here (desks, water coolers). At most 5 in the loaded area.
+   - Three doors: in from Level 3 (its elevator), back to Level 3 (first room), and
+     forward (deeper in), which ends the run. There is no Level 5.
+   - One entity at most: even seed, one Hound; odd seed, one Smiler. Never both.
+
+   Lighting note: lights are physically based and the scene has no environment map, so a
+   fixed pool of point lights follows the player (the light count never changes, so
+   streaming causes no shader recompiles). Window light and panel light share the pool. */
+
+const Level4 = {
   active: false,
   seed: 0,
   group: null,
   colliders: [],
-  hot: [],
-  doors: [],
   segments: new Map(),
-  edges: [],
   nodes: [],
+  edges: [],
+  doors: [],
   spawn: new THREE.Vector3(),
-  exitPos: null,
+  exitPos: null,     // just inside the forward door
+  backPos: null,
   baseY: 0,
-  width: 3.6,
-  height: 3.45,
+  S: 16,             // lattice spacing between room centres
+  R: 10,             // room interior size
+  W: 2.2,            // corridor width
+  H: 2.8,            // ceiling height
+  T: 0.25,           // wall thickness
   shared: null,
+  rainVariants: [],
+  rainNodes: [],
   ambient: [],
   pool: [],
   poolFx: [],
   fixtures: [],
-  lamps: [],
+  taken: {},
+  // Tunable look. Rooms are lit mostly by ambient plus window light.
+  look: { ambient: 0.75, hemi: 0.5, poolSize: 10, fog: 0x70767c, fogNear: 7, fogFar: 50 },
   lastKey: "",
   infoText: "",
   time: 0,
   _poolT: 0,
-  // Tunable look. Lights are physically based (no legacy mode), so values here are
-  // much higher than the old ones: the old ambient left the ceiling black.
-  look: { ambient: 0.95, hemi: 0.5, lightI: 5.2, lightD: 22, poolSize: 8, fog: 0x242422, fogNear: 7, fogFar: 56 },
-  T: 3.0,        // metres per texture tile
-  NODE: 2.12,    // half-size of a junction square (outer face of its walls)
+  _sfxT: 12,
+  _musicT: 0,
+  _musicIdx: 0,
+  _promptT: 0,
+  _ended: false,
 
   hash(x, z, salt) {
     let h = (this.seed >>> 0) ^ Math.imul((x | 0) + (salt || 0), 0x45d9f3b) ^ Math.imul((z | 0) - (salt || 0), 0x27d4eb2d);
@@ -45,230 +70,390 @@ const Level2 = {
     return () => { a ^= a << 13; a ^= a >>> 17; a ^= a << 5; return (a >>> 0) / 4294967296; };
   },
 
-  // A layout whose main route cannot be placed without cutting through itself is
-  // rejected and regenerated from a derived seed (still fully deterministic).
+  /* ------------------------------------------------------------------
+     GENERATION
+     ------------------------------------------------------------------ */
   generate(seed) {
-    for (let k = 0; k < 40; k++) {
-      if (this._gen((seed + Math.imul(k, 7919)) >>> 0, false)) return;
+    for (let attempt = 0; attempt < 24; attempt++) {
+      if (this._generate((seed + Math.imul(attempt, 7919)) >>> 0, false)) return;
     }
-    this._gen(seed >>> 0, true);
+    this._generate(seed >>> 0, true);
   },
 
-  _gen(seed, force) {
-    const r = this.rng(seed >>> 0);
-    const nodes = [];
-    const edges = [];
-    const occ = new Set();
-    const key = (x, z) => Math.round(x) + "," + Math.round(z);
-    const addNode = (x, z) => {
-      const n = { id: nodes.length, x, z, edges: [] };
-      nodes.push(n);
-      occ.add(key(x, z));
-      return n;
+  _generate(seed, force) {
+    const r = this.rng((seed ^ 0x4F1BBCDD) >>> 0);
+    const S = this.S, R = this.R, H = this.H;
+    const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const cells = new Map(), nodes = [], edges = [];
+    const key = (i, j) => i + "," + j;
+    const addNode = (i, j, role) => {
+      const n = { id: nodes.length, i, j, x: i * S, z: j * S, role, open: [false, false, false, false],
+        occ: [false, false, false, false], edges: [], dress: null, backSide: -1, fwdSide: -1 };
+      nodes.push(n); cells.set(key(i, j), n); return n;
     };
-    const link = (a, b, kind, main, hot, dest) => {
-      const e = {
-        id: edges.length, a: a.id, b: b.id, kind, main, hot: !!hot, dest: dest || 0,
-        ax: a.x, az: a.z, bx: b.x, bz: b.z,
-        len: Math.hypot(b.x - a.x, b.z - a.z)
-      };
-      edges.push(e);
-      a.edges.push(e.id);
-      b.edges.push(e.id);
+    const link = (a, b, d) => {
+      a.open[d] = true; b.open[(d + 2) % 4] = true;
+      const e = { id: edges.length, a: a.id, b: b.id, d, ax: a.x, az: a.z, bx: b.x, bz: b.z };
+      edges.push(e); a.edges.push(e.id); b.edges.push(e.id);
       return e;
     };
-    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    // A corridor is 4.24 m wide including walls. A new leg may not come within that
-    // clearance of any existing corridor it does not start from, or it would cut
-    // straight through a hallway (or run flush alongside one).
-    const MIN_Z = 7;
-    const crosses = (from, nx, nz) => {
-      const c = 2.4;
-      const lx = Math.min(from.x, nx) - c, hx = Math.max(from.x, nx) + c;
-      const lz = Math.min(from.z, nz) - c, hz = Math.max(from.z, nz) + c;
-      for (const e of edges) {
-        if (e.a === from.id || e.b === from.id) continue;
-        const elx = Math.min(e.ax, e.bx) - c, ehx = Math.max(e.ax, e.bx) + c;
-        const elz = Math.min(e.az, e.bz) - c, ehz = Math.max(e.az, e.bz) + c;
-        if (lx < ehx && hx > elx && lz < ehz && hz > elz) return true;
-      }
-      for (const n of nodes) {
-        if (n === from) continue;
-        if (n.x > lx && n.x < hx && n.z > lz && n.z < hz) return true;
-      }
-      return false;
-    };
-    const growBranch = (from, dx, dz, depth) => {
-      const roll = r();
-      const span = roll < 0.4 ? 12 + Math.floor(r() * 8) : roll < 0.75 ? 28 + Math.floor(r() * 16) : 48 + Math.floor(r() * 24);
-      const nx = from.x + dx * span, nz = from.z + dz * span;
-      if (occ.has(key(nx, nz)) || nz < MIN_Z || crosses(from, nx, nz)) return;
-      const end = addNode(nx, nz);
-      const hasDoor = r() < 0.04;
-      const dest = r() < 0.65 ? 1 : 0;
-      link(from, end, hasDoor ? "door" : "dead", false, r() < 0.35, hasDoor ? dest : 0);
-      if (roll >= 0.4 && depth < 2 && r() < 0.7) {
-        const side = r() < 0.5 ? -1 : 1;
-        const sx = side * -dz, sz = side * dx;
-        growBranch(end, sx, sz, depth + 1);
-        if (roll >= 0.75 && r() < 0.5) growBranch(end, -sx, -sz, depth + 1);
-      }
-    };
 
-    const origin = addNode(0, 0);
-    let cur = origin;
-    let dx = 0, dz = 1;
-    const route = [origin];
-    for (let i = 0; i < 6; i++) {
-      const span = i === 0 ? 52 : 34 + Math.floor(r() * 18);
-      if (i > 0 && r() < 0.7) {
-        const left = r() < 0.5;
-        const ndx = left ? -dz : dz;
-        const ndz = left ? dx : -dx;
-        dx = ndx; dz = ndz;
+    // the spine: a self-avoiding walk that likes to keep going straight
+    const count = 9 + Math.floor(r() * 5);
+    let cur = addNode(0, 0, "start"), last = -1;
+    for (let k = 1; k < count; k++) {
+      const opts = [];
+      for (let d = 0; d < 4; d++) {
+        if (!cells.has(key(cur.i + DIRS[d][0], cur.j + DIRS[d][1]))) opts.push(d);
       }
-      let nx = cur.x + dx * span, nz = cur.z + dz * span;
-      let guard = 0;
-      while ((occ.has(key(nx, nz)) || nz < MIN_Z || (i > 0 && crosses(cur, nx, nz))) && guard++ < 24) {
-        const d = dirs[Math.floor(r() * 4)];
-        dx = d[0]; dz = d[1];
-        nx = cur.x + dx * span; nz = cur.z + dz * span;
-      }
-      if (occ.has(key(nx, nz)) || nz < MIN_Z || (i > 0 && crosses(cur, nx, nz))) {
-        if (!force) return false;
-        dx = 0; dz = 1; nx = cur.x; nz = cur.z + span;
-      }
-      const next = addNode(nx, nz);
-      // Guaranteed exits on the main route: leg 2 -> Level 1, leg 4 -> Level 0,
-      // final leg -> Level 3. Other main-route doors are random extras to 0 or 1.
-      const forced = { 2: 1, 4: 0, 5: 3 }[i];
-      const sideDoor = forced != null || (i > 0 && r() < 0.15);
-      const dest = forced != null ? forced : (r() < 0.6 ? 1 : 0);
-      link(cur, next, sideDoor ? "door" : "main", true, r() < 0.3, sideDoor ? dest : 0);
-      route.push(next);
-      cur = next;
+      if (!opts.length) { if (!force) return false; break; }
+      const d = (last >= 0 && opts.indexOf(last) >= 0 && r() < 0.45) ? last : opts[Math.floor(r() * opts.length)];
+      const nx = addNode(cur.i + DIRS[d][0], cur.j + DIRS[d][1], "spine");
+      link(cur, nx, d);
+      cur = nx; last = d;
     }
-    const exit = route[route.length - 1];
-    for (let i = 1; i < route.length - 1; i++) {
-      const n = route[i];
-      const count = 1 + (r() < 0.4 ? 1 : 0);
-      for (let b = 0; b < count; b++) {
-        const used = new Set(n.edges.map(id => {
-          const e = edges[id];
-          const ox = e.a === n.id ? e.bx : e.ax;
-          const oz = e.a === n.id ? e.bz : e.az;
-          return Math.sign(ox - n.x) + "," + Math.sign(oz - n.z);
-        }));
-        const open = dirs.filter(d => !used.has(d[0] + "," + d[1]));
-        if (!open.length) continue;
-        const d = open[Math.floor(r() * open.length)];
-        growBranch(n, d[0], d[1], 0);
+    if (nodes.length < 7 && !force) return false;
+    cur.role = "end";
+    const spineCount = nodes.length;
+
+    // a few dead-end side rooms
+    for (let n = 1; n < spineCount - 1; n++) {
+      if (r() >= 0.32) continue;
+      const base = nodes[n], opts = [];
+      for (let d = 0; d < 4; d++) {
+        if (!cells.has(key(base.i + DIRS[d][0], base.j + DIRS[d][1]))) opts.push(d);
       }
+      if (!opts.length) continue;
+      const d = opts[Math.floor(r() * opts.length)];
+      const side = addNode(base.i + DIRS[d][0], base.j + DIRS[d][1], "side");
+      link(base, side, d);
     }
 
-    const mirrored = [];
-    const map = new Map();
-    // Snapshot the array: addNode() pushes onto `nodes`, and iterating the live
-    // array would mirror each new mirror forever (infinite loop on level entry).
-    for (const n of nodes.slice()) {
-      if (n.z === 0) { map.set(n.id, n); continue; }
-      const m = addNode(n.x, -n.z);
-      map.set(n.id, m);
-      mirrored.push(m);
+    // which sides face another room (not exterior)
+    for (const n of nodes) {
+      for (let d = 0; d < 4; d++) n.occ[d] = cells.has(key(n.i + DIRS[d][0], n.j + DIRS[d][1]));
     }
-    const baseEdges = edges.slice();
-    for (const e of baseEdges) {
-      const a = map.get(e.a), b = map.get(e.b);
-      if (!a || !b || a.id === b.id) continue;
-      if (a.z === 0 && b.z === 0) continue;
-      link(a, b, e.kind, e.main, e.hot, e.dest);
+
+    // doors: the first room gets the way back, the last room the way forward.
+    // Each goes on a closed wall, preferably opposite the corridor.
+    const pickSide = (n) => {
+      const via = n.open.indexOf(true);
+      const order = [(via + 2) % 4, (via + 1) % 4, (via + 3) % 4, via];
+      for (const d of order) if (!n.open[d]) return d;
+      return -1;
+    };
+    nodes[0].backSide = pickSide(nodes[0]);
+    cur.fwdSide = pickSide(cur);
+
+    // dressing is decided here, once, so a room looks the same every time it streams in
+    const x0 = (n) => n.x - (R / 2 + this.T), z0 = (n) => n.z - (R / 2 + this.T);
+    const panelSpots = [[-2.75, -2.5], [2.75, -2.5], [0.25, 0], [-2.75, 2.5], [2.75, 2.5]];
+    for (const n of nodes) {
+      const dr = { panels: [], missing: [], stained: [], desk: null, cooler: null, worn: null, windows: [], sites: [] };
+      // ceiling panels: most are dead
+      panelSpots.forEach((p, idx) => {
+        let on = r() < 0.28;
+        if (n.role === "start" && (idx === 1 || idx === 3)) on = true;   // the first room is not dark
+        dr.panels.push({ x: n.x + p[0], z: n.z + p[1], on, bad: on && r() < 0.3 });
+      });
+      // a few missing and stained tiles, away from the panels
+      const cellPos = (i, j) => ({ x: x0(n) + 0.5 * (i + 0.5), z: z0(n) + 0.5 * (j + 0.5) });
+      const free = (c) => dr.panels.every(p => Math.abs(p.x - c.x) > 0.8 && Math.abs(p.z - c.z) > 0.5);
+      const addTiles = (list, num) => {
+        for (let k = 0; k < num; k++) {
+          const c = cellPos(1 + Math.floor(r() * 19), 1 + Math.floor(r() * 19));
+          if (free(c)) list.push(c);
+        }
+      };
+      addTiles(dr.missing, r() < 0.6 ? 1 + Math.floor(r() * 2) : 0);
+      addTiles(dr.stained, 2 + Math.floor(r() * 3));
+
+      // windows on exterior walls (closed side, no neighbouring room)
+      for (let d = 0; d < 4; d++) {
+        if (n.open[d] || n.occ[d] || n.backSide === d || n.fwdSide === d) continue;
+        for (const c of [-3.2, 0, 3.2]) {
+          if (r() < 0.8) dr.windows.push({ d, c, blackout: r() < 0.15 });
+        }
+      }
+      // furniture: sparse. Desks and chairs sit against a closed wall.
+      const closed = [];
+      for (let d = 0; d < 4; d++) if (!n.open[d] && n.backSide !== d && n.fwdSide !== d) closed.push(d);
+      if (closed.length && n.role !== "start" && r() < 0.32) {
+        const d = closed[Math.floor(r() * closed.length)];
+        dr.desk = { d, lat: (r() - 0.5) * 4, hasMonitor: r() < 0.7, bottle: r() < 0.55 };
+      }
+      if (r() < 0.12) {
+        const sx = r() < 0.5 ? -1 : 1, sz = r() < 0.5 ? -1 : 1;
+        dr.cooler = { x: n.x + sx * (R / 2 - 0.55), z: n.z + sz * (R / 2 - 0.55) };
+      }
+      if (!dr.desk && r() < 0.4) {
+        dr.worn = { x: n.x + (r() < 0.5 ? -2.4 : 2.4), z: n.z + (r() < 0.5 ? -2.4 : 2.4), alongZ: r() < 0.5 };
+      }
+      n.dress = dr;
+    }
+
+    // pickup sites. Water is common (desks, coolers). One energy bar at most, in the whole level.
+    for (const n of nodes) {
+      const dr = n.dress;
+      if (dr.desk && dr.desk.bottle) {
+        const p = this.deskSpot(n, dr.desk);
+        dr.sites.push({ id: "n" + n.id + ":desk", kind: "almond", x: p.x + p.ox * 0.45, z: p.z + p.oz * 0.45, y: 0.89 });
+      }
+      if (dr.cooler) {
+        for (const o of [-0.09, 0.09]) {
+          dr.sites.push({ id: "n" + n.id + ":cooler" + o, kind: "almond", x: dr.cooler.x + o, z: dr.cooler.z, y: 1.09 });
+        }
+      }
+    }
+    if (r() < 0.6 && nodes.length > 2) {
+      const n = nodes[1 + Math.floor(r() * (nodes.length - 1))];
+      if (n.dress.desk) {
+        const p = this.deskSpot(n, n.dress.desk);
+        n.dress.sites.push({ id: "n" + n.id + ":energy", kind: "energy", x: p.x - p.ox * 0.45, z: p.z - p.oz * 0.45, y: 0.84 });
+      } else {
+        n.dress.sites.push({ id: "n" + n.id + ":energy", kind: "energy", x: n.x + 3.9, z: n.z + 3.9, y: 0.18 });
+      }
     }
 
     this.nodes = nodes;
     this.edges = edges;
-    this.exitPos = new THREE.Vector3(exit.x, this.baseY, exit.z);
-    this.spawn.set(0, this.baseY, 0);
-    this.infoText = "NODES " + nodes.length + " · EDGES " + edges.length + " · MIRRORED";
+    const startN = nodes[0], endN = cur;
+    const half = R / 2;
+    const bd = DIRS[startN.backSide] || [0, -1], fd = DIRS[endN.fwdSide] || [0, 1];
+    this.spawn.set(startN.x + bd[0] * (half - 2.5), this.baseY, startN.z + bd[1] * (half - 2.5));
+    this.spawnYaw = Math.atan2(bd[0], bd[1]);                   // face into the room, away from the back door
+    this.backPos = new THREE.Vector3(startN.x + bd[0] * half, this.baseY, startN.z + bd[1] * half);
+    this.exitPos = new THREE.Vector3(endN.x + fd[0] * (half - 2.2), this.baseY, endN.z + fd[1] * (half - 2.2));
+    this.endNode = endN;
+    this.infoText = "ROOMS " + nodes.length + " · HALLS " + edges.length;
     return true;
   },
 
-  markTex(level) {
-    const c = document.createElement("canvas");
-    c.width = c.height = 128;
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = level === 0 ? "#6a6248" : level === 3 ? "#6e4a2c" : "#5a5c5e";
-    ctx.fillRect(0, 0, 128, 128);
-    ctx.strokeStyle = "#2a2824";
-    ctx.lineWidth = 6;
-    ctx.strokeRect(8, 8, 112, 112);
-    ctx.strokeStyle = level === 0 ? "#c2b48a" : "#b0b4b6";
-    ctx.lineWidth = 5;
-    if (level === 3) {
-      ctx.fillStyle = "#e6c46a";
-      ctx.font = "bold 84px monospace";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("3", 64, 68);
-    } else if (level === 0) {
-      ctx.beginPath(); ctx.moveTo(24, 52); ctx.lineTo(104, 52); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(24, 76); ctx.lineTo(104, 76); ctx.stroke();
-    } else {
-      ctx.beginPath(); ctx.moveTo(64, 28); ctx.lineTo(64, 100); ctx.stroke();
-      ctx.strokeRect(40, 36, 48, 56);
-    }
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+  // Where a desk sits (centre) and its orientation. Used by both generation and rendering.
+  deskSpot(n, desk) {
+    const R = this.R, DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const dv = DIRS[desk.d];
+    const dist = R / 2 - 0.55;                       // desk is 0.8 deep, back to the wall
+    const alongZ = dv[0] !== 0;                      // wall runs along z when it faces +/-x
+    return {
+      x: alongZ ? n.x + dv[0] * dist : n.x + desk.lat,
+      z: alongZ ? n.z + desk.lat : n.z + dv[1] * dist,
+      alongZ,
+      ox: alongZ ? 0 : 1, oz: alongZ ? 1 : 0,        // direction along the desk's long edge
+      dx: dv[0], dz: dv[1]                           // direction of the wall behind it
+    };
   },
 
   /* ------------------------------------------------------------------
-     MATERIALS
-     Textures come from assets/level2-*.jpg. Everything is Lambert-ish
-     (metalness <= 0.15) because the scene has no environment map: a highly
-     metallic material renders almost black here.
+     TEXTURES (canvas, like Level 2 and Level 3). One tile covers about 2 m.
      ------------------------------------------------------------------ */
-  tex(path) {
-    const t = new THREE.TextureLoader().load(path);
+  _canvas(w, h) {
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    return c;
+  },
+
+  _tex(c) {
+    const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
     return t;
   },
 
+  // Grey-brown carpet: fine fibre noise plus low, seamless blotches of wear. Not moldy.
+  carpetTex() {
+    const N = 256, c = this._canvas(N, N), g = c.getContext("2d");
+    const img = g.createImageData(N, N), d = img.data;
+    let a = 0x1234567;
+    const rnd = () => { a ^= a << 13; a ^= a >>> 17; a ^= a << 5; return (a >>> 0) / 4294967296; };
+    const TAU = Math.PI * 2;
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const blotch = Math.sin(x / N * TAU * 2 + 1.3) * Math.sin(y / N * TAU * 3 + 0.4) * 7
+          + Math.sin(x / N * TAU * 5 + y / N * TAU * 4) * 3;
+        const fibre = (rnd() - 0.5) * 24 + ((x + y * 3) % 5 === 0 ? -6 : 0);
+        const v = blotch + fibre;
+        const i = (y * N + x) * 4;
+        d[i] = 142 + v; d[i + 1] = 130 + v * 0.95; d[i + 2] = 116 + v * 0.9; d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return this._tex(c);
+  },
+
+  // Plastered wall: faint noise and a few long vertical water streaks.
+  plasterTex(r0, g0, b0) {
+    const N = 256, c = this._canvas(N, N), g = c.getContext("2d");
+    const img = g.createImageData(N, N), d = img.data;
+    let a = 0x2468ace ^ (r0 * 31);
+    const rnd = () => { a ^= a << 13; a ^= a >>> 17; a ^= a << 5; return (a >>> 0) / 4294967296; };
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const streak = (Math.sin(x * 0.37) + Math.sin(x * 0.11 + 2)) * 1.6;
+        const v = (rnd() - 0.5) * 9 + streak - (y > 200 ? (y - 200) * 0.05 : 0);
+        const i = (y * N + x) * 4;
+        d[i] = r0 + v; d[i + 1] = g0 + v; d[i + 2] = b0 + v * 0.95; d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return this._tex(c);
+  },
+
+  // Drop ceiling: 4 x 4 tiles of 0.5 m per texture, thin dark grid, pitted surface.
+  ceilTex() {
+    const N = 256, c = this._canvas(N, N), g = c.getContext("2d");
+    const img = g.createImageData(N, N), d = img.data;
+    let a = 0x7654321;
+    const rnd = () => { a ^= a << 13; a ^= a >>> 17; a ^= a << 5; return (a >>> 0) / 4294967296; };
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const line = (x % 64 < 2) || (y % 64 < 2);
+        const pit = rnd() < 0.035 ? -26 : 0;
+        const v = line ? -128 : (rnd() - 0.5) * 8 + pit;
+        const i = (y * N + x) * 4;
+        d[i] = 226 + v; d[i + 1] = 224 + v; d[i + 2] = 216 + v; d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return this._tex(c);
+  },
+
+  // Rain on glass: vertical streaks and beads on a transparent background.
+  rainTex(seed) {
+    const W = 128, Hh = 256, c = this._canvas(W, Hh), g = c.getContext("2d");
+    let a = (0x9E3779B9 ^ (seed * 7919)) >>> 0 || 1;
+    const rnd = () => { a ^= a << 13; a >>>= 0; a ^= a >>> 17; a ^= a << 5; a >>>= 0; return a / 4294967296; };
+    g.clearRect(0, 0, W, Hh);
+    g.fillStyle = "rgba(150,165,180,0.10)";         // the glass itself
+    g.fillRect(0, 0, W, Hh);
+    g.lineCap = "round";
+    for (let k = 0; k < 46; k++) {
+      const x = rnd() * W, y = rnd() * Hh, len = 30 + rnd() * 90, wob = (rnd() - 0.5) * 4;
+      g.strokeStyle = "rgba(226,233,241," + (0.22 + rnd() * 0.3).toFixed(2) + ")";
+      g.lineWidth = 1 + rnd() * 1.4;
+      for (const oy of [0, -Hh]) {              // draw twice so the texture wraps cleanly
+        g.beginPath(); g.moveTo(x, y + oy); g.lineTo(x + wob, y + len + oy); g.stroke();
+      }
+    }
+    for (let k = 0; k < 70; k++) {
+      const x = rnd() * W, y = rnd() * Hh, rad = 0.8 + rnd() * 2.2;
+      g.fillStyle = "rgba(235,240,246," + (0.3 + rnd() * 0.3).toFixed(2) + ")";
+      g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
+    }
+    return this._tex(c);
+  },
+
+  // The same grey, fogged nothing behind every pane.
+  wellTex() {
+    const c = this._canvas(32, 128), g = c.getContext("2d");
+    const grd = g.createLinearGradient(0, 0, 0, 128);
+    grd.addColorStop(0, "#a3aab1"); grd.addColorStop(0.55, "#8a9198"); grd.addColorStop(1, "#6d747a");
+    g.fillStyle = grd; g.fillRect(0, 0, 32, 128);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  },
+
+  // Soft decals laid on the carpet.
+  shadeTex() {            // darker toward the walls: dark at the top (the wall side), clear at the bottom
+    const c = this._canvas(8, 64), g = c.getContext("2d");
+    const grd = g.createLinearGradient(0, 0, 0, 64);
+    grd.addColorStop(0, "rgba(26,20,14,0.5)"); grd.addColorStop(1, "rgba(26,20,14,0)");
+    g.fillStyle = grd; g.fillRect(0, 0, 8, 64);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  },
+
+  pathTex() {             // a worn walking path: lighter, feathered on every edge
+    const N = 64, c = this._canvas(N, N), g = c.getContext("2d");
+    const img = g.createImageData(N, N), d = img.data;
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const ex = Math.min(x, N - 1 - x) / (N * 0.42), ey = Math.min(y, N - 1 - y) / (N * 0.42);
+        const k = Math.max(0, Math.min(1, Math.min(ex, ey)));
+        const i = (y * N + x) * 4;
+        d[i] = 204; d[i + 1] = 194; d[i + 2] = 180; d[i + 3] = Math.floor(70 * k * k * (3 - 2 * k));
+      }
+    }
+    g.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  },
+
+  patchTex() {            // where a desk used to be: a faded rectangle with four dents
+    const c = this._canvas(128, 64), g = c.getContext("2d");
+    g.clearRect(0, 0, 128, 64);
+    g.fillStyle = "rgba(210,200,186,0.20)"; g.fillRect(4, 4, 120, 56);
+    g.strokeStyle = "rgba(40,34,28,0.22)"; g.lineWidth = 2; g.strokeRect(4, 4, 120, 56);
+    g.fillStyle = "rgba(34,28,22,0.38)";
+    for (const [x, y] of [[10, 10], [108, 10], [10, 44], [108, 44]]) g.fillRect(x, y, 10, 10);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  },
+
+  plaqueTex(text) {
+    const c = this._canvas(256, 48), g = c.getContext("2d");
+    g.fillStyle = "#23282c"; g.fillRect(0, 0, 256, 48);
+    g.strokeStyle = "#8a949c"; g.lineWidth = 2; g.strokeRect(3, 3, 250, 42);
+    g.fillStyle = "#e4e8ea";
+    g.font = "bold 24px sans-serif";
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(text, 128, 26);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  },
+
   materialSet() {
     if (this.shared) return;
     const std = (o) => new THREE.MeshStandardMaterial(o);
-    const block = this.tex("assets/level2-block.jpg");
-    const conc = this.tex("assets/level2-concrete.jpg");
-    const floorT = this.tex("assets/level2-floor.jpg");
-    const pipeT = this.tex("assets/level2-pipe.jpg");
-    const rustT = this.tex("assets/level2-rust.jpg");
+    const decal = (map) => new THREE.MeshStandardMaterial({
+      map, transparent: true, depthWrite: false, roughness: 1, metalness: 0,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
+    });
+    const carpet = this.carpetTex();
     this.shared = {
-      wall: std({ map: block, color: 0xdcdcd8, roughness: 0.92, metalness: 0 }),
-      stain: std({ map: block, color: 0xa8a8a2, roughness: 0.94, metalness: 0 }),
-      floor: std({ map: floorT, color: 0xc8c6c0, roughness: 0.9, metalness: 0 }),
-      floorWear: std({ map: conc, color: 0xa4a29c, roughness: 0.95, metalness: 0 }),
-      ceil: std({ map: conc, color: 0xb8b6b0, roughness: 0.95, metalness: 0 }),
-      trim: std({ color: 0xcfcfca, roughness: 0.85, metalness: 0 }),
-      seam: std({ color: 0x2a2a28, roughness: 1 }),
-      pipePanel: std({ map: pipeT, color: 0xc4c8cc, roughness: 0.55, metalness: 0.12 }),
-      pipe: std({ color: 0xa4a9ad, roughness: 0.5, metalness: 0.15 }),
-      rust: std({ map: rustT, color: 0xd0b4a2, roughness: 0.7, metalness: 0.1 }),
-      hot: std({ color: 0xd8602f, emissive: 0x8a2c0c, emissiveIntensity: 0.9, roughness: 0.45, metalness: 0.1 }),
-      door: std({ color: 0x4a443c, roughness: 0.86, metalness: 0 }),
-      frame: std({ color: 0x2c2824, roughness: 0.9, metalness: 0 }),
-      handle: std({ color: 0xb4aca0, metalness: 0.15, roughness: 0.4 }),
-      voidDark: new THREE.MeshBasicMaterial({ color: 0x000000 }),
-      mark0: this.markTex(0),
-      mark1: this.markTex(1),
-      mark3: this.markTex(3),
-      shelf: std({ color: 0x7c868c, roughness: 0.6, metalness: 0.15 }),
-      crate: std({ color: 0x7a6040, roughness: 0.85, metalness: 0 }),
-      can: std({ color: 0x8a3a30, roughness: 0.6, metalness: 0.1 }),
-      light: new THREE.MeshBasicMaterial({ color: 0xfff1d2, toneMapped: false }),
-      dead: std({ color: 0x4a4844, roughness: 0.8 })
+      carpet: std({ map: carpet, color: 0xe6ddd2, roughness: 1, metalness: 0 }),
+      carpetHall: std({ map: carpet, color: 0xc6bcb0, roughness: 1, metalness: 0 }),
+      wallA: std({ map: this.plasterTex(232, 228, 218), color: 0xffffff, roughness: 0.95, metalness: 0 }),
+      wallB: std({ map: this.plasterTex(206, 200, 190), color: 0xffffff, roughness: 0.95, metalness: 0 }),
+      base: std({ color: 0x4a433c, roughness: 0.8, metalness: 0 }),
+      ceil: std({ map: this.ceilTex(), color: 0xeceae4, roughness: 0.95, metalness: 0 }),
+      ceilStain: new THREE.MeshStandardMaterial({ color: 0x6a5a3c, transparent: true, opacity: 0.45, roughness: 1, depthWrite: false }),
+      panelOn: new THREE.MeshBasicMaterial({ color: 0xfff1d6, toneMapped: false }),
+      panelOff: std({ color: 0xaaaca8, roughness: 0.6, metalness: 0 }),
+      black: new THREE.MeshBasicMaterial({ color: 0x040404 }),
+      desk: std({ color: 0x6c5c4a, roughness: 0.8, metalness: 0 }),
+      deskTop: std({ color: 0x80705c, roughness: 0.7, metalness: 0 }),
+      chair: std({ color: 0x33373b, roughness: 0.9, metalness: 0 }),
+      metal: std({ color: 0x70767a, roughness: 0.5, metalness: 0.15 }),
+      monitor: std({ color: 0x1d1e20, roughness: 0.5, metalness: 0 }),
+      screen: std({ color: 0x0d0e10, roughness: 0.15, metalness: 0 }),
+      cooler: std({ color: 0xdde1e4, roughness: 0.5, metalness: 0 }),
+      coolerDark: std({ color: 0x3a4146, roughness: 0.6, metalness: 0 }),
+      frame: std({ color: 0x8c9094, roughness: 0.5, metalness: 0.1 }),
+      doorLeaf: std({ color: 0x5a5048, roughness: 0.85, metalness: 0 }),
+      doorFrame: std({ color: 0x2a2622, roughness: 0.9, metalness: 0 }),
+      handle: std({ color: 0xb4aca0, roughness: 0.4, metalness: 0.15 }),
+      plaqueBack: new THREE.MeshBasicMaterial({ map: this.plaqueTex("ELEVATOR") }),
+      well: new THREE.MeshBasicMaterial({ map: this.wellTex(), side: THREE.BackSide, fog: false }),
+      shade: decal(this.shadeTex()),
+      path: decal(this.pathTex()),
+      patch: decal(this.patchTex())
     };
-    this.flangeGeo = new THREE.CylinderGeometry(0.46, 0.46, 0.06, 10);
+    // Three rain layers that scroll at slightly different speeds.
+    this.rainVariants = [];
+    this.shared.rain = [0, 1, 2].map((i) => {
+      const t = this.rainTex(i + 1);
+      const m = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false });
+      this.rainVariants.push({ tex: t, speed: 0.34 + i * 0.09 });
+      return m;
+    });
+    this.planeGeo = new THREE.PlaneGeometry(1, 1);
     this.box = (typeof Geometries !== "undefined" && Geometries.box) ? Geometries.box : new THREE.BoxGeometry(1, 1, 1);
   },
 
@@ -276,6 +461,8 @@ const Level2 = {
      LIFECYCLE
      ------------------------------------------------------------------ */
   reset() {
+    const wasActive = this.active;
+    this.stopRain();
     if (this.group && typeof scene !== "undefined" && scene) scene.remove(this.group);
     for (const rec of this.segments.values()) this.disposeSegment(rec);
     this.segments.clear();
@@ -284,52 +471,50 @@ const Level2 = {
     this.pool = [];
     this.poolFx = [];
     this.fixtures = [];
-    this.lamps = [];
     this.colliders.length = 0;
-    if (this.hot) this.hot.length = 0;
     this.doors = [];
+    this.nodes = [];
+    this.edges = [];
+    this.taken = {};
     this.group = null;
     this.active = false;
     this.lastKey = "";
     this.time = 0;
-    this.edges = [];
-    this.nodes = [];
+    this._ended = false;
     if (typeof HoundSystem !== "undefined") HoundSystem.reset();
     if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
-    const tint = document.getElementById("heat-tint");
-    if (tint) tint.style.opacity = "0";
-    if (typeof PickupSystem !== "undefined" && PickupSystem.reset) PickupSystem.reset();
+    if (wasActive) {
+      if (typeof CameraRig !== "undefined" && CameraRig.camera && typeof CONFIG !== "undefined") {
+        CameraRig.camera.far = CONFIG.cameraFar;
+        CameraRig.camera.updateProjectionMatrix();
+      }
+      if (typeof PickupSystem !== "undefined" && PickupSystem.reset && PickupSystem.group) PickupSystem.reset();
+    }
   },
 
   disposeSegment(rec) {
     if (!rec || !rec.group) return;
     if (rec.group.parent) rec.group.parent.remove(rec.group);
     for (const g of rec.geos || []) g.dispose();
-  },
-
-  placeBottles() {
-    if (typeof PickupSystem === "undefined") return;
-    if (!PickupSystem.group) {
-      PickupSystem.group = new THREE.Group();
-      if (scene) scene.add(PickupSystem.group);
+    // hand pickups back: remember the ones that were taken, drop the rest
+    for (const p of rec.pickups || []) {
+      if (p.taken) this.taken[p.l4] = true;
+      if (typeof PickupSystem !== "undefined") {
+        const i = PickupSystem.list.indexOf(p);
+        if (i >= 0) PickupSystem.list.splice(i, 1);
+        if (p.mesh && PickupSystem.group) PickupSystem.group.remove(p.mesh);
+      }
+      if (p.mesh && p.mesh.material && p.mesh.material.dispose) p.mesh.material.dispose();
     }
-    for (const e of this.edges) {
-      if (e.main || e.kind === "door") continue;
-      const end = this.nodes[e.b];
-      if (!end || end.edges.length !== 1) continue;
-      if (this.hash(e.id, 1, 4) > 0.12) continue;
-      const len = Math.max(1, e.len);
-      const ux = (e.bx - e.ax) / len, uz = (e.bz - e.az) / len;
-      PickupSystem._addMesh("almond", e.bx - ux * 1.6, e.bz - uz * 1.6);
-    }
+    rec.pickups = [];
   },
 
   enter(seed, from) {
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
-    if (typeof Level3 !== "undefined") Level3.reset();
+    if (typeof Level2 !== "undefined") Level2.reset();
+    if (typeof Level3 !== "undefined") Level3.reset();     // also resets this level; nothing is built yet
     if (typeof Level !== "undefined" && Level.clear) Level.clear(scene);
     if (typeof EntitySystem !== "undefined") EntitySystem.despawn();
-    if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
     if (typeof LightingSystem !== "undefined") LightingSystem.clear(scene);
     this.reset();
     this.seed = seed >>> 0;
@@ -337,17 +522,15 @@ const Level2 = {
     this.materialSet();
     this.active = true;
     this.group = new THREE.Group();
-    this.group.name = "Level2_Tunnels";
+    this.group.name = "Level4_Office";
     scene.add(this.group);
     const lk = this.look;
-    const hemi = new THREE.HemisphereLight(0xc4c8cc, 0x8a8a86, lk.hemi);
-    const amb = new THREE.AmbientLight(0xb8bcc0, lk.ambient);
+    const hemi = new THREE.HemisphereLight(0xcfd6de, 0x6a645c, lk.hemi);
+    const amb = new THREE.AmbientLight(0xb8bcc4, lk.ambient);
     scene.add(hemi, amb);
     this.ambient.push(hemi, amb);
-    // A fixed pool of point lights that is re-aimed at the nearest fixtures.
-    // The light count never changes, so streaming never forces a shader recompile.
     for (let i = 0; i < lk.poolSize; i++) {
-      const L = new THREE.PointLight(0xffe7c2, 0, lk.lightD, 1.5);
+      const L = new THREE.PointLight(0xffe2b8, 0, 16, 1.5);
       scene.add(L);
       this.ambient.push(L);
       this.pool.push(L);
@@ -355,8 +538,8 @@ const Level2 = {
     }
     scene.fog = new THREE.Fog(lk.fog, lk.fogNear, lk.fogFar);
     if (scene.background) scene.background.setHex(lk.fog);
-    if (CameraRig.camera) { CameraRig.camera.far = 100; CameraRig.camera.updateProjectionMatrix(); }
-    GameState.level = 2;
+    if (CameraRig.camera) { CameraRig.camera.far = 80; CameraRig.camera.updateProjectionMatrix(); }
+    GameState.level = 4;
     GameState.seed = this.seed;
     GameState.phase = "playing";
     GameState.cutscene = false;
@@ -365,63 +548,106 @@ const Level2 = {
     Player.position.copy(this.spawn);
     Player.velocity.set(0, 0, 0);
     Player.onGround = true;
-    Player.yaw = Math.PI;
+    Player.yaw = this.spawnYaw;
     const obj = document.getElementById("hud-obj");
-    if (obj) obj.textContent = "Objective: find a door out (0, 1, or 3)";
+    if (obj) obj.textContent = "Objective: find the way forward";
     const lvl = document.getElementById("hud-level-label");
-    if (lvl) lvl.textContent = "LEVEL 2";
+    if (lvl) lvl.textContent = "LEVEL 4";
     const seedEl = document.getElementById("hud-seed-val");
     if (seedEl) seedEl.textContent = String(this.seed);
-    const arrival = (from === 3 && this.exitPos) ? this.exitPos : this.spawn;
-    Player.position.copy(arrival);
+    if (typeof PickupSystem !== "undefined") {
+      PickupSystem.reset();
+      PickupSystem.group = new THREE.Group();
+      if (scene) scene.add(PickupSystem.group);
+    }
     this.stream(true);
     this.assignLights();
-    this.placeBottles();
-    Player.position.copy(arrival);
-    Player.yaw = Math.PI;
-    if (typeof HoundSystem !== "undefined") {
-      HoundSystem.attach({
-        colliders: this.colliders,
-        cap: 2,
-        graceSeconds: 2,
-        graceRadius: 30,
-        minDist: 18,
-        maxDist: 42,
-        seed: this.seed
-      });
+    Player.position.copy(this.spawn);
+    Player.yaw = this.spawnYaw;
+    this.attachEntities();
+    this.startRain();
+    if (typeof HUD !== "undefined") HUD.toast("LEVEL 4 · OFFICE SECTOR");
+  },
+
+  // One entity per run, chosen by the seed: even is a Hound, odd is a Smiler. Never both.
+  attachEntities() {
+    const common = { colliders: this.colliders, cap: 1, graceSeconds: 3, minDist: 18, maxDist: 36, seed: this.seed };
+    if (this.seed % 2 === 0) {
+      if (typeof HoundSystem !== "undefined") HoundSystem.attach(common);
+      if (typeof SmilerSystem !== "undefined") SmilerSystem.detach();
+    } else {
+      if (typeof SmilerSystem !== "undefined") {
+        SmilerSystem.attach(Object.assign({}, common, {
+          margin: 0.55,
+          allow: () => true,
+          isDark: (x, z) => this.isDarkAt(x, z)
+        }));
+      }
+      if (typeof HoundSystem !== "undefined") HoundSystem.detach();
     }
-    if (typeof SmilerSystem !== "undefined") {
-      SmilerSystem.attach({
-        colliders: this.colliders,
-        cap: 2,
-        graceSeconds: 2,
-        minDist: 15,
-        maxDist: 32,
-        seed: this.seed,
-        margin: 0.55,
-        allow: () => true,
-        isDark: (x, z) => this.isDarkAt(x, z)
-      });
+  },
+
+  // For the console: attach the system this level did not pick, so /spawn can place one
+  // by hand. cap 0 and an endless grace mean it never spawns anything on its own.
+  attachSpare(kind) {
+    const spare = { colliders: this.colliders, cap: 0, graceSeconds: 1e9, minDist: 18, maxDist: 36, seed: this.seed };
+    if (kind === "hound" && typeof HoundSystem !== "undefined" && !HoundSystem.attached) HoundSystem.attach(spare);
+    if (kind === "smiler" && typeof SmilerSystem !== "undefined" && !SmilerSystem.attached) {
+      SmilerSystem.attach(Object.assign({}, spare, { margin: 0.55, allow: () => true }));
     }
+  },
+
+  /* ------------------------------------------------------------------
+     AUDIO. A quiet rain bed from a looped noise buffer on the ambient bus, and a faint
+     music cue near the forward door. Both are synthesised, and both are skipped when
+     there is no audio context.
+     ------------------------------------------------------------------ */
+  startRain() {
+    this.stopRain();
+    const A = (typeof AudioSystem !== "undefined") ? AudioSystem : null;
+    if (!A || !A.ctx || !A.buses || !A.buses.ambient) return;
+    try {
+      if (A.resume) A.resume();
+      const ctx = A.ctx, len = ctx.sampleRate * 2;
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      let lp = 0;
+      for (let i = 0; i < len; i++) { lp = lp * 0.72 + (Math.random() * 2 - 1) * 0.28; d[i] = lp; }
+      const src = ctx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 650;
+      const lpf = ctx.createBiquadFilter(); lpf.type = "lowpass"; lpf.frequency.value = 5200;
+      const g = ctx.createGain(); g.gain.value = 0.05;
+      src.connect(hp); hp.connect(lpf); lpf.connect(g); g.connect(A.buses.ambient);
+      src.start();
+      this.rainNodes = [src, hp, lpf, g];
+    } catch (e) { this.rainNodes = []; }
+  },
+
+  stopRain() {
+    for (const n of this.rainNodes) {
+      try { if (n.stop) n.stop(); n.disconnect(); } catch (e) { /* already stopped */ }
+    }
+    this.rainNodes = [];
   },
 
   /* ------------------------------------------------------------------
      GEOMETRY HELPERS
      ------------------------------------------------------------------ */
   newRec() {
-    return { group: new THREE.Group(), colliders: [], hotBoxes: [], fixtures: [], lamps: [], doors: [], geos: [], edge: null };
+    return { group: new THREE.Group(), colliders: [], fixtures: [], doors: [], pickups: [], geos: [], edge: null };
   },
 
-  // Box with real-size geometry; UVs are scaled so a texture tile covers T metres.
-  texBox(rec, mat, x, y, z, sx, sy, sz, T) {
+  // Box with real-size geometry and UVs scaled so a texture tile covers 2 m.
+  texBox(rec, mat, x, y, z, sx, sy, sz) {
     const geo = new THREE.BoxGeometry(sx, sy, sz);
     const uv = geo.attributes.uv;
-    const t = T || this.T;
+    const T = 2.0;
     const dims = [[sz, sy], [sz, sy], [sx, sz], [sx, sz], [sx, sy], [sx, sy]];
     for (let f = 0; f < 6; f++) {
       for (let v = 0; v < 4; v++) {
         const i = f * 4 + v;
-        uv.setXY(i, uv.getX(i) * dims[f][0] / t, uv.getY(i) * dims[f][1] / t);
+        uv.setXY(i, uv.getX(i) * dims[f][0] / T, uv.getY(i) * dims[f][1] / T);
       }
     }
     uv.needsUpdate = true;
@@ -440,47 +666,340 @@ const Level2 = {
     return m;
   },
 
-  solid(rec, mat, x, y, z, sx, sy, sz, textured) {
-    if (textured) this.texBox(rec, mat, x, y, z, sx, sy, sz);
-    else this.deco(rec, mat, x, y, z, sx, sy, sz);
-    const c = {
-      min: new THREE.Vector3(x - sx / 2, y - sy / 2, z - sz / 2),
-      max: new THREE.Vector3(x + sx / 2, y + sy / 2, z + sz / 2)
-    };
+  collider(rec, x0, y0, z0, x1, y1, z1) {
+    const c = { min: new THREE.Vector3(x0, y0, z0), max: new THREE.Vector3(x1, y1, z1) };
     rec.colliders.push(c);
     return c;
   },
 
-  // Pipe with tiled UVs along its length. `list` receives the collider.
-  pipeRun(rec, list, mat, x, y, z, alongX, len, radius, collide) {
-    const geo = new THREE.CylinderGeometry(radius, radius, len, 10);
-    const uv = geo.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 2, uv.getY(i) * len / this.T);
-    uv.needsUpdate = true;
-    const pipe = new THREE.Mesh(geo, mat);
-    if (alongX) pipe.rotation.z = Math.PI / 2; else pipe.rotation.x = Math.PI / 2;
-    pipe.position.set(x, y, z);
-    rec.group.add(pipe);
-    rec.geos.push(geo);
-    if (collide) {
-      const hx = alongX ? len / 2 : radius;
-      const hz = alongX ? radius : len / 2;
-      list.push({
-        min: new THREE.Vector3(x - hx, y - radius, z - hz),
-        max: new THREE.Vector3(x + hx, y + radius, z + hz)
-      });
+  solidBox(rec, mat, x, y, z, sx, sy, sz, textured) {
+    if (textured) this.texBox(rec, mat, x, y, z, sx, sy, sz);
+    else this.deco(rec, mat, x, y, z, sx, sy, sz);
+    return this.collider(rec, x - sx / 2, y - sy / 2, z - sz / 2, x + sx / 2, y + sy / 2, z + sz / 2);
+  },
+
+  // A flat decal on the floor. Long axis points along (ux, uz).
+  floorDecal(rec, mat, x, z, w, l, ux, uz, y) {
+    const m = new THREE.Mesh(this.planeGeo, mat);
+    m.rotation.order = "YXZ";
+    m.rotation.x = -Math.PI / 2;
+    m.rotation.y = Math.atan2(-ux, -uz);
+    m.scale.set(w, l, 1);
+    m.position.set(x, y, z);
+    rec.group.add(m);
+    return m;
+  },
+
+  addFixture(rec, x, y, z, kind, base, dist, color, bad) {
+    rec.fixtures.push({
+      x, y, z, kind, base, dist, color, bad: !!bad,
+      ph: this.hash(Math.round(x * 3), Math.round(z * 3), 3) * 40
+    });
+  },
+
+  // Dark means no working ceiling panel within 8 m. Window light does not count.
+  isDarkAt(x, z) {
+    for (const f of this.fixtures) {
+      if (f.kind === "panel" && Math.hypot(f.x - x, f.z - z) <= 8) return false;
+    }
+    return true;
+  },
+
+  assignLights() {
+    if (!this.pool.length) return;
+    const p = Player.position;
+    const cand = [];
+    for (const f of this.fixtures) {
+      const d = (f.x - p.x) * (f.x - p.x) + (f.z - p.z) * (f.z - p.z);
+      if (d < 30 * 30) cand.push({ f, d });
+    }
+    cand.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < this.pool.length; i++) {
+      const c = cand[i];
+      this.poolFx[i] = c ? c.f : null;
+      if (c) {
+        const L = this.pool[i];
+        L.position.set(c.f.x, c.f.y, c.f.z);
+        L.distance = c.f.dist;
+        if (L.color && L.color.setHex) L.color.setHex(c.f.color);
+      } else this.pool[i].intensity = 0;
     }
   },
 
-  addFixture(rec, x, y, z, dead, dark) {
-    rec.lamps.push({ x, z, dead: !!(dead || dark) });
-    if (dead || dark) return;
-    rec.fixtures.push({
-      x, y, z,
-      base: this.look.lightI,
-      ph: this.hash(Math.round(x * 3), Math.round(z * 3), 3) * 40,
-      bad: this.hash(Math.round(x * 3), Math.round(z * 3), 9) < 0.28
-    });
+  /* ------------------------------------------------------------------
+     ROOMS
+     ------------------------------------------------------------------ */
+  buildNode(node) {
+    const key = "n" + node.id;
+    if (this.segments.has(key)) return;
+    const rec = this.newRec();
+    rec.edge = { ax: node.x, az: node.z, bx: node.x, bz: node.z };
+    const R = this.R, H = this.H, t = this.T, W = this.W;
+    const S = this.shared, dr = node.dress;
+    const cx = node.x, cz = node.z, full = R + 2 * t;
+    const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const wallMat = this.hash(node.id, 7, 3) < 0.5 ? S.wallA : S.wallB;
+
+    // floor (top face at y = 0) and the drop ceiling slab (underside at y = H)
+    this.texBox(rec, S.carpet, cx, -0.1, cz, full, 0.2, full);
+    this.collider(rec, cx - full / 2, -0.5, cz - full / 2, cx + full / 2, 0.02, cz + full / 2);
+    this.texBox(rec, S.ceil, cx, H + 0.1, cz, full, 0.2, full);
+    this.collider(rec, cx - full / 2, H, cz - full / 2, cx + full / 2, H + 0.2, cz + full / 2);
+
+    // walls, one side at a time, cut around corridor openings and windows
+    for (let d = 0; d < 4; d++) {
+      const dx = DIRS[d][0], dz = DIRS[d][1];
+      const alongZ = dx !== 0;                       // this wall runs along z
+      const L0 = alongZ ? -(R / 2 + t) : -R / 2, L1 = alongZ ? (R / 2 + t) : R / 2;
+      const dist = R / 2 + t / 2;
+      const at = (l, dd) => alongZ ? { x: cx + dx * dd, z: cz + l } : { x: cx + l, z: cz + dz * dd };
+      const piece = (l0, l1, y0, y1, solid) => {
+        const len = l1 - l0;
+        if (len < 0.01 || y1 - y0 < 0.01) return;
+        const p = at((l0 + l1) / 2, dist);
+        const sx = alongZ ? t : len, sz = alongZ ? len : t;
+        if (solid) this.solidBox(rec, wallMat, p.x, (y0 + y1) / 2, p.z, sx, y1 - y0, sz, true);
+        else this.texBox(rec, wallMat, p.x, (y0 + y1) / 2, p.z, sx, y1 - y0, sz);
+      };
+      const cut = (l0, l1, y0, y1) => {              // collider only
+        const p = at((l0 + l1) / 2, dist);
+        const sx = alongZ ? t : l1 - l0, sz = alongZ ? l1 - l0 : t;
+        this.collider(rec, p.x - sx / 2, y0, p.z - sz / 2, p.x + sx / 2, y1, p.z + sz / 2);
+      };
+      const open = node.open[d];
+      const wins = dr.windows.filter(w => w.d === d);
+      const openings = [];
+      if (open) openings.push({ l0: -W / 2, l1: W / 2, y0: 0, y1: 2.2, type: "hall" });
+      for (const w of wins) openings.push({ l0: w.c - 1.1, l1: w.c + 1.1, y0: 0.9, y1: 2.3, type: "window", w });
+      openings.sort((a, b) => a.l0 - b.l0);
+      let cursor = L0;
+      for (const o of openings) {
+        piece(cursor, o.l0, 0, H, true);
+        if (o.type === "hall") {
+          piece(o.l0, o.l1, o.y1, H, false);
+          cut(o.l0, o.l1, o.y1, H);                   // header: keeps a jump out of the opening
+        } else {
+          piece(o.l0, o.l1, 0, o.y0, false);          // sill wall
+          piece(o.l0, o.l1, o.y1, H, false);          // header wall
+          cut(o.l0, o.l1, 0, H);                      // the glass is solid
+          this.buildWindow(rec, node, d, o.w, at, dist);
+        }
+        cursor = o.l1;
+      }
+      piece(cursor, L1, 0, H, true);
+
+      // baseboard and the darker carpet along the wall, everywhere except across a corridor
+      const spans = [];
+      let c2 = L0;
+      for (const o of openings.filter(q => q.type === "hall")) { spans.push([c2, o.l0]); c2 = o.l1; }
+      spans.push([c2, L1]);
+      for (const [a, b] of spans) {
+        if (b - a < 0.05) continue;
+        const p = at((a + b) / 2, R / 2 - 0.015);
+        this.deco(rec, S.base, p.x, 0.05, p.z, alongZ ? 0.03 : b - a, 0.1, alongZ ? b - a : 0.03);
+        const lo = Math.max(a, alongZ ? -R / 2 : -R / 2), hi = Math.min(b, R / 2);
+        if (hi - lo > 0.3) {
+          const q = at((lo + hi) / 2, R / 2 - 0.45);
+          this.floorDecal(rec, S.shade, q.x, q.z, hi - lo, 0.9, dx, dz, 0.006);
+        }
+      }
+      // a worn path from the middle of the room out through each corridor
+      if (open) {
+        const q = at(0, R / 4);
+        this.floorDecal(rec, S.path, q.x, q.z, 1.5, R / 2 + 0.6, dx, dz, 0.004);
+      }
+    }
+    // ceiling: panels set into the grid, missing and stained tiles
+    for (const p of dr.panels) {
+      this.deco(rec, p.on ? S.panelOn : S.panelOff, p.x, H - 0.02, p.z, 1.0, 0.04, 0.5);
+      if (p.on) this.addFixture(rec, p.x, H - 0.4, p.z, "panel", 3.6, 14, 0xffe2b4, p.bad);
+    }
+    for (const c of dr.missing) {
+      const m = new THREE.Mesh(this.planeGeo, S.black);
+      m.rotation.x = Math.PI / 2; m.scale.set(0.46, 0.46, 1); m.position.set(c.x, H - 0.003, c.z);
+      rec.group.add(m);
+    }
+    for (const c of dr.stained) {
+      const m = new THREE.Mesh(this.planeGeo, S.ceilStain);
+      m.rotation.x = Math.PI / 2; m.scale.set(0.46, 0.46, 1); m.position.set(c.x, H - 0.003, c.z);
+      rec.group.add(m);
+    }
+
+    // furniture
+    if (dr.desk) this.buildDesk(rec, node, dr.desk);
+    if (dr.cooler) this.buildCooler(rec, dr.cooler);
+    if (dr.worn) {
+      this.floorDecal(rec, S.patch, dr.worn.x, dr.worn.z, 1.9, 1.0, dr.worn.alongZ ? 0 : 1, dr.worn.alongZ ? 1 : 0, 0.005);
+    }
+
+    // doors
+    if (node.backSide >= 0) this.buildDoor(rec, node, node.backSide, "back");
+    if (node.fwdSide >= 0) this.buildDoor(rec, node, node.fwdSide, "forward");
+
+    // pickups (almond water everywhere, one rare energy bar), capped in the loaded area
+    this.placeSites(rec, dr.sites);
+
+    this.group.add(rec.group);
+    this.segments.set(key, rec);
+  },
+
+  buildWindow(rec, node, d, w, at, dist) {
+    const S = this.shared, R = this.R, t = this.T;
+    const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const dx = DIRS[d][0], dz = DIRS[d][1], alongZ = dx !== 0;
+    const face = Math.atan2(-dx, -dz);                  // plane normal points into the room
+    const y0 = 0.9, y1 = 2.3, ww = 2.2, hh = y1 - y0;
+    const p = at(w.c, dist);
+    const place = (mesh, ox, oy, oz) => { mesh.position.set(p.x + ox, oy, p.z + oz); rec.group.add(mesh); return mesh; };
+    // frame: sill ledge, head rail and two jambs
+    const sill = this.deco(rec, S.frame, p.x - dx * 0.05, y0 + 0.025, p.z - dz * 0.05,
+      alongZ ? t + 0.1 : ww + 0.2, 0.05, alongZ ? ww + 0.2 : t + 0.1);
+    const head = this.deco(rec, S.frame, p.x, y1 - 0.025, p.z, alongZ ? 0.08 : ww, 0.05, alongZ ? ww : 0.08);
+    for (const s of [-1, 1]) {
+      const lat = at(w.c + s * (ww / 2 - 0.025), dist);
+      this.deco(rec, S.frame, lat.x, (y0 + y1) / 2, lat.z, alongZ ? 0.08 : 0.05, hh, alongZ ? 0.05 : 0.08);
+    }
+    if (w.blackout) {
+      // blacked out from inside: a black plate flush with the glass
+      const m = new THREE.Mesh(this.planeGeo, S.black);
+      m.scale.set(ww, hh, 1); m.rotation.y = face;
+      place(m, -dx * 0.02, (y0 + y1) / 2, -dz * 0.02);
+      return;
+    }
+    // The pane, with rain running down it. Each pane gets its own UV offset so the
+    // streaks differ from window to window even though the layers are shared.
+    const geo = new THREE.PlaneGeometry(ww, hh);
+    const uv = geo.attributes.uv;
+    const ou = this.hash(node.id, Math.round(w.c * 10), 11), ov = this.hash(node.id, Math.round(w.c * 10), 12);
+    for (let i = 0; i < (uv.count || 0); i++) uv.setXY(i, uv.getX(i) * 1.0 + ou, uv.getY(i) * 1.4 + ov);
+    uv.needsUpdate = true;
+    rec.geos.push(geo);
+    const variant = Math.floor(this.hash(node.id, Math.round(w.c * 10), 13) * 3) % 3;
+    const pane = new THREE.Mesh(geo, S.rain[variant]);
+    pane.rotation.y = face;
+    place(pane, 0, (y0 + y1) / 2, 0);
+    // Behind every pane is the same grey nothing: a shallow box seen from inside.
+    const wellDepth = 1.3;
+    const well = new THREE.Mesh(this.box, S.well);
+    well.scale.set(alongZ ? wellDepth : ww + 0.5, hh + 0.5, alongZ ? ww + 0.5 : wellDepth);
+    place(well, dx * (wellDepth / 2 + 0.02), (y0 + y1) / 2, dz * (wellDepth / 2 + 0.02));
+    // grey light from the window onto the carpet
+    this.addFixture(rec, p.x - dx * 0.9, 1.6, p.z - dz * 0.9, "window", 6.0, 13, 0xa9b8ca, false);
+  },
+
+  buildDesk(rec, node, desk) {
+    const S = this.shared, p = this.deskSpot(node, desk);
+    const L = 1.6, D = 0.8;
+    const sx = p.alongZ ? D : L, sz = p.alongZ ? L : D;
+    // top, two end panels, and a modesty panel facing the room
+    this.deco(rec, S.deskTop, p.x, 0.725, p.z, sx, 0.05, sz);
+    for (const s of [-1, 1]) {
+      this.deco(rec, S.desk, p.x + p.ox * s * (L / 2 - 0.025), 0.35, p.z + p.oz * s * (L / 2 - 0.025),
+        p.alongZ ? D : 0.05, 0.7, p.alongZ ? 0.05 : D);
+    }
+    this.deco(rec, S.desk, p.x + p.dx * (D / 2 - 0.04), 0.5, p.z + p.dz * (D / 2 - 0.04),
+      p.alongZ ? 0.03 : L - 0.1, 0.45, p.alongZ ? L - 0.1 : 0.03);
+    this.collider(rec, p.x - sx / 2, 0, p.z - sz / 2, p.x + sx / 2, 0.75, p.z + sz / 2);
+    // dead monitor
+    if (desk.hasMonitor) {
+      const mx = p.x - p.dx * 0.05 + p.ox * 0.2, mz = p.z - p.dz * 0.05 + p.oz * 0.2;
+      this.deco(rec, S.monitor, mx, 0.765, mz, 0.22, 0.03, 0.18);
+      this.deco(rec, S.monitor, mx, 0.84, mz, 0.05, 0.14, 0.05);
+      const body = this.deco(rec, S.monitor, mx, 1.02, mz,
+        p.alongZ ? 0.04 : 0.5, 0.32, p.alongZ ? 0.5 : 0.04);
+      const face = new THREE.Mesh(this.planeGeo, S.screen);
+      face.scale.set(0.45, 0.27, 1);
+      face.rotation.y = Math.atan2(-p.dx, -p.dz);
+      face.position.set(mx - p.dx * 0.022, 1.02, mz - p.dz * 0.022);
+      rec.group.add(face);
+    }
+    // chair, pushed out and turned a little
+    const cxp = p.x - p.dx * (D / 2 + 0.55) + p.ox * 0.15, czp = p.z - p.dz * (D / 2 + 0.55) + p.oz * 0.15;
+    const g = new THREE.Group();
+    g.position.set(cxp, 0, czp);
+    g.rotation.y = (this.hash(node.id, 21, 5) - 0.5) * 1.2 + Math.atan2(-p.dx, -p.dz);
+    const part = (mat, x, y, z, a, b, c) => {
+      const m = new THREE.Mesh(this.box, mat);
+      m.position.set(x, y, z); m.scale.set(a, b, c); g.add(m);
+    };
+    part(S.chair, 0, 0.45, 0, 0.46, 0.07, 0.46);          // seat
+    part(S.chair, 0, 0.72, 0.21, 0.44, 0.5, 0.05);        // back
+    part(S.metal, 0, 0.22, 0, 0.06, 0.4, 0.06);           // stem
+    part(S.metal, 0, 0.04, 0, 0.5, 0.04, 0.5);            // base
+    rec.group.add(g);
+    this.collider(rec, cxp - 0.26, 0, czp - 0.26, cxp + 0.26, 0.95, czp + 0.26);
+  },
+
+  buildCooler(rec, c) {
+    const S = this.shared;
+    this.deco(rec, S.cooler, c.x, 0.5, c.z, 0.38, 1.0, 0.38);
+    this.deco(rec, S.coolerDark, c.x, 0.62, c.z, 0.3, 0.12, 0.4);          // tap recess
+    this.deco(rec, S.coolerDark, c.x, 0.05, c.z, 0.4, 0.1, 0.4);           // plinth
+    this.collider(rec, c.x - 0.2, 0, c.z - 0.2, c.x + 0.2, 1.02, c.z + 0.2);
+  },
+
+  buildDoor(rec, node, d, kind) {
+    const S = this.shared, R = this.R, half = R / 2;
+    const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const dx = DIRS[d][0], dz = DIRS[d][1];
+    const alongX = dz !== 0;                         // wall runs along x
+    const doorSide = alongX ? dz : dx;
+    const cx = node.x, cz = node.z, leafW = 0.92;
+    // frame and a black void behind the leaf, both flush with the wall
+    const fx = alongX ? cx : cx + doorSide * (half - 0.015), fz = alongX ? cz + doorSide * (half - 0.015) : cz;
+    this.deco(rec, S.doorFrame, fx, 1.1, fz, alongX ? leafW + 0.18 : 0.03, 2.2, alongX ? 0.03 : leafW + 0.18);
+    const vx = alongX ? cx : cx + doorSide * (half - 0.03), vz = alongX ? cz + doorSide * (half - 0.03) : cz;
+    this.deco(rec, S.black, vx, 1.03, vz, alongX ? leafW : 0.03, 2.06, alongX ? 0.03 : leafW);
+    const depth = doorSide * (half - 0.09);
+    const hx = alongX ? cx - leafW / 2 : cx + depth, hz = alongX ? cz + depth : cz - leafW / 2;
+    const pivot = new THREE.Group();
+    pivot.position.set(hx, 0, hz);
+    const leaf = new THREE.Mesh(this.box, S.doorLeaf);
+    leaf.scale.set(alongX ? leafW : 0.06, 2.05, alongX ? 0.06 : leafW);
+    leaf.position.set(alongX ? leafW / 2 : 0, 1.03, alongX ? 0 : leafW / 2);
+    pivot.add(leaf);
+    const handle = new THREE.Mesh(this.box, S.handle);
+    handle.scale.set(alongX ? 0.16 : 0.08, 0.1, alongX ? 0.08 : 0.16);
+    handle.position.set(alongX ? leafW * 0.8 : -doorSide * 0.06, 1.05, alongX ? -doorSide * 0.06 : leafW * 0.8);
+    pivot.add(handle);
+    rec.group.add(pivot);
+    const door = {
+      kind, pivot, open: 0, used: false, gone: false,
+      x: alongX ? cx : cx + doorSide * half, z: alongX ? cz + doorSide * half : cz,
+      swing: alongX ? (doorSide > 0 ? 1 : -1) : (doorSide > 0 ? -1 : 1)
+    };
+    rec.doors.push(door);
+    const lx = cx + dx * (half - 0.1), lz = cz + dz * (half - 0.1);
+    if (kind === "back") {
+      // small plaque over the door: this one is the way back to the elevator
+      const m = new THREE.Mesh(this.planeGeo, S.plaqueBack);
+      m.scale.set(0.7, 0.13, 1);
+      m.rotation.y = Math.atan2(-dx, -dz);
+      m.position.set(lx, 2.35, lz);
+      rec.group.add(m);
+    } else {
+      // a warm strip over the forward door so it can be found from across a dark room
+      this.deco(rec, S.panelOn, lx, 2.32, lz, alongX ? 0.7 : 0.06, 0.05, alongX ? 0.06 : 0.7);
+      this.addFixture(rec, cx + dx * (half - 0.7), 2.2, cz + dz * (half - 0.7), "door", 2.6, 8, 0xffd9a0, false);
+    }
+  },
+
+  // Almond water and the rare energy bar. At most 5 bottles in the loaded area.
+  placeSites(rec, sites) {
+    if (typeof PickupSystem === "undefined" || !PickupSystem.group) return;
+    for (const s of sites) {
+      if (this.taken[s.id]) continue;
+      if (s.kind === "almond") {
+        let live = 0;
+        for (const p of PickupSystem.list) if (p.l4 && p.kind === "almond" && !p.taken) live++;
+        if (live >= 5) continue;                      // will be offered again if this room streams in later
+      }
+      PickupSystem._addMesh(s.kind, s.x, s.z);
+      const p = PickupSystem.list[PickupSystem.list.length - 1];
+      p.l4 = s.id;
+      p.mesh.position.y = s.y;
+      rec.pickups.push(p);
+    }
   },
 
   /* ------------------------------------------------------------------
@@ -491,224 +1010,27 @@ const Level2 = {
     if (this.segments.has(key)) return;
     const rec = this.newRec();
     rec.edge = edge;
-    const W = this.width, H = this.height, by = this.baseY, E = this.NODE;
-    const full = W + 0.64;
-    const len = Math.max(1, edge.len);
-    const ux = (edge.bx - edge.ax) / len, uz = (edge.bz - edge.az) / len;
-    const alongX = Math.abs(ux) >= Math.abs(uz);
-    const span = Math.max(2, len - 2 * E);
+    const S = this.shared, R = this.R, H = this.H, t = this.T, W = this.W;
+    const L = this.S - R - 2 * t;                    // between the outer faces of the two rooms
+    const alongX = edge.d % 2 === 0;
     const mx = (edge.ax + edge.bx) / 2, mz = (edge.az + edge.bz) / 2;
-    // a: distance along the corridor (signed with its direction), b: world offset across it
-    const wx = (a, b) => alongX ? mx + ux * a : mx + b;
-    const wz = (a, b) => alongX ? mz + b : mz + uz * a;
-    const abox = (mat, a, y, b, sa, sy, sb, solid, textured) => {
-      const X = wx(a, b), Z = wz(a, b);
-      const sx = alongX ? sa : sb, sz = alongX ? sb : sa;
-      if (solid) return this.solid(rec, mat, X, y, Z, sx, sy, sz, textured);
-      if (textured) return this.texBox(rec, mat, X, y, Z, sx, sy, sz);
-      return this.deco(rec, mat, X, y, Z, sx, sy, sz);
-    };
-    const S = this.shared;
-
-    // floor (top face sits exactly at baseY) + a worn strip down the middle
-    abox(S.floor, 0, by - 0.08, 0, span, 0.16, full, true, true);
-    rec.colliders[rec.colliders.length - 1].max.y = by + 0.02;
-    abox(S.floorWear, 0, by + 0.003, 0, span * 0.92, 0.006, W * 0.45, false, true);
-    // ceiling slab (underside at baseY + H)
-    abox(S.ceil, 0, by + H + 0.125, 0, span, 0.25, full, true, true);
-
-    const pipeSide = edge.main ? 1 : -1;
-    // side walls: the pipe side is the dirtier one. White trim top and bottom.
-    for (const sign of [-1, 1]) {
-      const b = sign * (W / 2 + 0.16);
-      abox(sign === pipeSide ? S.stain : S.wall, 0, by + H / 2, b, span, H, 0.32, true, true);
-      const tb = sign * (W / 2 - 0.015);
-      abox(S.trim, 0, by + 0.09, tb, span, 0.18, 0.03, false);
-      abox(S.trim, 0, by + H - 0.28, tb, span, 0.07, 0.03, false);
+    const sx = alongX ? L : W + 2 * t, sz = alongX ? W + 2 * t : L;
+    this.texBox(rec, S.carpetHall, mx, -0.1, mz, sx, 0.2, sz);
+    this.collider(rec, mx - sx / 2, -0.5, mz - sz / 2, mx + sx / 2, 0.02, mz + sz / 2);
+    this.texBox(rec, S.ceil, mx, H + 0.1, mz, sx, 0.2, sz);
+    this.collider(rec, mx - sx / 2, H, mz - sz / 2, mx + sx / 2, H + 0.2, mz + sz / 2);
+    const wallMat = this.hash(edge.id, 9, 4) < 0.5 ? S.wallA : S.wallB;
+    for (const s of [-1, 1]) {
+      const off = s * (W / 2 + t / 2);
+      const x = alongX ? mx : mx + off, z = alongX ? mz + off : mz;
+      this.solidBox(rec, wallMat, x, H / 2, z, alongX ? L : t, H, alongX ? t : L, true);
+      const bo = s * (W / 2 - 0.015);
+      this.deco(rec, S.base, alongX ? mx : mx + bo, 0.05, alongX ? mz + bo : mz, alongX ? L : 0.03, 0.1, alongX ? 0.03 : L);
     }
-
-    // pipes: three runs on the pipe wall (hot ones hurt), plus one overhead
-    const runs = [
-      { y: 0.55, r: 0.18, off: 1.02, mat: edge.hot ? S.hot : S.rust },
-      { y: 1.22, r: 0.28, off: 1.22, mat: edge.hot ? S.hot : S.pipe },
-      { y: 1.95, r: 0.16, off: 0.96, mat: edge.hot ? S.hot : S.rust }
-    ];
-    for (const run of runs) {
-      const b = pipeSide * run.off;
-      this.pipeRun(rec, edge.hot ? rec.hotBoxes : rec.colliders, run.mat,
-        wx(0, b), by + run.y, wz(0, b), alongX, span * 0.96, run.r, true);
-      const steps = Math.min(5, Math.max(1, Math.floor(span / 6)));
-      for (let i = 0; i < steps; i++) {
-        const a = -span / 2 + (i + 0.5) * span / steps;
-        const flange = new THREE.Mesh(this.flangeGeo, run.mat);
-        flange.scale.set(run.r / 0.28, 1, run.r / 0.28);
-        if (alongX) flange.rotation.z = Math.PI / 2; else flange.rotation.x = Math.PI / 2;
-        flange.position.set(wx(a, b), by + run.y, wz(a, b));
-        rec.group.add(flange);
-        if (i % 2 === 0) {
-          // bracket to the wall
-          const bb = pipeSide * (run.off + (W / 2 - run.off) * 0.55);
-          abox(S.rust, a, by + run.y, bb, 0.1, 0.07, W / 2 - run.off, false);
-        }
-      }
-    }
-    // overhead run, out of reach
-    this.pipeRun(rec, rec.colliders, edge.hot ? S.hot : S.pipe, wx(0, -pipeSide * 0.9), by + H - 0.42, wz(0, -pipeSide * 0.9),
-      alongX, span * 0.98, 0.13, false);
-
-    // wall-mounted pipe rack (uses the pipe texture) on the clean wall
-    if (this.hash(edge.id, 40, 3) < 0.4 && span > 8) {
-      const a = (this.hash(edge.id, 41, 3) - 0.5) * (span - 6);
-      abox(S.pipePanel, a, by + 2.3, -pipeSide * (W / 2 - 0.07), 2.6, 1.1, 0.14, false, true);
-    }
-    // ceiling duct
-    if (this.hash(edge.id, 42, 3) < 0.35 && span > 10) {
-      const a = (this.hash(edge.id, 43, 3) - 0.5) * (span - 8);
-      abox(S.pipe, a, by + H - 0.3, 0, 3.0, 0.34, 1.0, false);
-    }
-    // metal shelves along the clean wall, with a few supplies on them
-    if (span > 12) {
-      const count = this.hash(edge.id, 44, 3) < 0.5 ? 1 : 0 + (this.hash(edge.id, 45, 3) < 0.25 ? 1 : 0);
-      for (let k = 0; k < count; k++) {
-        const a = (this.hash(edge.id, 46 + k, 3) - 0.5) * (span - 8);
-        const b = -pipeSide * (W / 2 - 0.26);
-        const sw = 1.7, sd = 0.46;
-        const sx = alongX ? sw : sd, sz = alongX ? sd : sw;
-        const X = wx(a, b), Z = wz(a, b);
-        for (const pa of [-sw / 2 + 0.03, sw / 2 - 0.03]) for (const pb of [-sd / 2 + 0.03, sd / 2 - 0.03]) {
-          this.deco(rec, S.shelf, X + (alongX ? pa : pb), by + 1.0, Z + (alongX ? pb : pa), 0.05, 2.0, 0.05);
-        }
-        for (let lv = 0; lv < 4; lv++) this.deco(rec, S.shelf, X, by + 0.25 + lv * 0.55, Z, sx, 0.04, sz);
-        for (let it = 0; it < 4; it++) {
-          const h = this.hash(edge.id, 50 + k * 7 + it, 4);
-          if (h < 0.3) continue;
-          const o = (this.hash(edge.id, 60 + k * 7 + it, 4) - 0.5) * (sw - 0.5);
-          const lv = Math.floor(this.hash(edge.id, 70 + k * 7 + it, 4) * 3);
-          this.deco(rec, h > 0.65 ? S.crate : S.can, X + (alongX ? o : 0), by + 0.27 + lv * 0.55 + 0.14, Z + (alongX ? 0 : o), 0.3, 0.26, 0.3);
-        }
-        rec.colliders.push({
-          min: new THREE.Vector3(X - sx / 2, by, Z - sz / 2),
-          max: new THREE.Vector3(X + sx / 2, by + 2.0, Z + sz / 2)
-        });
-      }
-    }
-
-    // exit door
-    if (edge.kind === "door") {
-      const doorSide = -pipeSide;      // world sign of the wall the door is in
-      const cdir = -doorSide;          // direction from the wall into the corridor
-      const leafW = 0.92;
-      const wallB = doorSide * (W / 2);
-      // frame + black void behind the leaf, both flush with the wall
-      const fa = this.deco(rec, S.frame, wx(0, wallB - doorSide * 0.015) , by + 1.1, wz(0, wallB - doorSide * 0.015),
-        alongX ? leafW + 0.18 : 0.03, 2.2, alongX ? 0.03 : leafW + 0.18);
-      const va = this.deco(rec, S.voidDark, wx(0, wallB - doorSide * 0.03), by + 1.03, wz(0, wallB - doorSide * 0.03),
-        alongX ? leafW : 0.03, 2.06, alongX ? 0.03 : leafW);
-      const depth = doorSide * (W / 2 - 0.09);   // leaf plane, 9 cm in front of the wall
-      const hingeX = alongX ? mx - leafW / 2 : mx + depth;
-      const hingeZ = alongX ? mz + depth : mz - leafW / 2;
-      const pivot = new THREE.Group();
-      pivot.position.set(hingeX, by, hingeZ);
-      const leaf = new THREE.Mesh(this.box, S.door);
-      leaf.scale.set(alongX ? leafW : 0.06, 2.05, alongX ? 0.06 : leafW);
-      leaf.position.set(alongX ? leafW / 2 : 0, 1.03, alongX ? 0 : leafW / 2);
-      pivot.add(leaf);
-      const handle = new THREE.Mesh(this.box, S.handle);
-      handle.scale.set(alongX ? 0.16 : 0.08, 0.1, alongX ? 0.08 : 0.16);
-      handle.position.set(alongX ? leafW * 0.8 : cdir * 0.06, 1.05, alongX ? cdir * 0.06 : leafW * 0.8);
-      pivot.add(handle);
-      const markMat = edge.dest === 0 ? S.mark0 : edge.dest === 3 ? S.mark3 : S.mark1;
-      const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3), markMat);
-      rec.geos.push(mark.geometry);
-      mark.position.set(alongX ? leafW * 0.5 : cdir * 0.035, 1.6, alongX ? cdir * 0.035 : leafW * 0.5);
-      if (alongX) mark.rotation.y = cdir > 0 ? 0 : Math.PI;
-      else mark.rotation.y = cdir > 0 ? Math.PI / 2 : -Math.PI / 2;
-      pivot.add(mark);
-      rec.group.add(pivot);
-      rec.doors.push({
-        pivot, dest: edge.dest || 1, open: 0, used: false,
-        x: wx(0, wallB), z: wz(0, wallB),
-        // leaf swings into the corridor
-        swing: alongX ? (doorSide > 0 ? 1 : -1) : (doorSide > 0 ? -1 : 1)
-      });
-      // a warm lamp over each door so it can be found in a dark section
-      this.deco(rec, S.light, wx(0, doorSide * (W / 2 - 0.1)), by + 2.35, wz(0, doorSide * (W / 2 - 0.1)),
-        alongX ? 0.6 : 0.08, 0.06, alongX ? 0.08 : 0.6);
-      rec.fixtures.push({ x: wx(0, cdir * 0.4), y: by + 2.2, z: wz(0, cdir * 0.4), base: this.look.lightI * 0.7, ph: 1.7, bad: false });
-      rec.lamps.push({ x: wx(0, cdir * 0.4), z: wz(0, cdir * 0.4), dead: false });
-    }
-
-    // fluorescent tubes. Some are dead, and some corridors have no working light at all.
-    const dark = this.hash(edge.id, 77, 8) < 0.16 && edge.kind !== "door";
-    const n = Math.max(1, Math.floor(span / 8));
-    for (let i = 0; i < n; i++) {
-      const a = -span / 2 + (i + 0.5) * span / n;
-      const dead = dark || this.hash(edge.id, i, 6) < 0.16;
-      abox(dead ? S.dead : S.light, a, by + H - 0.08, 0, 3.0, 0.07, 0.14, false);
-      this.addFixture(rec, wx(a, 0), by + H - 0.35, wz(a, 0), dead, false);
-    }
-
-    this.group.add(rec.group);
-    this.segments.set(key, rec);
-  },
-
-  /* ------------------------------------------------------------------
-     JUNCTIONS (every node: floor, ceiling, and walls on the closed sides)
-     ------------------------------------------------------------------ */
-  buildNode(node) {
-    const key = "n" + node.id;
-    if (this.segments.has(key)) return;
-    const rec = this.newRec();
-    rec.edge = { ax: node.x, az: node.z, bx: node.x, bz: node.z };
-    const W = this.width, H = this.height, by = this.baseY;
-    const half = W / 2 + 0.16, full = W + 0.64;
-    const S = this.shared;
-    const has = {};
-    for (const id of node.edges) {
-      const e = this.edges[id];
-      const ox = e.a === node.id ? e.bx : e.ax;
-      const oz = e.a === node.id ? e.bz : e.az;
-      has[Math.sign(ox - node.x) + "," + Math.sign(oz - node.z)] = true;
-    }
-    // This was the missing piece: junctions had no floor at all, and the spawn is a junction.
-    this.texBox(rec, S.floor, node.x, by - 0.08, node.z, full, 0.16, full);
-    rec.colliders.push({
-      min: new THREE.Vector3(node.x - full / 2, by - 0.5, node.z - full / 2),
-      max: new THREE.Vector3(node.x + full / 2, by + 0.02, node.z + full / 2)
-    });
-    this.solid(rec, S.ceil, node.x, by + H + 0.125, node.z, full, 0.25, full, true);
-    for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      if (has[d[0] + "," + d[1]]) continue;
-      const wx = node.x + d[0] * half, wz = node.z + d[1] * half;
-      const sx = d[0] !== 0 ? 0.32 : full, sz = d[0] !== 0 ? full : 0.32;
-      this.solid(rec, S.wall, wx, by + H / 2, wz, sx, H, sz, true);
-      // trim on the inside face
-      const tx = node.x + d[0] * (W / 2 - 0.015), tz = node.z + d[1] * (W / 2 - 0.015);
-      const ts = d[0] !== 0 ? 0.03 : W, tz2 = d[0] !== 0 ? W : 0.03;
-      this.deco(rec, S.trim, tx, by + 0.09, tz, ts, 0.18, tz2);
-      this.deco(rec, S.trim, tx, by + H - 0.28, tz, ts, 0.07, tz2);
-    }
-    // corner posts where two neighbouring sides are both open (otherwise a notch is left)
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      if (has[sx + ",0"] && has["0," + sz]) {
-        this.solid(rec, S.wall, node.x + sx * half, by + H / 2, node.z + sz * half, 0.32, H, 0.32, true);
-      }
-    }
-    // junction light
-    const dead = this.hash(node.id, 1, 11) < 0.22;
-    this.deco(rec, dead ? S.dead : S.light, node.x, by + H - 0.08, node.z, 1.6, 0.07, 0.14);
-    this.addFixture(rec, node.x, by + H - 0.35, node.z, dead, false);
-    // dead ends get a shelf and a crate so they read as storage nooks
-    if (node.edges.length === 1) {
-      for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        if (has[d[0] + "," + d[1]]) continue;
-        const px = node.x + d[0] * (half - 0.35), pz = node.z + d[1] * (half - 0.35);
-        const wide = d[0] === 0;
-        this.solid(rec, S.crate, px + (wide ? 0.8 : 0), by + 0.3, pz + (wide ? 0 : 0.8), 0.6, 0.6, 0.6);
-        this.solid(rec, S.shelf, px - (wide ? 0.8 : 0), by + 0.9, pz - (wide ? 0 : 0.8), wide ? 1.2 : 0.4, 1.8, wide ? 0.4 : 1.2);
-        break;
-      }
-    }
+    // one panel in the middle of the corridor, usually dead
+    const on = this.hash(edge.id, 5, 6) < 0.25;
+    this.deco(rec, on ? S.panelOn : S.panelOff, mx, H - 0.02, mz, alongX ? 1.0 : 0.5, 0.04, alongX ? 0.5 : 1.0);
+    if (on) this.addFixture(rec, mx, H - 0.4, mz, "panel", 3.6, 14, 0xffe2b4, this.hash(edge.id, 6, 7) < 0.3);
     this.group.add(rec.group);
     this.segments.set(key, rec);
   },
@@ -719,141 +1041,148 @@ const Level2 = {
   stream(force) {
     if (!this.active || !this.group) return;
     const px = Player.position.x, pz = Player.position.z;
-    const key = Math.floor(px / 16) + "," + Math.floor(pz / 16);
+    const key = Math.floor(px / 8) + "," + Math.floor(pz / 8);
     if (!force && key === this.lastKey) return;
     this.lastKey = key;
-    for (const e of this.edges) {
-      const mx = (e.ax + e.bx) * 0.5, mz = (e.az + e.bz) * 0.5;
-      if (Math.hypot(mx - px, mz - pz) < 70) this.buildEdge(e);
-    }
+    // Fog ends at 50 m, so rooms past ~44 m are hardly visible anyway. Windows make rooms mesh-heavy.
+    const BUILD = 44, DROP = 60;
+    const near = [];
     for (const n of this.nodes) {
-      if (Math.hypot(n.x - px, n.z - pz) < 70) this.buildNode(n);
+      const d = Math.hypot(n.x - px, n.z - pz);
+      if (d < BUILD && !this.segments.has("n" + n.id)) near.push({ d, n });
     }
+    for (const e of this.edges) {
+      const d = Math.hypot((e.ax + e.bx) / 2 - px, (e.az + e.bz) / 2 - pz);
+      if (d < BUILD && !this.segments.has(String(e.id))) near.push({ d, e });
+    }
+    near.sort((a, b) => a.d - b.d);
+    for (const it of near) { if (it.n) this.buildNode(it.n); else this.buildEdge(it.e); }
     for (const [k, rec] of Array.from(this.segments.entries())) {
       const e = rec.edge;
-      const mx = (e.ax + e.bx) * 0.5, mz = (e.az + e.bz) * 0.5;
-      if (Math.hypot(mx - px, mz - pz) > 95) {
-        this.disposeSegment(rec);
-        this.segments.delete(k);
-      }
+      const d = Math.hypot((e.ax + e.bx) / 2 - px, (e.az + e.bz) / 2 - pz);
+      if (d > DROP) { this.disposeSegment(rec); this.segments.delete(k); }
     }
+    // the collider array is read live by the Hound and the Smiler: rebuild it in place
     this.colliders.length = 0;
-    this.hot.length = 0;
     this.doors = [];
     this.fixtures = [];
-    this.lamps = [];
     for (const rec of this.segments.values()) {
-      for (const l of rec.lamps || []) this.lamps.push(l);
       for (const c of rec.colliders) this.colliders.push(c);
-      for (const c of rec.hotBoxes || []) this.hot.push(c);
-      for (const d of rec.doors || []) this.doors.push(d);
-      for (const f of rec.fixtures || []) this.fixtures.push(f);
+      for (const d of rec.doors) this.doors.push(d);
+      for (const f of rec.fixtures) this.fixtures.push(f);
     }
   },
 
-  // A point is dark when no working fixture is within 7 m, or the nearest tube of
-  // any kind is dead (a dead tube, or a corridor with no working light at all).
-  isDarkAt(x, z) {
-    let near = null, nd = Infinity, live = false;
-    for (const l of this.lamps) {
-      const d = Math.hypot(l.x - x, l.z - z);
-      if (d < nd) { nd = d; near = l; }
-      if (!l.dead && d <= 7) live = true;
-    }
-    return !live || (near !== null && near.dead);
-  },
-
-  // Point the light pool at the nearest working fixtures.
-  assignLights() {
-    if (!this.pool.length) return;
-    const p = Player.position;
-    const cand = [];
-    for (const f of this.fixtures) {
-      const d = (f.x - p.x) * (f.x - p.x) + (f.z - p.z) * (f.z - p.z);
-      if (d < 34 * 34) cand.push({ f, d });
-    }
-    cand.sort((a, b) => a.d - b.d);
-    for (let i = 0; i < this.pool.length; i++) {
-      const c = cand[i];
-      this.poolFx[i] = c ? c.f : null;
-      if (c) this.pool[i].position.set(c.f.x, c.f.y, c.f.z);
-      else this.pool[i].intensity = 0;
-    }
-  },
-
+  /* ------------------------------------------------------------------
+     INTERACTION
+     ------------------------------------------------------------------ */
   tryUse() {
-    if (!this.active || !this.doors) return false;
+    if (!this.active) return false;
     const p = Player.position;
-    let best = null, bestD = 1.8;
+    let best = null, bestD = 2.1;
     for (const d of this.doors) {
       if (!d.pivot.parent || d.used) continue;
       const dist = Math.hypot(p.x - d.x, p.z - d.z);
-      if (dist < bestD) { best = d; bestD = dist; }
+      if (dist < bestD) { bestD = dist; best = d; }
     }
     if (!best) return false;
     best.used = true;
-    if (typeof HUD !== "undefined") HUD.toast("LEVEL " + best.dest);
+    if (best.kind === "back" && typeof HUD !== "undefined") HUD.toast("LEVEL 3");
     return true;
   },
 
+  prompt() {
+    const p = Player.position;
+    for (const d of this.doors) {
+      if (d.used || Math.hypot(p.x - d.x, p.z - d.z) > 2.0) continue;
+      if (typeof HUD !== "undefined" && HUD.toast) HUD.toast(d.kind === "back" ? "E  RETURN TO LEVEL 3" : "E  OPEN DOOR");
+      return;
+    }
+  },
+
+  finish() {
+    if (this._ended) return;
+    this._ended = true;
+    GameState.exitReached = true;
+    if (typeof HUD !== "undefined") HUD.toast("LEVEL 4 CLEARED");
+    if (typeof Game !== "undefined" && Game.complete) Game.complete();
+  },
+
+  /* ------------------------------------------------------------------
+     UPDATE
+     ------------------------------------------------------------------ */
   update(dt) {
     if (!this.active) return;
     this.time += dt;
     this.stream(false);
+    const p = Player.position;
+
+    // rain runs down every pane
+    for (const v of this.rainVariants) {
+      v.tex.offset.y = (v.tex.offset.y + v.speed * dt) % 1;
+    }
+
+    // light pool: re-aim at the nearest fixtures. Window light is steady; a few panels stutter softly.
     this._poolT -= dt;
     if (this._poolT <= 0) { this._poolT = 0.2; this.assignLights(); }
-    // flickering fluorescents: most hold steady, the bad ones stutter
     for (let i = 0; i < this.pool.length; i++) {
       const f = this.poolFx[i];
       if (!f) continue;
       const t = this.time + f.ph;
-      const s = Math.sin(t * 23.0) * Math.sin(t * 7.3);
-      const flick = f.bad ? (s > 0.35 ? 0.12 : 1) : (s > 0.96 ? 0.5 : 1);
-      this.pool[i].intensity = f.base * flick * (0.92 + 0.08 * Math.sin(t * 1.7));
+      let k = 1;
+      if (f.kind === "panel") {
+        const sN = Math.sin(t * 19.0) * Math.sin(t * 6.1);
+        k = f.bad ? (sN > 0.4 ? 0.45 : 1) : (sN > 0.97 ? 0.8 : 1);
+      } else if (f.kind === "window") {
+        k = 0.94 + 0.06 * Math.sin(t * 0.9);          // clouds
+      }
+      this.pool[i].intensity = f.base * k;
     }
-    if (this.doors) {
-      for (const d of this.doors) {
-        if (!d.used || d.open >= 1) continue;
-        d.open = Math.min(1, d.open + dt / 0.7);
-        d.pivot.rotation.y = d.open * 1.55 * d.swing;
-        if (d.open >= 1 && !d.gone) {
-          d.gone = true;
-          if (d.dest === 0 && typeof DevCommands !== "undefined") DevCommands.goLevel0();
-          else if (d.dest === 3 && typeof DevCommands !== "undefined") DevCommands.goLevel3();
-          else if (typeof DevCommands !== "undefined") DevCommands.goLevel1();
+
+    // doors swing open, then do their thing
+    for (const d of this.doors) {
+      if (!d.used || d.open >= 1) continue;
+      d.open = Math.min(1, d.open + dt / 0.7);
+      d.pivot.rotation.y = d.open * 1.55 * d.swing;
+      if (d.open >= 1 && !d.gone) {
+        d.gone = true;
+        if (d.kind === "back") {
+          const sd = this.seed;
+          setTimeout(() => { if (typeof Level3 !== "undefined") Level3.enter(sd, 4); }, 0);
+        } else {
+          this.finish();
         }
       }
     }
-    const tint = document.getElementById("heat-tint");
-    let near = 0;
-    const p = Player.position;
-    if (this.hot && this.hot.length) {
-      for (const b of this.hot) {
-        const cx = Math.max(b.min.x, Math.min(p.x, b.max.x));
-        const cz = Math.max(b.min.z, Math.min(p.z, b.max.z));
-        const d = Math.hypot(p.x - cx, p.z - cz);
-        near = Math.max(near, 1 - d / 2.4);
-        if (p.x + 0.34 < b.min.x || p.x - 0.34 > b.max.x) continue;
-        if (p.z + 0.34 < b.min.z || p.z - 0.34 > b.max.z) continue;
-        if (p.y + 1.6 < b.min.y || p.y > b.max.y) continue;
-        Player.damagePlayer(Math.max(1, 18 * dt));
-        if (!this._heatT || this._heatT <= 0) {
-          this._heatT = 2.5;
-          if (typeof HUD !== "undefined") HUD.toast("THE PIPES ARE HOT");
+
+    // faint music from beyond the forward door, only when you are near it
+    if (this.exitPos && typeof AudioSystem !== "undefined" && AudioSystem.ctx && AudioSystem._tone) {
+      const dist = Math.hypot(p.x - this.exitPos.x, p.z - this.exitPos.z);
+      if (dist < 30) {
+        this._musicT -= dt;
+        if (this._musicT <= 0) {
+          this._musicT = 1.5;
+          const notes = [523.25, 659.25, 783.99, 659.25, 587.33, 698.46, 880.0, 698.46];
+          const f = notes[this._musicIdx++ % notes.length];
+          const gain = 0.04 * Math.pow(1 - dist / 30, 2);
+          AudioSystem._tone(f, "sine", 1.6, Math.max(0.0005, gain), "ambient");
+          AudioSystem._tone(f * 2, "sine", 1.2, Math.max(0.0003, gain * 0.35), "ambient");
         }
       }
     }
-    if (tint) tint.style.opacity = String(Math.max(0, Math.min(0.45, near)));
-    if (this._heatT) this._heatT -= dt;
-    // the wiki's constant machinery: distant pipe knocks and hisses
-    this._sfxT = (this._sfxT == null ? 3 : this._sfxT) - dt;
+
+    // very quiet building noises, far between
+    this._sfxT -= dt;
     if (this._sfxT <= 0) {
-      this._sfxT = 4 + Math.random() * 7;
+      this._sfxT = 14 + Math.random() * 16;
       if (typeof AudioSystem !== "undefined" && AudioSystem.playPositional) {
-        const a = Math.random() * Math.PI * 2, r = 10 + Math.random() * 18;
-        const k = ["pipe", "metal", "thump", "flicker"][Math.floor(Math.random() * 4)];
-        AudioSystem.playPositional(k, p.x + Math.cos(a) * r, 1.6, p.z + Math.sin(a) * r, { gain: 0.05, bus: "events", max: 60 });
+        const ang = Math.random() * Math.PI * 2, rr = 10 + Math.random() * 14;
+        const k = ["creak", "thump"][Math.floor(Math.random() * 2)];
+        AudioSystem.playPositional(k, p.x + Math.cos(ang) * rr, 1.5, p.z + Math.sin(ang) * rr, { gain: 0.035, bus: "events", max: 50 });
       }
     }
+
+    this._promptT -= dt;
+    if (this._promptT <= 0) { this._promptT = 1.1; this.prompt(); }
   }
 };
