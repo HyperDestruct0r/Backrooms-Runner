@@ -1,5 +1,5 @@
 /* Backrooms Runner PWA cache. Bump CACHE_VERSION when publishing future updates. */
-const CACHE_VERSION = 'backrooms-runner-v3';
+const CACHE_VERSION = 'backrooms-runner-v7';
 const APP_CACHE = `${CACHE_VERSION}-app`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const APP_SHELL = [
@@ -29,12 +29,14 @@ const APP_SHELL = [
   "./icons/icon-512-maskable.png",
   "./index.html",
   "./js/core.js",
+  "./js/entities/hound.js",
   "./js/entities/smiler.js",
   "./js/game.js",
   "./js/levels/level0.js",
   "./js/levels/level1.js",
   "./js/levels/level2.js",
   "./js/levels/level3.js",
+  "./js/levels/level4.js",
   "./js/systems/atmosphere.js",
   "./js/systems/auth.js",
   "./js/systems/dev-commands.js",
@@ -46,6 +48,7 @@ const APP_SHELL = [
   "./js/systems/sanity.js",
   "./js/systems/seed.js",
   "./js/systems/tutorial.js",
+  ".js/systems/passc.js",
   "./js/world/assets.js",
   "./manifest.json",
   "./ts/systems/seed.ts",
