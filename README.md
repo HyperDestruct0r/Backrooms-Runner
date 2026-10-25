@@ -26,6 +26,7 @@ The layout is generated for each run. You cannot rely on a fixed map. What a lev
 * **Level 1** — a much larger concrete and service space
 * **Level 2** — narrow industrial tunnels
 * **Level 3** — an electrical station
+* **Level 4** — an abandoned office
 
 Each level is meant to feel different. The same seed produces the same layout.
 
@@ -71,8 +72,6 @@ Backrooms Runner can be installed from Chrome on ChromeOS without Google Play.
 4. Launch **Backrooms Runner** from the Chromebook launcher.
 
 The in-game install button appears only when Chrome offers the prompt. The service worker caches the app after that first visit. Offline play works for a guest run. Accounts and anything that talks to a server still need the network.
-
-When you publish a release, bump `CACHE_VERSION` at the top of `service-worker.js` so installed copies pick up the new files.
 
 ## Development Status
 
