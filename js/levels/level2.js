@@ -20,8 +20,19 @@ const Level2 = {
   height: 3.45,
   shared: null,
   ambient: [],
+  pool: [],
+  poolFx: [],
+  fixtures: [],
+  lamps: [],
   lastKey: "",
   infoText: "",
+  time: 0,
+  _poolT: 0,
+  // Tunable look. Lights are physically based (no legacy mode), so values here are
+  // much higher than the old ones: the old ambient left the ceiling black.
+  look: { ambient: 0.95, hemi: 0.5, lightI: 5.2, lightD: 22, poolSize: 8, fog: 0x242422, fogNear: 7, fogFar: 56 },
+  T: 3.0,        // metres per texture tile
+  NODE: 2.12,    // half-size of a junction square (outer face of its walls)
 
   hash(x, z, salt) {
     let h = (this.seed >>> 0) ^ Math.imul((x | 0) + (salt || 0), 0x45d9f3b) ^ Math.imul((z | 0) - (salt || 0), 0x27d4eb2d);
@@ -34,7 +45,16 @@ const Level2 = {
     return () => { a ^= a << 13; a ^= a >>> 17; a ^= a << 5; return (a >>> 0) / 4294967296; };
   },
 
+  // A layout whose main route cannot be placed without cutting through itself is
+  // rejected and regenerated from a derived seed (still fully deterministic).
   generate(seed) {
+    for (let k = 0; k < 40; k++) {
+      if (this._gen((seed + Math.imul(k, 7919)) >>> 0, false)) return;
+    }
+    this._gen(seed >>> 0, true);
+  },
+
+  _gen(seed, force) {
     const r = this.rng(seed >>> 0);
     const nodes = [];
     const edges = [];
@@ -58,11 +78,31 @@ const Level2 = {
       return e;
     };
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    // A corridor is 4.24 m wide including walls. A new leg may not come within that
+    // clearance of any existing corridor it does not start from, or it would cut
+    // straight through a hallway (or run flush alongside one).
+    const MIN_Z = 7;
+    const crosses = (from, nx, nz) => {
+      const c = 2.4;
+      const lx = Math.min(from.x, nx) - c, hx = Math.max(from.x, nx) + c;
+      const lz = Math.min(from.z, nz) - c, hz = Math.max(from.z, nz) + c;
+      for (const e of edges) {
+        if (e.a === from.id || e.b === from.id) continue;
+        const elx = Math.min(e.ax, e.bx) - c, ehx = Math.max(e.ax, e.bx) + c;
+        const elz = Math.min(e.az, e.bz) - c, ehz = Math.max(e.az, e.bz) + c;
+        if (lx < ehx && hx > elx && lz < ehz && hz > elz) return true;
+      }
+      for (const n of nodes) {
+        if (n === from) continue;
+        if (n.x > lx && n.x < hx && n.z > lz && n.z < hz) return true;
+      }
+      return false;
+    };
     const growBranch = (from, dx, dz, depth) => {
       const roll = r();
       const span = roll < 0.4 ? 12 + Math.floor(r() * 8) : roll < 0.75 ? 28 + Math.floor(r() * 16) : 48 + Math.floor(r() * 24);
       const nx = from.x + dx * span, nz = from.z + dz * span;
-      if (occ.has(key(nx, nz)) || nz <= 0) return;
+      if (occ.has(key(nx, nz)) || nz < MIN_Z || crosses(from, nx, nz)) return;
       const end = addNode(nx, nz);
       const hasDoor = r() < 0.04;
       const dest = r() < 0.65 ? 1 : 0;
@@ -89,12 +129,15 @@ const Level2 = {
       }
       let nx = cur.x + dx * span, nz = cur.z + dz * span;
       let guard = 0;
-      while ((occ.has(key(nx, nz)) || nz <= 0) && guard++ < 12) {
+      while ((occ.has(key(nx, nz)) || nz < MIN_Z || (i > 0 && crosses(cur, nx, nz))) && guard++ < 24) {
         const d = dirs[Math.floor(r() * 4)];
         dx = d[0]; dz = d[1];
         nx = cur.x + dx * span; nz = cur.z + dz * span;
       }
-      if (occ.has(key(nx, nz)) || nz <= 0) { dx = 0; dz = 1; nx = cur.x; nz = cur.z + span; }
+      if (occ.has(key(nx, nz)) || nz < MIN_Z || (i > 0 && crosses(cur, nx, nz))) {
+        if (!force) return false;
+        dx = 0; dz = 1; nx = cur.x; nz = cur.z + span;
+      }
       const next = addNode(nx, nz);
       // Guaranteed exits on the main route: leg 2 -> Level 1, leg 4 -> Level 0,
       // final leg -> Level 3. Other main-route doors are random extras to 0 or 1.
@@ -146,6 +189,7 @@ const Level2 = {
     this.exitPos = new THREE.Vector3(exit.x, this.baseY, exit.z);
     this.spawn.set(0, this.baseY, 0);
     this.infoText = "NODES " + nodes.length + " · EDGES " + edges.length + " · MIRRORED";
+    return true;
   },
 
   markTex(level) {
@@ -177,68 +221,81 @@ const Level2 = {
     return new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
   },
 
+  /* ------------------------------------------------------------------
+     MATERIALS
+     Textures come from assets/level2-*.jpg. Everything is Lambert-ish
+     (metalness <= 0.15) because the scene has no environment map: a highly
+     metallic material renders almost black here.
+     ------------------------------------------------------------------ */
+  tex(path) {
+    const t = new THREE.TextureLoader().load(path);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  },
+
   materialSet() {
     if (this.shared) return;
-    const concrete = (size, base, courses) => {
-      const c = document.createElement("canvas");
-      c.width = c.height = size;
-      const ctx = c.getContext("2d");
-      const img = ctx.createImageData(size, size);
-      const d = img.data;
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-          const h = n - Math.floor(n);
-          const speck = h > 0.9 ? 22 : h < 0.08 ? -18 : (h - 0.5) * 12;
-          const course = courses && (y % 42 < 2) ? -28 : 0;
-          const v = base + speck + course;
-          const i = (y * size + x) * 4;
-          d[i] = v + 1; d[i + 1] = v; d[i + 2] = v - 1; d[i + 3] = 255;
-        }
-      }
-      ctx.putImageData(img, 0, 0);
-      const tex = new THREE.CanvasTexture(c);
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.colorSpace = THREE.SRGBColorSpace;
-      return tex;
-    };
+    const std = (o) => new THREE.MeshStandardMaterial(o);
+    const block = this.tex("assets/level2-block.jpg");
+    const conc = this.tex("assets/level2-concrete.jpg");
+    const floorT = this.tex("assets/level2-floor.jpg");
+    const pipeT = this.tex("assets/level2-pipe.jpg");
+    const rustT = this.tex("assets/level2-rust.jpg");
     this.shared = {
-      wall: new THREE.MeshStandardMaterial({ map: concrete(256, 150, true), color: 0xc8c8c4, roughness: 0.94, metalness: 0 }),
-      stain: new THREE.MeshStandardMaterial({ map: concrete(256, 108, true), color: 0xa8a49c, roughness: 0.96, metalness: 0 }),
-      floor: new THREE.MeshStandardMaterial({ map: concrete(256, 118, false), color: 0xb4b0a8, roughness: 0.97, metalness: 0 }),
-      floorWear: new THREE.MeshStandardMaterial({ map: concrete(256, 96, false), color: 0x9a968e, roughness: 0.98, metalness: 0 }),
-      ceil: new THREE.MeshStandardMaterial({ color: 0x2e2d2c, roughness: 0.96 }),
-      seam: new THREE.MeshStandardMaterial({ color: 0x1c1c1b, roughness: 1 }),
-      pipe: new THREE.MeshStandardMaterial({ color: 0x8d9294, roughness: 0.42, metalness: 0.55 }),
-      hot: new THREE.MeshStandardMaterial({ color: 0xc45a32, emissive: 0x6a220c, roughness: 0.4, metalness: 0.35 }),
-      door: new THREE.MeshStandardMaterial({ color: 0x3e3832, roughness: 0.86 }),
-      handle: new THREE.MeshStandardMaterial({ color: 0x8a8278, metalness: 0.6, roughness: 0.35 }),
+      wall: std({ map: block, color: 0xdcdcd8, roughness: 0.92, metalness: 0 }),
+      stain: std({ map: block, color: 0xa8a8a2, roughness: 0.94, metalness: 0 }),
+      floor: std({ map: floorT, color: 0xc8c6c0, roughness: 0.9, metalness: 0 }),
+      floorWear: std({ map: conc, color: 0xa4a29c, roughness: 0.95, metalness: 0 }),
+      ceil: std({ map: conc, color: 0xb8b6b0, roughness: 0.95, metalness: 0 }),
+      trim: std({ color: 0xcfcfca, roughness: 0.85, metalness: 0 }),
+      seam: std({ color: 0x2a2a28, roughness: 1 }),
+      pipePanel: std({ map: pipeT, color: 0xc4c8cc, roughness: 0.55, metalness: 0.12 }),
+      pipe: std({ color: 0xa4a9ad, roughness: 0.5, metalness: 0.15 }),
+      rust: std({ map: rustT, color: 0xd0b4a2, roughness: 0.7, metalness: 0.1 }),
+      hot: std({ color: 0xd8602f, emissive: 0x8a2c0c, emissiveIntensity: 0.9, roughness: 0.45, metalness: 0.1 }),
+      door: std({ color: 0x4a443c, roughness: 0.86, metalness: 0 }),
+      frame: std({ color: 0x2c2824, roughness: 0.9, metalness: 0 }),
+      handle: std({ color: 0xb4aca0, metalness: 0.15, roughness: 0.4 }),
+      voidDark: new THREE.MeshBasicMaterial({ color: 0x000000 }),
       mark0: this.markTex(0),
       mark1: this.markTex(1),
       mark3: this.markTex(3),
-      rust: new THREE.MeshStandardMaterial({ color: 0x7a5340, roughness: 0.62, metalness: 0.28 }),
+      shelf: std({ color: 0x7c868c, roughness: 0.6, metalness: 0.15 }),
+      crate: std({ color: 0x7a6040, roughness: 0.85, metalness: 0 }),
+      can: std({ color: 0x8a3a30, roughness: 0.6, metalness: 0.1 }),
       light: new THREE.MeshBasicMaterial({ color: 0xfff1d2, toneMapped: false }),
-      dead: new THREE.MeshStandardMaterial({ color: 0x3a3834, roughness: 0.8 })
+      dead: std({ color: 0x4a4844, roughness: 0.8 })
     };
-    this.pipeGeo = new THREE.CylinderGeometry(0.32, 0.32, 1, 10);
     this.flangeGeo = new THREE.CylinderGeometry(0.46, 0.46, 0.06, 10);
-    this.box = Geometries.box;
+    this.box = (typeof Geometries !== "undefined" && Geometries.box) ? Geometries.box : new THREE.BoxGeometry(1, 1, 1);
   },
 
+  /* ------------------------------------------------------------------
+     LIFECYCLE
+     ------------------------------------------------------------------ */
   reset() {
-    if (this.group && scene) scene.remove(this.group);
+    if (this.group && typeof scene !== "undefined" && scene) scene.remove(this.group);
     for (const rec of this.segments.values()) this.disposeSegment(rec);
     this.segments.clear();
     for (const L of this.ambient) if (L.parent) L.parent.remove(L);
     this.ambient.length = 0;
+    this.pool = [];
+    this.poolFx = [];
+    this.fixtures = [];
+    this.lamps = [];
     this.colliders.length = 0;
     if (this.hot) this.hot.length = 0;
     this.doors = [];
     this.group = null;
     this.active = false;
     this.lastKey = "";
+    this.time = 0;
     this.edges = [];
     this.nodes = [];
+    if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+    if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
     const tint = document.getElementById("heat-tint");
     if (tint) tint.style.opacity = "0";
     if (typeof PickupSystem !== "undefined" && PickupSystem.reset) PickupSystem.reset();
@@ -247,6 +304,7 @@ const Level2 = {
   disposeSegment(rec) {
     if (!rec || !rec.group) return;
     if (rec.group.parent) rec.group.parent.remove(rec.group);
+    for (const g of rec.geos || []) g.dispose();
   },
 
   placeBottles() {
@@ -281,13 +339,23 @@ const Level2 = {
     this.group = new THREE.Group();
     this.group.name = "Level2_Tunnels";
     scene.add(this.group);
-    const hemi = new THREE.HemisphereLight(0xd0d4d8, 0x3a3a38, 0.34);
-    const amb = new THREE.AmbientLight(0xc8ccc8, 0.22);
+    const lk = this.look;
+    const hemi = new THREE.HemisphereLight(0xc4c8cc, 0x8a8a86, lk.hemi);
+    const amb = new THREE.AmbientLight(0xb8bcc0, lk.ambient);
     scene.add(hemi, amb);
     this.ambient.push(hemi, amb);
-    scene.fog = new THREE.Fog(0x6a6a68, 18, 60);
-    if (scene.background) scene.background.setHex(0x4a4a48);
-    if (CameraRig.camera) { CameraRig.camera.far = 110; CameraRig.camera.updateProjectionMatrix(); }
+    // A fixed pool of point lights that is re-aimed at the nearest fixtures.
+    // The light count never changes, so streaming never forces a shader recompile.
+    for (let i = 0; i < lk.poolSize; i++) {
+      const L = new THREE.PointLight(0xffe7c2, 0, lk.lightD, 1.5);
+      scene.add(L);
+      this.ambient.push(L);
+      this.pool.push(L);
+      this.poolFx.push(null);
+    }
+    scene.fog = new THREE.Fog(lk.fog, lk.fogNear, lk.fogFar);
+    if (scene.background) scene.background.setHex(lk.fog);
+    if (CameraRig.camera) { CameraRig.camera.far = 100; CameraRig.camera.updateProjectionMatrix(); }
     GameState.level = 2;
     GameState.seed = this.seed;
     GameState.phase = "playing";
@@ -307,172 +375,294 @@ const Level2 = {
     const arrival = (from === 3 && this.exitPos) ? this.exitPos : this.spawn;
     Player.position.copy(arrival);
     this.stream(true);
+    this.assignLights();
     this.placeBottles();
     Player.position.copy(arrival);
     Player.yaw = Math.PI;
+    if (typeof HoundSystem !== "undefined") {
+      HoundSystem.attach({
+        colliders: this.colliders,
+        cap: 2,
+        graceSeconds: 2,
+        graceRadius: 30,
+        minDist: 18,
+        maxDist: 42,
+        seed: this.seed
+      });
+    }
+    if (typeof SmilerSystem !== "undefined") {
+      SmilerSystem.attach({
+        colliders: this.colliders,
+        cap: 2,
+        graceSeconds: 2,
+        minDist: 15,
+        maxDist: 32,
+        seed: this.seed,
+        margin: 0.55,
+        allow: () => true,
+        isDark: (x, z) => this.isDarkAt(x, z)
+      });
+    }
   },
 
-  addBox(g, mat, x, y, z, sx, sy, sz) {
-    const m = new THREE.Mesh(this.box, mat);
+  /* ------------------------------------------------------------------
+     GEOMETRY HELPERS
+     ------------------------------------------------------------------ */
+  newRec() {
+    return { group: new THREE.Group(), colliders: [], hotBoxes: [], fixtures: [], lamps: [], doors: [], geos: [], edge: null };
+  },
+
+  // Box with real-size geometry; UVs are scaled so a texture tile covers T metres.
+  texBox(rec, mat, x, y, z, sx, sy, sz, T) {
+    const geo = new THREE.BoxGeometry(sx, sy, sz);
+    const uv = geo.attributes.uv;
+    const t = T || this.T;
+    const dims = [[sz, sy], [sz, sy], [sx, sz], [sx, sz], [sx, sy], [sx, sy]];
+    for (let f = 0; f < 6; f++) {
+      for (let v = 0; v < 4; v++) {
+        const i = f * 4 + v;
+        uv.setXY(i, uv.getX(i) * dims[f][0] / t, uv.getY(i) * dims[f][1] / t);
+      }
+    }
+    uv.needsUpdate = true;
+    const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
-    m.scale.set(sx, sy, sz);
-    g.add(m);
+    rec.group.add(m);
+    rec.geos.push(geo);
     return m;
   },
 
-  addPipeRun(g, colliders, x, y, z, alongX, len, radius, mat) {
-    const pipe = new THREE.Mesh(this.pipeGeo, mat);
-    pipe.scale.set(radius / 0.32, len, radius / 0.32);
-    if (alongX) pipe.rotation.z = Math.PI / 2;
-    else pipe.rotation.x = Math.PI / 2;
+  deco(rec, mat, x, y, z, sx, sy, sz) {
+    const m = new THREE.Mesh(this.box, mat);
+    m.position.set(x, y, z);
+    m.scale.set(sx, sy, sz);
+    rec.group.add(m);
+    return m;
+  },
+
+  solid(rec, mat, x, y, z, sx, sy, sz, textured) {
+    if (textured) this.texBox(rec, mat, x, y, z, sx, sy, sz);
+    else this.deco(rec, mat, x, y, z, sx, sy, sz);
+    const c = {
+      min: new THREE.Vector3(x - sx / 2, y - sy / 2, z - sz / 2),
+      max: new THREE.Vector3(x + sx / 2, y + sy / 2, z + sz / 2)
+    };
+    rec.colliders.push(c);
+    return c;
+  },
+
+  // Pipe with tiled UVs along its length. `list` receives the collider.
+  pipeRun(rec, list, mat, x, y, z, alongX, len, radius, collide) {
+    const geo = new THREE.CylinderGeometry(radius, radius, len, 10);
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 2, uv.getY(i) * len / this.T);
+    uv.needsUpdate = true;
+    const pipe = new THREE.Mesh(geo, mat);
+    if (alongX) pipe.rotation.z = Math.PI / 2; else pipe.rotation.x = Math.PI / 2;
     pipe.position.set(x, y, z);
-    g.add(pipe);
-    const hx = alongX ? len / 2 : radius;
-    const hz = alongX ? radius : len / 2;
-    colliders.push({
-      min: new THREE.Vector3(x - hx, y - radius, z - hz),
-      max: new THREE.Vector3(x + hx, y + radius, z + hz)
+    rec.group.add(pipe);
+    rec.geos.push(geo);
+    if (collide) {
+      const hx = alongX ? len / 2 : radius;
+      const hz = alongX ? radius : len / 2;
+      list.push({
+        min: new THREE.Vector3(x - hx, y - radius, z - hz),
+        max: new THREE.Vector3(x + hx, y + radius, z + hz)
+      });
+    }
+  },
+
+  addFixture(rec, x, y, z, dead, dark) {
+    rec.lamps.push({ x, z, dead: !!(dead || dark) });
+    if (dead || dark) return;
+    rec.fixtures.push({
+      x, y, z,
+      base: this.look.lightI,
+      ph: this.hash(Math.round(x * 3), Math.round(z * 3), 3) * 40,
+      bad: this.hash(Math.round(x * 3), Math.round(z * 3), 9) < 0.28
     });
   },
 
+  /* ------------------------------------------------------------------
+     CORRIDORS
+     ------------------------------------------------------------------ */
   buildEdge(edge) {
     const key = String(edge.id);
     if (this.segments.has(key)) return;
-    const g = new THREE.Group();
-    const dx = edge.bx - edge.ax, dz = edge.bz - edge.az;
-    const len = Math.max(4, edge.len);
-    const ux = dx / len, uz = dz / len;
-    const alongX = Math.abs(dx) >= Math.abs(dz);
-    const W = this.width, H = this.height;
-    const inset = 1.4;
-    const x0 = edge.ax + ux * inset, z0 = edge.az + uz * inset;
-    const x1 = edge.bx - ux * inset, z1 = edge.bz - uz * inset;
-    const mx = (x0 + x1) * 0.5, mz = (z0 + z1) * 0.5;
-    const span = Math.max(2, len - inset * 2);
-    const colliders = [];
-    this.addBox(g, this.shared.floor, mx, this.baseY - 0.08, mz, alongX ? span + 3 : W + 0.8, 0.14, alongX ? W + 0.8 : span + 3);
-    this.addBox(g, this.shared.floorWear, mx, this.baseY - 0.01, mz, alongX ? span * 0.92 : W * 0.42, 0.02, alongX ? W * 0.42 : span * 0.92);
-    colliders.push({
-      min: new THREE.Vector3(mx - (alongX ? span / 2 + 1.5 : W / 2 + 0.4), this.baseY - 0.5, mz - (alongX ? W / 2 + 0.4 : span / 2 + 1.5)),
-      max: new THREE.Vector3(mx + (alongX ? span / 2 + 1.5 : W / 2 + 0.4), this.baseY + 0.02, mz + (alongX ? W / 2 + 0.4 : span / 2 + 1.5))
-    });
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(alongX ? span : W, alongX ? W : span), this.shared.ceil);
-    ceil.rotation.x = Math.PI / 2;
-    ceil.position.set(mx, this.baseY + H, mz);
-    g.add(ceil);
-    colliders.push({
-      min: new THREE.Vector3(mx - (alongX ? span / 2 : W / 2), this.baseY + H - 0.05, mz - (alongX ? W / 2 : span / 2)),
-      max: new THREE.Vector3(mx + (alongX ? span / 2 : W / 2), this.baseY + H + 0.2, mz + (alongX ? W / 2 : span / 2))
-    });
+    const rec = this.newRec();
+    rec.edge = edge;
+    const W = this.width, H = this.height, by = this.baseY, E = this.NODE;
+    const full = W + 0.64;
+    const len = Math.max(1, edge.len);
+    const ux = (edge.bx - edge.ax) / len, uz = (edge.bz - edge.az) / len;
+    const alongX = Math.abs(ux) >= Math.abs(uz);
+    const span = Math.max(2, len - 2 * E);
+    const mx = (edge.ax + edge.bx) / 2, mz = (edge.az + edge.bz) / 2;
+    // a: distance along the corridor (signed with its direction), b: world offset across it
+    const wx = (a, b) => alongX ? mx + ux * a : mx + b;
+    const wz = (a, b) => alongX ? mz + b : mz + uz * a;
+    const abox = (mat, a, y, b, sa, sy, sb, solid, textured) => {
+      const X = wx(a, b), Z = wz(a, b);
+      const sx = alongX ? sa : sb, sz = alongX ? sb : sa;
+      if (solid) return this.solid(rec, mat, X, y, Z, sx, sy, sz, textured);
+      if (textured) return this.texBox(rec, mat, X, y, Z, sx, sy, sz);
+      return this.deco(rec, mat, X, y, Z, sx, sy, sz);
+    };
+    const S = this.shared;
+
+    // floor (top face sits exactly at baseY) + a worn strip down the middle
+    abox(S.floor, 0, by - 0.08, 0, span, 0.16, full, true, true);
+    rec.colliders[rec.colliders.length - 1].max.y = by + 0.02;
+    abox(S.floorWear, 0, by + 0.003, 0, span * 0.92, 0.006, W * 0.45, false, true);
+    // ceiling slab (underside at baseY + H)
+    abox(S.ceil, 0, by + H + 0.125, 0, span, 0.25, full, true, true);
+
     const pipeSide = edge.main ? 1 : -1;
+    // side walls: the pipe side is the dirtier one. White trim top and bottom.
     for (const sign of [-1, 1]) {
-      const wx = alongX ? mx : mx + sign * (W / 2 + 0.16);
-      const wz = alongX ? mz + sign * (W / 2 + 0.16) : mz;
-      const sx = alongX ? span + 0.6 : 0.32;
-      const sz = alongX ? 0.32 : span + 0.6;
-      const pipeWall = sign === pipeSide;
-      this.addBox(g, pipeWall ? this.shared.stain : this.shared.wall, wx, this.baseY + 0.5, wz, sx, 1.0, sz);
-      this.addBox(g, this.shared.wall, wx, this.baseY + 1.0 + (H - 1.0) / 2, wz, sx, H - 1.0, sz);
-      this.addBox(g, this.shared.seam, wx, this.baseY + H - 0.04, wz, sx, 0.08, sz);
-      colliders.push({
-        min: new THREE.Vector3(wx - sx / 2, this.baseY, wz - sz / 2),
-        max: new THREE.Vector3(wx + sx / 2, this.baseY + H, wz + sz / 2)
-      });
+      const b = sign * (W / 2 + 0.16);
+      abox(sign === pipeSide ? S.stain : S.wall, 0, by + H / 2, b, span, H, 0.32, true, true);
+      const tb = sign * (W / 2 - 0.015);
+      abox(S.trim, 0, by + 0.09, tb, span, 0.18, 0.03, false);
+      abox(S.trim, 0, by + H - 0.28, tb, span, 0.07, 0.03, false);
     }
-    const endNode = this.nodes[edge.b];
-    if (endNode && endNode.edges.length === 1) {
-      const capX = alongX ? 0.32 : W + 0.4;
-      const capZ = alongX ? W + 0.4 : 0.32;
-      this.addBox(g, this.shared.wall, edge.bx, this.baseY + H / 2, edge.bz, capX, H, capZ);
-      colliders.push({
-        min: new THREE.Vector3(edge.bx - capX / 2, this.baseY, edge.bz - capZ / 2),
-        max: new THREE.Vector3(edge.bx + capX / 2, this.baseY + H, edge.bz + capZ / 2)
-      });
-    }
+
+    // pipes: three runs on the pipe wall (hot ones hurt), plus one overhead
     const runs = [
-      { y: 0.55, r: 0.18, off: 1.02, mat: edge.hot ? this.shared.hot : this.shared.rust },
-      { y: 1.22, r: 0.28, off: 1.22, mat: edge.hot ? this.shared.hot : this.shared.pipe },
-      { y: 1.95, r: 0.16, off: 0.96, mat: edge.hot ? this.shared.hot : this.shared.rust }
+      { y: 0.55, r: 0.18, off: 1.02, mat: edge.hot ? S.hot : S.rust },
+      { y: 1.22, r: 0.28, off: 1.22, mat: edge.hot ? S.hot : S.pipe },
+      { y: 1.95, r: 0.16, off: 0.96, mat: edge.hot ? S.hot : S.rust }
     ];
-    const hotBoxes = [];
     for (const run of runs) {
-      const px = mx + (alongX ? 0 : pipeSide * run.off);
-      const pz = mz + (alongX ? pipeSide * run.off : 0);
-      this.addPipeRun(g, edge.hot ? hotBoxes : colliders, px, this.baseY + run.y, pz, alongX, span * 0.92, run.r, run.mat);
+      const b = pipeSide * run.off;
+      this.pipeRun(rec, edge.hot ? rec.hotBoxes : rec.colliders, run.mat,
+        wx(0, b), by + run.y, wz(0, b), alongX, span * 0.96, run.r, true);
       const steps = Math.min(5, Math.max(1, Math.floor(span / 6)));
       for (let i = 0; i < steps; i++) {
-        const t = (i + 0.5) / steps;
-        const fx = x0 + (x1 - x0) * t, fz = z0 + (z1 - z0) * t;
+        const a = -span / 2 + (i + 0.5) * span / steps;
         const flange = new THREE.Mesh(this.flangeGeo, run.mat);
         flange.scale.set(run.r / 0.28, 1, run.r / 0.28);
-        if (alongX) flange.rotation.z = Math.PI / 2;
-        else flange.rotation.x = Math.PI / 2;
-        flange.position.set(fx + (alongX ? 0 : pipeSide * run.off), this.baseY + run.y, fz + (alongX ? pipeSide * run.off : 0));
-        g.add(flange);
+        if (alongX) flange.rotation.z = Math.PI / 2; else flange.rotation.x = Math.PI / 2;
+        flange.position.set(wx(a, b), by + run.y, wz(a, b));
+        rec.group.add(flange);
         if (i % 2 === 0) {
-          const bx = fx + (alongX ? 0 : pipeSide * (run.off * 0.45));
-          const bz = fz + (alongX ? pipeSide * (run.off * 0.45) : 0);
-          this.addBox(g, this.shared.rust, bx, this.baseY + run.y, bz, alongX ? 0.08 : 0.22, 0.06, alongX ? 0.22 : 0.08);
+          // bracket to the wall
+          const bb = pipeSide * (run.off + (W / 2 - run.off) * 0.55);
+          abox(S.rust, a, by + run.y, bb, 0.1, 0.07, W / 2 - run.off, false);
         }
       }
     }
-    if (edge.kind === "door") {
-      const doorSide = -pipeSide;
-      const hx = alongX ? 0 : doorSide;
-      const hz = alongX ? doorSide : 0;
-      const leafW = 0.92;
-      const hingeX = alongX ? mx - leafW / 2 : mx + doorSide * (W / 2 + 0.02);
-      const hingeZ = alongX ? mz + doorSide * (W / 2 + 0.02) : mz - leafW / 2;
-      const pivot = new THREE.Group();
-      pivot.position.set(hingeX, this.baseY, hingeZ);
-      const leaf = new THREE.Mesh(this.box, this.shared.door);
-      leaf.scale.set(alongX ? leafW : 0.06, 2.05, alongX ? 0.06 : leafW);
-      leaf.position.set(alongX ? leafW / 2 : 0, 1.15, alongX ? 0 : leafW / 2);
-      pivot.add(leaf);
-      const handle = new THREE.Mesh(this.box, this.shared.handle);
-      handle.scale.set(0.08, 0.16, 0.05);
-      handle.position.set(alongX ? leafW * 0.78 : doorSide * 0.05, 1.05, alongX ? doorSide * 0.05 : leafW * 0.78);
-      pivot.add(handle);
-      const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), edge.dest === 0 ? this.shared.mark0 : edge.dest === 3 ? this.shared.mark3 : this.shared.mark1);
-      mark.position.set(alongX ? leafW * 0.5 : doorSide * 0.04, 1.55, alongX ? doorSide * 0.04 : leafW * 0.5);
-      if (!alongX) mark.rotation.y = doorSide > 0 ? Math.PI / 2 : -Math.PI / 2;
-      if (alongX) mark.rotation.y = doorSide > 0 ? 0 : Math.PI;
-      pivot.add(mark);
-      g.add(pivot);
-      this.doors.push({
-        pivot, dest: edge.dest || 1, open: 0, used: false,
-        x: alongX ? mx : mx + doorSide * (W / 2),
-        z: alongX ? mz + doorSide * (W / 2) : mz,
-        swing: alongX ? (doorSide > 0 ? -1 : 1) : (doorSide > 0 ? 1 : -1)
-      });
+    // overhead run, out of reach
+    this.pipeRun(rec, rec.colliders, edge.hot ? S.hot : S.pipe, wx(0, -pipeSide * 0.9), by + H - 0.42, wz(0, -pipeSide * 0.9),
+      alongX, span * 0.98, 0.13, false);
+
+    // wall-mounted pipe rack (uses the pipe texture) on the clean wall
+    if (this.hash(edge.id, 40, 3) < 0.4 && span > 8) {
+      const a = (this.hash(edge.id, 41, 3) - 0.5) * (span - 6);
+      abox(S.pipePanel, a, by + 2.3, -pipeSide * (W / 2 - 0.07), 2.6, 1.1, 0.14, false, true);
     }
-    const lights = [];
-    const n = Math.max(1, Math.floor(span / 8));
-    for (let i = 0; i < n; i++) {
-      const t = (i + 0.5) / n;
-      const lx = x0 + (x1 - x0) * t, lz = z0 + (z1 - z0) * t;
-      const dead = this.hash(edge.id, i, 6) < 0.16;
-      const tube = new THREE.Mesh(new THREE.BoxGeometry(alongX ? 3.4 : 0.14, 0.07, alongX ? 0.14 : 3.4), dead ? this.shared.dead : this.shared.light);
-      tube.position.set(lx, this.baseY + H - 0.08, lz);
-      g.add(tube);
-      if (!dead && this.countLights() + lights.length < 18) {
-        const L = new THREE.PointLight(0xffe7c2, 1.8, 16, 1.4);
-        L.position.set(lx, this.baseY + H - 0.22, lz);
-        g.add(L);
-        lights.push(L);
+    // ceiling duct
+    if (this.hash(edge.id, 42, 3) < 0.35 && span > 10) {
+      const a = (this.hash(edge.id, 43, 3) - 0.5) * (span - 8);
+      abox(S.pipe, a, by + H - 0.3, 0, 3.0, 0.34, 1.0, false);
+    }
+    // metal shelves along the clean wall, with a few supplies on them
+    if (span > 12) {
+      const count = this.hash(edge.id, 44, 3) < 0.5 ? 1 : 0 + (this.hash(edge.id, 45, 3) < 0.25 ? 1 : 0);
+      for (let k = 0; k < count; k++) {
+        const a = (this.hash(edge.id, 46 + k, 3) - 0.5) * (span - 8);
+        const b = -pipeSide * (W / 2 - 0.26);
+        const sw = 1.7, sd = 0.46;
+        const sx = alongX ? sw : sd, sz = alongX ? sd : sw;
+        const X = wx(a, b), Z = wz(a, b);
+        for (const pa of [-sw / 2 + 0.03, sw / 2 - 0.03]) for (const pb of [-sd / 2 + 0.03, sd / 2 - 0.03]) {
+          this.deco(rec, S.shelf, X + (alongX ? pa : pb), by + 1.0, Z + (alongX ? pb : pa), 0.05, 2.0, 0.05);
+        }
+        for (let lv = 0; lv < 4; lv++) this.deco(rec, S.shelf, X, by + 0.25 + lv * 0.55, Z, sx, 0.04, sz);
+        for (let it = 0; it < 4; it++) {
+          const h = this.hash(edge.id, 50 + k * 7 + it, 4);
+          if (h < 0.3) continue;
+          const o = (this.hash(edge.id, 60 + k * 7 + it, 4) - 0.5) * (sw - 0.5);
+          const lv = Math.floor(this.hash(edge.id, 70 + k * 7 + it, 4) * 3);
+          this.deco(rec, h > 0.65 ? S.crate : S.can, X + (alongX ? o : 0), by + 0.27 + lv * 0.55 + 0.14, Z + (alongX ? 0 : o), 0.3, 0.26, 0.3);
+        }
+        rec.colliders.push({
+          min: new THREE.Vector3(X - sx / 2, by, Z - sz / 2),
+          max: new THREE.Vector3(X + sx / 2, by + 2.0, Z + sz / 2)
+        });
       }
     }
-    this.group.add(g);
-    this.segments.set(key, { group: g, colliders, hotBoxes, lights, edge });
+
+    // exit door
+    if (edge.kind === "door") {
+      const doorSide = -pipeSide;      // world sign of the wall the door is in
+      const cdir = -doorSide;          // direction from the wall into the corridor
+      const leafW = 0.92;
+      const wallB = doorSide * (W / 2);
+      // frame + black void behind the leaf, both flush with the wall
+      const fa = this.deco(rec, S.frame, wx(0, wallB - doorSide * 0.015) , by + 1.1, wz(0, wallB - doorSide * 0.015),
+        alongX ? leafW + 0.18 : 0.03, 2.2, alongX ? 0.03 : leafW + 0.18);
+      const va = this.deco(rec, S.voidDark, wx(0, wallB - doorSide * 0.03), by + 1.03, wz(0, wallB - doorSide * 0.03),
+        alongX ? leafW : 0.03, 2.06, alongX ? 0.03 : leafW);
+      const depth = doorSide * (W / 2 - 0.09);   // leaf plane, 9 cm in front of the wall
+      const hingeX = alongX ? mx - leafW / 2 : mx + depth;
+      const hingeZ = alongX ? mz + depth : mz - leafW / 2;
+      const pivot = new THREE.Group();
+      pivot.position.set(hingeX, by, hingeZ);
+      const leaf = new THREE.Mesh(this.box, S.door);
+      leaf.scale.set(alongX ? leafW : 0.06, 2.05, alongX ? 0.06 : leafW);
+      leaf.position.set(alongX ? leafW / 2 : 0, 1.03, alongX ? 0 : leafW / 2);
+      pivot.add(leaf);
+      const handle = new THREE.Mesh(this.box, S.handle);
+      handle.scale.set(alongX ? 0.16 : 0.08, 0.1, alongX ? 0.08 : 0.16);
+      handle.position.set(alongX ? leafW * 0.8 : cdir * 0.06, 1.05, alongX ? cdir * 0.06 : leafW * 0.8);
+      pivot.add(handle);
+      const markMat = edge.dest === 0 ? S.mark0 : edge.dest === 3 ? S.mark3 : S.mark1;
+      const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3), markMat);
+      rec.geos.push(mark.geometry);
+      mark.position.set(alongX ? leafW * 0.5 : cdir * 0.035, 1.6, alongX ? cdir * 0.035 : leafW * 0.5);
+      if (alongX) mark.rotation.y = cdir > 0 ? 0 : Math.PI;
+      else mark.rotation.y = cdir > 0 ? Math.PI / 2 : -Math.PI / 2;
+      pivot.add(mark);
+      rec.group.add(pivot);
+      rec.doors.push({
+        pivot, dest: edge.dest || 1, open: 0, used: false,
+        x: wx(0, wallB), z: wz(0, wallB),
+        // leaf swings into the corridor
+        swing: alongX ? (doorSide > 0 ? 1 : -1) : (doorSide > 0 ? -1 : 1)
+      });
+      // a warm lamp over each door so it can be found in a dark section
+      this.deco(rec, S.light, wx(0, doorSide * (W / 2 - 0.1)), by + 2.35, wz(0, doorSide * (W / 2 - 0.1)),
+        alongX ? 0.6 : 0.08, 0.06, alongX ? 0.08 : 0.6);
+      rec.fixtures.push({ x: wx(0, cdir * 0.4), y: by + 2.2, z: wz(0, cdir * 0.4), base: this.look.lightI * 0.7, ph: 1.7, bad: false });
+      rec.lamps.push({ x: wx(0, cdir * 0.4), z: wz(0, cdir * 0.4), dead: false });
+    }
+
+    // fluorescent tubes. Some are dead, and some corridors have no working light at all.
+    const dark = this.hash(edge.id, 77, 8) < 0.16 && edge.kind !== "door";
+    const n = Math.max(1, Math.floor(span / 8));
+    for (let i = 0; i < n; i++) {
+      const a = -span / 2 + (i + 0.5) * span / n;
+      const dead = dark || this.hash(edge.id, i, 6) < 0.16;
+      abox(dead ? S.dead : S.light, a, by + H - 0.08, 0, 3.0, 0.07, 0.14, false);
+      this.addFixture(rec, wx(a, 0), by + H - 0.35, wz(a, 0), dead, false);
+    }
+
+    this.group.add(rec.group);
+    this.segments.set(key, rec);
   },
 
+  /* ------------------------------------------------------------------
+     JUNCTIONS (every node: floor, ceiling, and walls on the closed sides)
+     ------------------------------------------------------------------ */
   buildNode(node) {
     const key = "n" + node.id;
     if (this.segments.has(key)) return;
-    const g = new THREE.Group();
-    const colliders = [];
-    const W = this.width, H = this.height;
+    const rec = this.newRec();
+    rec.edge = { ax: node.x, az: node.z, bx: node.x, bz: node.z };
+    const W = this.width, H = this.height, by = this.baseY;
     const half = W / 2 + 0.16, full = W + 0.64;
+    const S = this.shared;
     const has = {};
     for (const id of node.edges) {
       const e = this.edges[id];
@@ -480,32 +670,52 @@ const Level2 = {
       const oz = e.a === node.id ? e.bz : e.az;
       has[Math.sign(ox - node.x) + "," + Math.sign(oz - node.z)] = true;
     }
-    this.addBox(g, this.shared.ceil, node.x, this.baseY + H + 0.1, node.z, full, 0.2, full);
-    colliders.push({
-      min: new THREE.Vector3(node.x - full / 2, this.baseY + H - 0.05, node.z - full / 2),
-      max: new THREE.Vector3(node.x + full / 2, this.baseY + H + 0.2, node.z + full / 2)
+    // This was the missing piece: junctions had no floor at all, and the spawn is a junction.
+    this.texBox(rec, S.floor, node.x, by - 0.08, node.z, full, 0.16, full);
+    rec.colliders.push({
+      min: new THREE.Vector3(node.x - full / 2, by - 0.5, node.z - full / 2),
+      max: new THREE.Vector3(node.x + full / 2, by + 0.02, node.z + full / 2)
     });
+    this.solid(rec, S.ceil, node.x, by + H + 0.125, node.z, full, 0.25, full, true);
     for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       if (has[d[0] + "," + d[1]]) continue;
       const wx = node.x + d[0] * half, wz = node.z + d[1] * half;
       const sx = d[0] !== 0 ? 0.32 : full, sz = d[0] !== 0 ? full : 0.32;
-      this.addBox(g, this.shared.wall, wx, this.baseY + H / 2, wz, sx, H, sz);
-      colliders.push({
-        min: new THREE.Vector3(wx - sx / 2, this.baseY, wz - sz / 2),
-        max: new THREE.Vector3(wx + sx / 2, this.baseY + H, wz + sz / 2)
-      });
+      this.solid(rec, S.wall, wx, by + H / 2, wz, sx, H, sz, true);
+      // trim on the inside face
+      const tx = node.x + d[0] * (W / 2 - 0.015), tz = node.z + d[1] * (W / 2 - 0.015);
+      const ts = d[0] !== 0 ? 0.03 : W, tz2 = d[0] !== 0 ? W : 0.03;
+      this.deco(rec, S.trim, tx, by + 0.09, tz, ts, 0.18, tz2);
+      this.deco(rec, S.trim, tx, by + H - 0.28, tz, ts, 0.07, tz2);
     }
-    this.group.add(g);
-    this.segments.set(key, { group: g, colliders, hotBoxes: [], lights: [],
-      edge: { ax: node.x, az: node.z, bx: node.x, bz: node.z } });
+    // corner posts where two neighbouring sides are both open (otherwise a notch is left)
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      if (has[sx + ",0"] && has["0," + sz]) {
+        this.solid(rec, S.wall, node.x + sx * half, by + H / 2, node.z + sz * half, 0.32, H, 0.32, true);
+      }
+    }
+    // junction light
+    const dead = this.hash(node.id, 1, 11) < 0.22;
+    this.deco(rec, dead ? S.dead : S.light, node.x, by + H - 0.08, node.z, 1.6, 0.07, 0.14);
+    this.addFixture(rec, node.x, by + H - 0.35, node.z, dead, false);
+    // dead ends get a shelf and a crate so they read as storage nooks
+    if (node.edges.length === 1) {
+      for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (has[d[0] + "," + d[1]]) continue;
+        const px = node.x + d[0] * (half - 0.35), pz = node.z + d[1] * (half - 0.35);
+        const wide = d[0] === 0;
+        this.solid(rec, S.crate, px + (wide ? 0.8 : 0), by + 0.3, pz + (wide ? 0 : 0.8), 0.6, 0.6, 0.6);
+        this.solid(rec, S.shelf, px - (wide ? 0.8 : 0), by + 0.9, pz - (wide ? 0 : 0.8), wide ? 1.2 : 0.4, 1.8, wide ? 0.4 : 1.2);
+        break;
+      }
+    }
+    this.group.add(rec.group);
+    this.segments.set(key, rec);
   },
 
-  countLights() {
-    let n = 0;
-    for (const rec of this.segments.values()) n += rec.lights.length;
-    return n;
-  },
-
+  /* ------------------------------------------------------------------
+     STREAMING
+     ------------------------------------------------------------------ */
   stream(force) {
     if (!this.active || !this.group) return;
     const px = Player.position.x, pz = Player.position.z;
@@ -522,16 +732,52 @@ const Level2 = {
     for (const [k, rec] of Array.from(this.segments.entries())) {
       const e = rec.edge;
       const mx = (e.ax + e.bx) * 0.5, mz = (e.az + e.bz) * 0.5;
-      if (Math.hypot(mx - px, mz - pz) > 90) {
+      if (Math.hypot(mx - px, mz - pz) > 95) {
         this.disposeSegment(rec);
         this.segments.delete(k);
       }
     }
     this.colliders.length = 0;
     this.hot.length = 0;
+    this.doors = [];
+    this.fixtures = [];
+    this.lamps = [];
     for (const rec of this.segments.values()) {
+      for (const l of rec.lamps || []) this.lamps.push(l);
       for (const c of rec.colliders) this.colliders.push(c);
       for (const c of rec.hotBoxes || []) this.hot.push(c);
+      for (const d of rec.doors || []) this.doors.push(d);
+      for (const f of rec.fixtures || []) this.fixtures.push(f);
+    }
+  },
+
+  // A point is dark when no working fixture is within 7 m, or the nearest tube of
+  // any kind is dead (a dead tube, or a corridor with no working light at all).
+  isDarkAt(x, z) {
+    let near = null, nd = Infinity, live = false;
+    for (const l of this.lamps) {
+      const d = Math.hypot(l.x - x, l.z - z);
+      if (d < nd) { nd = d; near = l; }
+      if (!l.dead && d <= 7) live = true;
+    }
+    return !live || (near !== null && near.dead);
+  },
+
+  // Point the light pool at the nearest working fixtures.
+  assignLights() {
+    if (!this.pool.length) return;
+    const p = Player.position;
+    const cand = [];
+    for (const f of this.fixtures) {
+      const d = (f.x - p.x) * (f.x - p.x) + (f.z - p.z) * (f.z - p.z);
+      if (d < 34 * 34) cand.push({ f, d });
+    }
+    cand.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < this.pool.length; i++) {
+      const c = cand[i];
+      this.poolFx[i] = c ? c.f : null;
+      if (c) this.pool[i].position.set(c.f.x, c.f.y, c.f.z);
+      else this.pool[i].intensity = 0;
     }
   },
 
@@ -552,13 +798,24 @@ const Level2 = {
 
   update(dt) {
     if (!this.active) return;
+    this.time += dt;
     this.stream(false);
+    this._poolT -= dt;
+    if (this._poolT <= 0) { this._poolT = 0.2; this.assignLights(); }
+    // flickering fluorescents: most hold steady, the bad ones stutter
+    for (let i = 0; i < this.pool.length; i++) {
+      const f = this.poolFx[i];
+      if (!f) continue;
+      const t = this.time + f.ph;
+      const s = Math.sin(t * 23.0) * Math.sin(t * 7.3);
+      const flick = f.bad ? (s > 0.35 ? 0.12 : 1) : (s > 0.96 ? 0.5 : 1);
+      this.pool[i].intensity = f.base * flick * (0.92 + 0.08 * Math.sin(t * 1.7));
+    }
     if (this.doors) {
       for (const d of this.doors) {
         if (!d.used || d.open >= 1) continue;
         d.open = Math.min(1, d.open + dt / 0.7);
-        const angle = d.open * 1.55 * d.swing;
-        d.pivot.rotation.y = angle;
+        d.pivot.rotation.y = d.open * 1.55 * d.swing;
         if (d.open >= 1 && !d.gone) {
           d.gone = true;
           if (d.dest === 0 && typeof DevCommands !== "undefined") DevCommands.goLevel0();
@@ -588,5 +845,15 @@ const Level2 = {
     }
     if (tint) tint.style.opacity = String(Math.max(0, Math.min(0.45, near)));
     if (this._heatT) this._heatT -= dt;
+    // the wiki's constant machinery: distant pipe knocks and hisses
+    this._sfxT = (this._sfxT == null ? 3 : this._sfxT) - dt;
+    if (this._sfxT <= 0) {
+      this._sfxT = 4 + Math.random() * 7;
+      if (typeof AudioSystem !== "undefined" && AudioSystem.playPositional) {
+        const a = Math.random() * Math.PI * 2, r = 10 + Math.random() * 18;
+        const k = ["pipe", "metal", "thump", "flicker"][Math.floor(Math.random() * 4)];
+        AudioSystem.playPositional(k, p.x + Math.cos(a) * r, 1.6, p.z + Math.sin(a) * r, { gain: 0.05, bus: "events", max: 60 });
+      }
+    }
   }
 };
