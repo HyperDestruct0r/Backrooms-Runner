@@ -154,6 +154,7 @@ const DevCommands = {
       if (cmd === "level2") return this.level(["2"].concat(args));
       if (cmd === "level3") return this.level(["3"].concat(args));
       if (cmd === "level4") return this.level(["4"].concat(args));
+      if (cmd === "level5") return this.level(["5"].concat(args));
       if (cmd === "spawn") return this.spawn(args);
       if (cmd === "despawn") return this.despawn(args);
       if (cmd === "give") return this.give(args);
@@ -182,16 +183,18 @@ const DevCommands = {
     this.toast("LEVEL 2 · LEVEL 2 TPS · LEVEL2 · LEVEL 2 RESET · LEVEL 2 SEED N · LEVEL 2 INFO · LEVEL 2 EXIT");
     this.toast("LEVEL 3 · LEVEL3 · LEVEL 3 RESET · LEVEL 3 SEED N · LEVEL 3 INFO · LEVEL 3 EXIT · LEVEL 3 POWER");
     this.toast("LEVEL 4 · LEVEL4 · LEVEL 4 RESET · LEVEL 4 SEED N · LEVEL 4 INFO · LEVEL 4 EXIT");
+    this.toast("LEVEL 5 · LEVEL5 · LEVEL 5 RESET · LEVEL 5 SEED N · LEVEL 5 INFO · LEVEL 5 EXIT · LEVEL 5 BACK");
   },
 
   level(args) {
     const n = parseInt(args[0], 10);
-    if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0, 1, 2, 3, OR 4");
+    if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0, 1, 2, 3, 4, OR 5");
     if (n === 0) return this.goLevel0();
     if (n === 1) return this.goLevel1();
     if (n === 2) return this.level2(args.slice(1));
     if (n === 3) return this.level3(args.slice(1));
     if (n === 4) return this.level4(args.slice(1));
+    if (n === 5) return this.level5(args.slice(1));
     this.toast("LEVEL " + n + " IS NOT AVAILABLE");
   },
   level2(args) {
@@ -297,6 +300,45 @@ const DevCommands = {
     Level4.enter((GameState.seed || 1) >>> 0);
     return this.toast("ENTERED LEVEL 4");
   },
+  level5(args) {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "info") {
+      if (!Level5.active) return this.toast("NOT IN LEVEL 5");
+      return this.toast("SEED " + Level5.seed + " · " + Level5.infoText);
+    }
+    if (sub === "exit") {
+      if (!Level5.active || !Level5.exitPos) return this.toast("NO LEVEL 5 EXIT");
+      Player.position.copy(Level5.exitPos);
+      Player.velocity.set(0, 0, 0);
+      Level5.stream(true);
+      Level5.assignLights();
+      return this.toast("TELEPORTED TO LEVEL 5 FORWARD DOOR");
+    }
+    if (sub === "back") {
+      if (!Level5.active || !Level5.backPos) return this.toast("NO LEVEL 5 BACK DOOR");
+      Player.position.copy(Level5.backPos);
+      Player.velocity.set(0, 0, 0);
+      Level5.stream(true);
+      Level5.assignLights();
+      return this.toast("TELEPORTED TO LEVEL 5 BACK DOOR");
+    }
+    if (sub === "reset") {
+      const next = ((GameState.seed || 1) + 1) >>> 0;
+      GameState.seed = next;
+      Level5.enter(next);
+      return this.toast("LEVEL 5 RESET · SEED " + next);
+    }
+    if (sub === "seed") {
+      const n = Number(args[1]);
+      if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 5 SEED 12345");
+      GameState.seed = n >>> 0;
+      Level5.enter(GameState.seed);
+      return this.toast("LEVEL 5 · SEED " + (GameState.seed >>> 0));
+    }
+    if (sub) return this.toast("USAGE: LEVEL 5, RESET, SEED, INFO, EXIT, BACK");
+    Level5.enter((GameState.seed || 1) >>> 0);
+    return this.toast("ENTERED LEVEL 5");
+  },
   goLevel3() {
     Level3.enter((GameState.seed || 1) >>> 0);
   },
@@ -363,7 +405,10 @@ const DevCommands = {
       if (GameState.level === 4 && typeof Level4 !== "undefined" && Level4.active && typeof HoundSystem !== "undefined" && !HoundSystem.attached) {
         Level4.attachSpare("hound");   // this level picked a Smiler; attach a Hound for the forced spawn only
       }
-      const inHoundLevel = (GameState.level >= 2 && GameState.level <= 4) &&
+      if (GameState.level === 5 && typeof Level5 !== "undefined" && Level5.active && typeof HoundSystem !== "undefined" && !HoundSystem.attached) {
+        Level5.attachSpare("hound");   // odd seed: no Hound of its own; attach one for the forced spawn only
+      }
+      const inHoundLevel = (GameState.level >= 2 && GameState.level <= 5) &&
         typeof HoundSystem !== "undefined" && HoundSystem.attached;
       if (!inHoundLevel) return this.toast("HOUNDS ARE LEVEL 2, 3 AND 4 ONLY");
       // nearest open spot in front of the player
@@ -498,12 +543,14 @@ const DevCommands = {
     else if (GameState.level === 2) Level2.enter(GameState.seed);
     else if (GameState.level === 3) Level3.enter(GameState.seed);
     else if (GameState.level === 4) Level4.enter(GameState.seed);
+    else if (GameState.level === 5) Level5.enter(GameState.seed);
     else this.goLevel0();
     this.toast("SEEDED " + (GameState.seed >>> 0));
   },
   exitInfo() {
     let target = null;
-    if (GameState.level === 4 && typeof Level4 !== "undefined" && Level4.exitPos) target = Level4.exitPos;
+    if (GameState.level === 5 && typeof Level5 !== "undefined" && Level5.exitPos) target = Level5.exitPos;
+    else if (GameState.level === 4 && typeof Level4 !== "undefined" && Level4.exitPos) target = Level4.exitPos;
     else if (GameState.level === 3 && typeof Level3 !== "undefined" && Level3.exitPos) target = Level3.exitPos;
     else if (GameState.level === 2 && typeof Level2 !== "undefined" && Level2.exitPos) target = Level2.exitPos;
     else if (GameState.level === 1 && typeof Level1 !== "undefined" && Level1.exitPosition) target = Level1.exitPosition;
