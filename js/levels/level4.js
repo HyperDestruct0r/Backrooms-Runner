@@ -224,6 +224,7 @@ const Level4 = {
     this.spawnYaw = Math.atan2(bd[0], bd[1]);                   // face into the room, away from the back door
     this.backPos = new THREE.Vector3(startN.x + bd[0] * half, this.baseY, startN.z + bd[1] * half);
     this.exitPos = new THREE.Vector3(endN.x + fd[0] * (half - 2.2), this.baseY, endN.z + fd[1] * (half - 2.2));
+    this.exitYaw = Math.atan2(fd[0], fd[1]);                    // face into the room, away from the forward door
     this.endNode = endN;
     this.infoText = "ROOMS " + nodes.length + " · HALLS " + edges.length;
     return true;
@@ -483,6 +484,8 @@ const Level4 = {
     this._ended = false;
     if (typeof HoundSystem !== "undefined") HoundSystem.reset();
     if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
+    // every path that resets Level 4 also clears Level 5, so it can never be left in the scene
+    if (typeof Level5 !== "undefined") Level5.reset();
     if (wasActive) {
       if (typeof CameraRig !== "undefined" && CameraRig.camera && typeof CONFIG !== "undefined") {
         CameraRig.camera.far = CONFIG.cameraFar;
@@ -544,11 +547,15 @@ const Level4 = {
     GameState.phase = "playing";
     GameState.cutscene = false;
     GameState.exitReached = false;
+    // Coming back from Level 5 puts the player at the forward door's side, not at the start.
+    const back5 = (from === 5 && this.exitPos);
+    const arrival = back5 ? this.exitPos : this.spawn;
+    const arrivalYaw = back5 ? this.exitYaw : this.spawnYaw;
     Level.startPos.copy(this.spawn);
-    Player.position.copy(this.spawn);
+    Player.position.copy(arrival);
     Player.velocity.set(0, 0, 0);
     Player.onGround = true;
-    Player.yaw = this.spawnYaw;
+    Player.yaw = arrivalYaw;
     const obj = document.getElementById("hud-obj");
     if (obj) obj.textContent = "Objective: find the way forward";
     const lvl = document.getElementById("hud-level-label");
@@ -562,8 +569,8 @@ const Level4 = {
     }
     this.stream(true);
     this.assignLights();
-    Player.position.copy(this.spawn);
-    Player.yaw = this.spawnYaw;
+    Player.position.copy(arrival);
+    Player.yaw = arrivalYaw;
     this.attachEntities();
     this.startRain();
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 4 · OFFICE SECTOR");
@@ -1149,6 +1156,10 @@ const Level4 = {
         if (d.kind === "back") {
           const sd = this.seed;
           setTimeout(() => { if (typeof Level3 !== "undefined") Level3.enter(sd, 4); }, 0);
+        } else if (typeof Level5 !== "undefined" && Level5.enter) {
+          // the forward door now leads on to Level 5; finish() is only the fallback if it is missing
+          const sd = this.seed;
+          setTimeout(() => Level5.enter(sd, 4), 0);
         } else {
           this.finish();
         }
