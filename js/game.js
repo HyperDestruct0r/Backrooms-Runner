@@ -573,6 +573,12 @@ const Game = {
         if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
         if (typeof SmilerSystem !== "undefined") SmilerSystem.update(dt);
         GameState.levelTimes[3] = (GameState.levelTimes[3] || 0) + dt;
+      } else if (GameState.level === 5 && typeof Level5 !== "undefined" && Level5.active) {
+        Level5.update(dt);
+        // at most one Hound; the Smiler system is detached on this level
+        if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
+        if (typeof SmilerSystem !== "undefined") SmilerSystem.update(dt);
+        GameState.levelTimes[5] = (GameState.levelTimes[5] || 0) + dt;
       } else if (GameState.level === 4 && typeof Level4 !== "undefined" && Level4.active) {
         Level4.update(dt);
         // only the system this level attached does anything; the other is detached
@@ -589,7 +595,7 @@ const Game = {
         if (typeof DebugPath !== "undefined") DebugPath.update(dt);
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
-      } else if (GameState.level === 2 || GameState.level === 3 || GameState.level === 4) {
+      } else if (GameState.level === 2 || GameState.level === 3 || GameState.level === 4 || GameState.level === 5) {
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
       } else {
