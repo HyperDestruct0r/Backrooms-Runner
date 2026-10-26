@@ -24,9 +24,9 @@ The layout is generated for each run. You cannot rely on a fixed map. What a lev
 
 * **Level 0** — yellow rooms, fluorescent lights, repeating corridors
 * **Level 1** — a much larger concrete and service space
-* **Level 2** — narrow industrial tunnels
-* **Level 3** — an electrical station
-* **Level 4** — an abandoned office
+* **Level 2** — "Pipe Dreams": dim, narrow concrete maintenance tunnels with hot pipes, metal shelves, flickering fluorescents and unmarked doors out (to Levels 0, 1 and 3)
+* **Level 3** — "Electrical Station": claustrophobic yellow-brick tunnels, iron doors (openable ones, and locked ones that only show a black void), leaking and scalding pipes, hidden electrical rooms with generators, breaker boxes and old monitors, machinery that arcs when you pass, and an elevator to Level 4 that needs power first
+* **Level 5** — "The Hotel": a kept 1930s hotel of patterned carpet, dark wood and warm low light. A bright lobby, long numbered halls, a few guest rooms and dead ends. The way back is in the lobby, the way on is at the far end
 
 Each level is meant to feel different. The same seed produces the same layout.
 
@@ -73,6 +73,8 @@ Backrooms Runner can be installed from Chrome on ChromeOS without Google Play.
 
 The in-game install button appears only when Chrome offers the prompt. The service worker caches the app after that first visit. Offline play works for a guest run. Accounts and anything that talks to a server still need the network.
 
+When you publish a release, bump `CACHE_VERSION` at the top of `service-worker.js` so installed copies pick up the new files.
+
 ## Development Status
 
 Backrooms Runner is an **active work in progress**.
@@ -88,12 +90,13 @@ Backrooms Runner is an **active work in progress**.
 
 These commands are for testing. They are not part of play, and they will skip things you are meant to find.
 
-* `/level 0`, `/level 1`, `/level 2`, `/level 3` — enter a level
+* `/level 0` through `/level 5` — enter a level (`/level5` also works)
 * `/level 2 reset`, `/level 3 reset` — regenerate
 * `/level 2 seed <n>`, `/level 3 seed <n>` — enter with a seed
 * `/level 2 info`, `/level 3 info` — seed and size
 * `/level 2 exit`, `/level 3 exit` — jump to the end of that level
 * `/level 3 button`, `/level 3 power` — testing shortcuts for Level 3
+* `/level 5 back` — jump to the lobby's back door (`/level 5 exit` jumps to the forward door)
 
 ## License
 
