@@ -37,6 +37,7 @@ const APP_SHELL = [
   "./js/levels/level2.js",
   "./js/levels/level3.js",
   "./js/levels/level4.js",
+  "./js/levels/level5.js",
   "./js/systems/atmosphere.js",
   "./js/systems/auth.js",
   "./js/systems/dev-commands.js",
