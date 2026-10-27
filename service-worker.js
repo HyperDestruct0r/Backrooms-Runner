@@ -1,5 +1,5 @@
 /* Backrooms Runner PWA cache. Bump CACHE_VERSION when publishing future updates. */
-const CACHE_VERSION = 'backrooms-runner-v8';
+const CACHE_VERSION = 'backrooms-runner-v12';
 const APP_CACHE = `${CACHE_VERSION}-app`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const APP_SHELL = [
@@ -93,6 +93,25 @@ self.addEventListener('fetch', (event) => {
       } catch (_) {
         const cache = await caches.open(APP_CACHE);
         return (await cache.match(request)) || (await cache.match(new URL('./index.html', self.registration.scope).href));
+      }
+    })());
+    return;
+  }
+
+  // The game's own code (JS/CSS/HTML) is network-first, so an update is never half old, half new.
+  // The cache is only the offline fallback. Images, fonts and external scripts stay cache-first below.
+  const isCode = isAppOrigin && (request.destination === 'script' || request.destination === 'style' || /\.(?:js|css|html|json)$/.test(url.pathname));
+  if (isCode) {
+    event.respondWith((async () => {
+      const cache = await caches.open(APP_CACHE);
+      try {
+        const fresh = await fetch(request, { cache: 'no-cache' });
+        if (fresh && fresh.ok) cache.put(request, fresh.clone()).catch(() => {});
+        return fresh;
+      } catch (error) {
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        throw error;
       }
     })());
     return;
