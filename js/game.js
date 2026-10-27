@@ -544,6 +544,10 @@ const Game = {
     const scale = (GameState.timeScale == null ? 1 : GameState.timeScale);
     if (scale !== 1) dt *= scale;
 
+    // The Beast belongs to Level 5. Whatever way the player left, it goes with the level.
+    if (typeof BeastSystem !== "undefined" && BeastSystem.attached &&
+        !(GameState.level === 5 && typeof Level5 !== "undefined" && Level5.active)) BeastSystem.detach();
+
     if (GameState.phase === "playing" && Stairwell.sequenceActive) {
       GameState.elapsed += dt;
       if (GameState.level === 0) GameState.levelTimes[0] += dt;
@@ -558,6 +562,8 @@ const Game = {
       if (typeof SmilerDeath !== "undefined") SmilerDeath.update(dt);
       // runs the Hound death fade; does nothing when no Hound is killing the player
       if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
+      // same for the Beast's death fade
+      if (typeof BeastSystem !== "undefined") BeastSystem.update(dt);
     } else if (GameState.phase === "playing" && Input.locked) {
       GameState.elapsed += dt;
       if (GameState.level === 1 && Level1.active) {
@@ -575,7 +581,8 @@ const Game = {
         GameState.levelTimes[3] = (GameState.levelTimes[3] || 0) + dt;
       } else if (GameState.level === 5 && typeof Level5 !== "undefined" && Level5.active) {
         Level5.update(dt);
-        // at most one Hound; the Smiler system is detached on this level
+        // Level 5 attaches the Beast only; the Hound and Smiler systems stay idle unless a console command adds one
+        if (typeof BeastSystem !== "undefined") BeastSystem.update(dt);
         if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
         if (typeof SmilerSystem !== "undefined") SmilerSystem.update(dt);
         GameState.levelTimes[5] = (GameState.levelTimes[5] || 0) + dt;
