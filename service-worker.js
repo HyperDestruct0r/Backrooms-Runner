@@ -1,5 +1,5 @@
 /* Backrooms Runner PWA cache. Bump CACHE_VERSION when publishing future updates. */
-const CACHE_VERSION = 'backrooms-runner-v12';
+const CACHE_VERSION = 'backrooms-runner-v13';
 const APP_CACHE = `${CACHE_VERSION}-app`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const APP_SHELL = [
@@ -29,6 +29,7 @@ const APP_SHELL = [
   "./icons/icon-512-maskable.png",
   "./index.html",
   "./js/core.js",
+  "./js/entities/beast.js",
   "./js/entities/hound.js",
   "./js/entities/smiler.js",
   "./js/game.js",
