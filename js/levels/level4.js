@@ -13,8 +13,8 @@
    - Furniture is sparse: a desk, a chair, a dead monitor. Some rooms show a worn patch of
      carpet where a desk used to be.
    - Almond water is common here (desks, water coolers). At most 5 in the loaded area.
-   - Three doors: in from Level 3 (its elevator), back to Level 3 (first room), and
-     forward (deeper in), which ends the run. There is no Level 5.
+   - Doors: the one you arrive by (first room) is sealed. The way back to Level 3 is further in, on a
+     later or side room. The way forward is on the last room and leads on to Level 5.
    - One entity at most: even seed, one Hound; odd seed, one Smiler. Never both.
 
    Lighting note: lights are physically based and the scene has no environment map, so a
@@ -33,6 +33,7 @@ const Level4 = {
   spawn: new THREE.Vector3(),
   exitPos: null,     // just inside the forward door
   backPos: null,
+  backNode: null,
   baseY: 0,
   S: 16,             // lattice spacing between room centres
   R: 10,             // room interior size
@@ -48,7 +49,7 @@ const Level4 = {
   fixtures: [],
   taken: {},
   // Tunable look. Rooms are lit mostly by ambient plus window light.
-  look: { ambient: 0.75, hemi: 0.5, poolSize: 10, fog: 0x70767c, fogNear: 7, fogFar: 50 },
+  look: { ambient: 1.2, hemi: 0.75, poolSize: 10, fog: 0x808890, fogNear: 10, fogFar: 72 },
   lastKey: "",
   infoText: "",
   time: 0,
@@ -88,7 +89,7 @@ const Level4 = {
     const key = (i, j) => i + "," + j;
     const addNode = (i, j, role) => {
       const n = { id: nodes.length, i, j, x: i * S, z: j * S, role, open: [false, false, false, false],
-        occ: [false, false, false, false], edges: [], dress: null, backSide: -1, fwdSide: -1 };
+        occ: [false, false, false, false], edges: [], dress: null, backSide: -1, arriveSide: -1, fwdSide: -1 };
       nodes.push(n); cells.set(key(i, j), n); return n;
     };
     const link = (a, b, d) => {
@@ -98,8 +99,8 @@ const Level4 = {
       return e;
     };
 
-    // the spine: a self-avoiding walk that likes to keep going straight
-    const count = 9 + Math.floor(r() * 5);
+    // the spine starts long enough for the 450 m return. extend() grows it further.
+    const count = 40;
     let cur = addNode(0, 0, "start"), last = -1;
     for (let k = 1; k < count; k++) {
       const opts = [];
@@ -113,7 +114,6 @@ const Level4 = {
       cur = nx; last = d;
     }
     if (nodes.length < 7 && !force) return false;
-    cur.role = "end";
     const spineCount = nodes.length;
 
     // a few dead-end side rooms
@@ -134,7 +134,9 @@ const Level4 = {
       for (let d = 0; d < 4; d++) n.occ[d] = cells.has(key(n.i + DIRS[d][0], n.j + DIRS[d][1]));
     }
 
-    // doors: the first room gets the way back, the last room the way forward.
+    // doors. The first room is where you arrive: its arrival wall (arriveSide) is a sealed door, so
+    // the spawn, the facing and the dressing are exactly as before. The way forward goes on the last
+    // room. The way back to Level 3 is placed further in, after dressing (see below).
     // Each goes on a closed wall, preferably opposite the corridor.
     const pickSide = (n) => {
       const via = n.open.indexOf(true);
@@ -142,8 +144,15 @@ const Level4 = {
       for (const d of order) if (!n.open[d]) return d;
       return -1;
     };
-    nodes[0].backSide = pickSide(nodes[0]);
-    cur.fwdSide = pickSide(cur);
+    nodes[0].arriveSide = pickSide(nodes[0]);
+    // forward door at ~600 m, return at ~450 m. Placed after the route exists.
+    const fwdStep = Math.min(nodes.length - 1, Math.round(600 / S));
+    const backStep = Math.min(nodes.length - 2, Math.round(450 / S));
+    nodes[fwdStep].role = "end";
+    nodes[fwdStep].fwdSide = pickSide(nodes[fwdStep]);
+    if (backStep > 2 && backStep !== fwdStep) {
+      nodes[backStep].backSide = pickSide(nodes[backStep]);
+    }
 
     // dressing is decided here, once, so a room looks the same every time it streams in
     const x0 = (n) => n.x - (R / 2 + this.T), z0 = (n) => n.z - (R / 2 + this.T);
@@ -170,14 +179,14 @@ const Level4 = {
 
       // windows on exterior walls (closed side, no neighbouring room)
       for (let d = 0; d < 4; d++) {
-        if (n.open[d] || n.occ[d] || n.backSide === d || n.fwdSide === d) continue;
+        if (n.open[d] || n.occ[d] || n.arriveSide === d || n.fwdSide === d) continue;
         for (const c of [-3.2, 0, 3.2]) {
           if (r() < 0.8) dr.windows.push({ d, c, blackout: r() < 0.15 });
         }
       }
       // furniture: sparse. Desks and chairs sit against a closed wall.
       const closed = [];
-      for (let d = 0; d < 4; d++) if (!n.open[d] && n.backSide !== d && n.fwdSide !== d) closed.push(d);
+      for (let d = 0; d < 4; d++) if (!n.open[d] && n.arriveSide !== d && n.fwdSide !== d) closed.push(d);
       if (closed.length && n.role !== "start" && r() < 0.32) {
         const d = closed[Math.floor(r() * closed.length)];
         dr.desk = { d, lat: (r() - 0.5) * 4, hasMonitor: r() < 0.7, bottle: r() < 0.55 };
@@ -215,18 +224,30 @@ const Level4 = {
       }
     }
 
+    // The way back to Level 3: a later room or a side room, never the first. At least two rooms from
+    // the start, never the last room. Placed after dressing and with the same random stream, so
+    // nothing else about the level changes. It takes a wall with no desk; any windows on it are dropped.
+    // return door is the room at ~450 m, set above. Keep it.
+    const backN = nodes[Math.min(nodes.length - 2, Math.round(450 / S))];
+    this.backNode = backN;
+
     this.nodes = nodes;
     this.edges = edges;
-    const startN = nodes[0], endN = cur;
+    const startN = nodes[0], endN = nodes[Math.min(nodes.length - 1, Math.round(600 / S))];
     const half = R / 2;
-    const bd = DIRS[startN.backSide] || [0, -1], fd = DIRS[endN.fwdSide] || [0, 1];
+    const bd = DIRS[startN.arriveSide] || [0, -1], fd = DIRS[endN.fwdSide] || [0, 1];
     this.spawn.set(startN.x + bd[0] * (half - 2.5), this.baseY, startN.z + bd[1] * (half - 2.5));
-    this.spawnYaw = Math.atan2(bd[0], bd[1]);                   // face into the room, away from the back door
-    this.backPos = new THREE.Vector3(startN.x + bd[0] * half, this.baseY, startN.z + bd[1] * half);
+    this.spawnYaw = Math.atan2(bd[0], bd[1]);                   // face into the room, away from the arrival wall
+    const rd = (backN && backN.backSide >= 0) ? DIRS[backN.backSide] : null;
+    this.backPos = rd ? new THREE.Vector3(backN.x + rd[0] * (half - 1.5), this.baseY, backN.z + rd[1] * (half - 1.5)) : null;
     this.exitPos = new THREE.Vector3(endN.x + fd[0] * (half - 2.2), this.baseY, endN.z + fd[1] * (half - 2.2));
     this.exitYaw = Math.atan2(fd[0], fd[1]);                    // face into the room, away from the forward door
     this.endNode = endN;
-    this.infoText = "ROOMS " + nodes.length + " · HALLS " + edges.length;
+    this.infoText = "ROOMS " + nodes.length + " · HALLS " + edges.length + " · RETURN ~450m · FORWARD ~600m";
+    this._route = nodes.filter(n => n.role === "spine" || n.role === "start" || n.role === "end");
+    this._cells = cells;
+    this._nodes = nodes;
+    this._edges = edges;
     return true;
   },
 
@@ -840,6 +861,7 @@ const Level4 = {
     }
 
     // doors
+    if (node.arriveSide >= 0) this.buildDoor(rec, node, node.arriveSide, "sealed");
     if (node.backSide >= 0) this.buildDoor(rec, node, node.backSide, "back");
     if (node.fwdSide >= 0) this.buildDoor(rec, node, node.fwdSide, "forward");
 
@@ -957,6 +979,12 @@ const Level4 = {
     this.deco(rec, S.doorFrame, fx, 1.1, fz, alongX ? leafW + 0.18 : 0.03, 2.2, alongX ? 0.03 : leafW + 0.18);
     const vx = alongX ? cx : cx + doorSide * (half - 0.03), vz = alongX ? cz + doorSide * (half - 0.03) : cz;
     this.deco(rec, S.black, vx, 1.03, vz, alongX ? leafW : 0.03, 2.06, alongX ? 0.03 : leafW);
+    if (kind === "sealed") {
+      // the door you arrived by: shut for good. A plain leaf in the frame, no handle, no mark, no trigger.
+      const sx = alongX ? cx : cx + doorSide * (half - 0.09), sz = alongX ? cz + doorSide * (half - 0.09) : cz;
+      this.deco(rec, S.doorLeaf, sx, 1.03, sz, alongX ? leafW : 0.06, 2.05, alongX ? 0.06 : leafW);
+      return;
+    }
     const depth = doorSide * (half - 0.09);
     const hx = alongX ? cx - leafW / 2 : cx + depth, hz = alongX ? cz + depth : cz - leafW / 2;
     const pivot = new THREE.Group();
@@ -1042,12 +1070,49 @@ const Level4 = {
     this.segments.set(key, rec);
   },
 
+  // Grow the office ahead of the player. Deterministic from the seed.
+  extend(px, pz) {
+    if (!this._route || !this._cells) return;
+    const S = this.S, DIRS = this.DIRS || [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const need = Math.ceil(Math.max(0, pz) / S) + 8;
+    const cells = this._cells, nodes = this._nodes, edges = this._edges, route = this._route;
+    const key = (i, j) => i + "," + j;
+    const addNode = (i, j, role) => {
+      const n = { id: nodes.length, i, j, x: i * S, z: j * S, role, open: [false, false, false, false],
+        occ: [false, false, false, false], edges: [], dress: { panels: [], missing: [], stained: [], desk: null, cooler: null, worn: null, windows: [], sites: [] },
+        backSide: -1, arriveSide: -1, fwdSide: -1 };
+      nodes.push(n); cells.set(key(i, j), n); return n;
+    };
+    const link = (a, b, d) => {
+      a.open[d] = true; b.open[(d + 2) % 4] = true;
+      const e = { id: edges.length, a: a.id, b: b.id, d, ax: a.x, az: a.z, bx: b.x, bz: b.z };
+      edges.push(e); a.edges.push(e.id); b.edges.push(e.id);
+    };
+    let cur = route[route.length - 1];
+    while (route.length < need) {
+      const h = this.hash(route.length, 1, 5);
+      let d = 1;
+      if (h > 0.75) d = h > 0.88 ? 0 : 2;
+      const di = DIRS[d];
+      if (cells.has(key(cur.i + di[0], cur.j + di[1]))) d = 1;
+      const di2 = DIRS[d];
+      if (cells.has(key(cur.i + di2[0], cur.j + di2[1]))) break;
+      const nx = addNode(cur.i + di2[0], cur.j + di2[1], "spine");
+      link(cur, nx, d);
+      route.push(nx);
+      cur = nx;
+    }
+    this.nodes = nodes;
+    this.edges = edges;
+  },
+
   /* ------------------------------------------------------------------
      STREAMING
      ------------------------------------------------------------------ */
   stream(force) {
     if (!this.active || !this.group) return;
     const px = Player.position.x, pz = Player.position.z;
+    this.extend(px, pz);
     const key = Math.floor(px / 8) + "," + Math.floor(pz / 8);
     if (!force && key === this.lastKey) return;
     this.lastKey = key;
