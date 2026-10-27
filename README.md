@@ -26,7 +26,7 @@ The layout is generated for each run. You cannot rely on a fixed map. What a lev
 * **Level 1** — a much larger concrete and service space
 * **Level 2** — "Pipe Dreams": dim, narrow concrete maintenance tunnels with hot pipes, metal shelves, flickering fluorescents and unmarked doors out (to Levels 0, 1 and 3)
 * **Level 3** — "Electrical Station": claustrophobic yellow-brick tunnels, iron doors (openable ones, and locked ones that only show a black void), leaking and scalding pipes, hidden electrical rooms with generators, breaker boxes and old monitors, machinery that arcs when you pass, and an elevator to Level 4 that needs power first
-* **Level 5** — "The Hotel": a kept 1930s hotel of patterned carpet, dark wood and warm low light. A bright lobby, long numbered halls, a few guest rooms and dead ends. The way back is in the lobby, the way on is at the far end
+* **Level 5** — "The Hotel": a kept 1930s hotel of patterned carpet, dark wood and warm low light. A lobby that is a reception (desk, key rack, sign), long numbered halls, a few guest rooms and dead ends, and off the halls a ballroom with double doors and a dining room with a kitchen behind it. The lobby has no door back: the way back to the office is a door further in, the way on is at the far end
 
 Each level is meant to feel different. The same seed produces the same layout.
 
