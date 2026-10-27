@@ -30,7 +30,7 @@ const Level2 = {
   _poolT: 0,
   // Tunable look. Lights are physically based (no legacy mode), so values here are
   // much higher than the old ones: the old ambient left the ceiling black.
-  look: { ambient: 1.15, hemi: 0.7, lightI: 6.0, lightD: 26, poolSize: 8, fog: 0x2a2a28, fogNear: 8, fogFar: 70 },
+  look: { ambient: 0.95, hemi: 0.5, lightI: 5.2, lightD: 22, poolSize: 8, fog: 0x242422, fogNear: 7, fogFar: 56 },
   T: 3.0,        // metres per texture tile
   NODE: 2.12,    // half-size of a junction square (outer face of its walls)
 
