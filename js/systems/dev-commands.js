@@ -322,6 +322,15 @@ const DevCommands = {
       Level5.assignLights();
       return this.toast("TELEPORTED TO LEVEL 5 BACK DOOR");
     }
+    if (sub === "ballroom" || sub === "dining") {
+      const pos = sub === "ballroom" ? Level5.ballPos : Level5.dinePos;
+      if (!Level5.active || !pos) return this.toast("NO " + sub.toUpperCase() + " ON THIS SEED");
+      Player.position.copy(pos);
+      Player.velocity.set(0, 0, 0);
+      Level5.stream(true);
+      Level5.assignLights();
+      return this.toast("TELEPORTED TO THE " + sub.toUpperCase());
+    }
     if (sub === "reset") {
       const next = ((GameState.seed || 1) + 1) >>> 0;
       GameState.seed = next;
@@ -335,7 +344,7 @@ const DevCommands = {
       Level5.enter(GameState.seed);
       return this.toast("LEVEL 5 · SEED " + (GameState.seed >>> 0));
     }
-    if (sub) return this.toast("USAGE: LEVEL 5, RESET, SEED, INFO, EXIT, BACK");
+    if (sub) return this.toast("USAGE: LEVEL 5, RESET, SEED, INFO, EXIT, BACK, BALLROOM, DINING");
     Level5.enter((GameState.seed || 1) >>> 0);
     return this.toast("ENTERED LEVEL 5");
   },
@@ -422,6 +431,22 @@ const DevCommands = {
       this.undo = { type: "spawn-hound" };
       return this.toast("SPAWNED HOUND");
     }
+    if (kind === "beast") {
+      // Level 5 only. Anywhere else: nothing happens, and it says so.
+      const inL5 = GameState.level === 5 && typeof Level5 !== "undefined" && Level5.active &&
+        typeof BeastSystem !== "undefined" && BeastSystem.attached;
+      if (!inL5) return this.toast("THE BEAST IS LEVEL 5 ONLY · NOTHING SPAWNED");
+      if (BeastSystem.count() >= 1) return this.toast("THE BEAST IS ALREADY HERE");
+      let b = null;
+      for (const dist of [10, 8, 12, 6, 14, 4]) {
+        const a = this.ahead(dist);
+        b = BeastSystem.spawnAt(a.x, a.z, true);
+        if (b) break;
+      }
+      if (!b) return this.toast("NO OPEN SPACE AHEAD");
+      this.undo = { type: "spawn-beast" };
+      return this.toast("SPAWNED BEAST");
+    }
     this.toast("UNKNOWN ENTITY");
   },
   despawn(args) {
@@ -432,6 +457,7 @@ const DevCommands = {
       EntitySystem.despawn();
       if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
       if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+      if (typeof BeastSystem !== "undefined" && BeastSystem.attached) BeastSystem.despawn();
       this.undo = null;
       return this.toast("DESPAWNED ALL");
     }
@@ -457,6 +483,15 @@ const DevCommands = {
       if (!active.length) return this.toast("NO SMILERS PRESENT");
       if (count > active.length) return this.toast("REMOVED " + n + " · ONLY " + active.length + " WERE PRESENT");
       return this.toast("REMOVED " + n + " SMILER" + (n === 1 ? "" : "S"));
+    }
+    if (kind === "beast") {
+      const inL5 = GameState.level === 5 && typeof Level5 !== "undefined" && Level5.active &&
+        typeof BeastSystem !== "undefined" && BeastSystem.attached;
+      this.undo = null;
+      if (!inL5) return this.toast("THE BEAST IS LEVEL 5 ONLY · NOTHING TO REMOVE");
+      if (!BeastSystem.count()) return this.toast("NO BEAST PRESENT");
+      BeastSystem.despawn();
+      return this.toast("DESPAWNED BEAST");
     }
     this.toast("UNKNOWN ENTITY");
   },
@@ -611,6 +646,10 @@ const DevCommands = {
     if (u.type === "spawn-entity") { EntitySystem.despawn(); return this.toast("UNDID SPAWN"); }
     if (u.type === "spawn-hound") {
       if (typeof HoundSystem !== "undefined") HoundSystem.despawn(1);
+      return this.toast("UNDID SPAWN");
+    }
+    if (u.type === "spawn-beast") {
+      if (typeof BeastSystem !== "undefined" && BeastSystem.attached) BeastSystem.despawn();
       return this.toast("UNDID SPAWN");
     }
     if (u.type === "spawn-smiler") {
