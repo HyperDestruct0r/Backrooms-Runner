@@ -174,7 +174,7 @@ const DevCommands = {
       this.toast("UNKNOWN COMMAND · TYPE HELP");
     } catch (err) {
       console.error(err);
-      this.toast("COMMAND FAILED");
+      this.toast("COMMAND FAILED" + (err && err.message ? " · " + String(err.message).slice(0, 60).toUpperCase() : ""));
     }
   },
 
