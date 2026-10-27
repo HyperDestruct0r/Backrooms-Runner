@@ -37,6 +37,7 @@ const Level3 = {
   exitPos: null,
   buttonPos: null,
   elevator: null,
+  backNode: null,
   powered: false,
   baseY: 0,
   S: 16,        // lattice spacing between room centres
@@ -49,7 +50,7 @@ const Level3 = {
   poolFx: [],
   fixtures: [],
   vents: [],
-  look: { ambient: 0.8, hemi: 0.5, poolSize: 10, fog: 0x1a140c, fogNear: 6, fogFar: 46 },
+  look: { ambient: 1.05, hemi: 0.65, poolSize: 10, fog: 0x221c12, fogNear: 8, fogFar: 60 },
   lastKey: "",
   infoText: "",
   time: 0,
@@ -110,8 +111,9 @@ const Level3 = {
     };
     const freeDirs = (n) => D.filter(d => !at.has(key(n.i + d[0], n.j + d[1])));
 
-    // main route: a self-avoiding walk that prefers going straight
-    const want = 12 + Math.floor(r() * 5);
+    // main route: a long walk that prefers going straight. The level extends further
+    // on demand (see extend), so the route here is only the first stretch.
+    const want = 20;
     let cur = mk(0, 0);
     const route = [cur];
     let hd = [0, 1];
@@ -132,9 +134,8 @@ const Level3 = {
     if (route.length < 10 && !force) return false;
 
     const spawnNode = route[0];
-    const exitNode = route[route.length - 1];
     spawnNode.role = "spawn";
-    exitNode.role = "elevator";
+    const exitNode = null;
 
     // dead-end branches off the route. Dead ends are electrical rooms or empty.
     const branch = (from, maxSteps) => {
@@ -212,8 +213,12 @@ const Level3 = {
     // never put an arc and a gate on the same short corridor
     for (const e of edges) { if (e.arc && e.gate) e.gate = false; if (e.steam && (e.arc || e.gate)) e.steam = false; }
 
+    // The return and the elevator are placed by extend() once the route reaches them.
+    let backNode = null;
+
     this.nodes = nodes;
     this.edges = edges;
+    this.backNode = backNode;
     this.seedUsed = seed;
     this.exitNode = exitNode;
     this.buttonNode = buttonNode;
@@ -222,7 +227,81 @@ const Level3 = {
     this.spawn.set(0, this.baseY, 0);
     this.infoText = "ROOMS " + nodes.length + " · HALLS " + edges.length + " · ROUTE " + route.length +
       (buttonNode ? "" : " · NO BUTTON");
+    this._route = route;
+    this._at = at;
+    this._edges = edges;
+    this._nodes = nodes;
     return true;
+  },
+
+  // Grow the main route and side branches out to cover the player's position.
+  // Deterministic: the same seed always extends the same way.
+  extend(px, pz) {
+    if (!this._route) return;
+    const S = this.S;
+    const need = Math.ceil(Math.max(0, pz) / S) + 6;
+    const r = this.rng((this.seedUsed || this.seed) ^ 0x9e3779b9);
+    const D = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const key = (i, j) => i + "," + j;
+    const at = this._at, nodes = this._nodes, edges = this._edges, route = this._route;
+    const mk = (i, j) => {
+      const n = { id: nodes.length, i, j, x: i * S, z: j * S, edges: [], dirs: {}, role: "hall", free: [] };
+      nodes.push(n); at.set(key(i, j), n); return n;
+    };
+    const link = (a, b, main) => {
+      const e = {
+        id: edges.length, a: a.id, b: b.id, main: !!main,
+        ax: a.x, az: a.z, bx: b.x, bz: b.z, len: S,
+        alongX: a.z === b.z, gate: false, locked: 0, arc: false, leak: false,
+        pipeSide: 1, flip: 1, steam: false
+      };
+      edges.push(e);
+      a.edges.push(e.id); b.edges.push(e.id);
+      a.dirs[Math.sign(b.i - a.i) + "," + Math.sign(b.j - a.j)] = e.id;
+      b.dirs[Math.sign(a.i - b.i) + "," + Math.sign(a.j - b.j)] = e.id;
+      return e;
+    };
+    let cur = route[route.length - 1];
+    let hd = [0, 1];
+    while (route.length <= need) {
+      const h = this.hash(route.length, 0, 3);
+      let pick = hd;
+      if (h > 0.72) pick = h > 0.86 ? [1, 0] : [-1, 0];
+      if (at.has(key(cur.i + pick[0], cur.j + pick[1]))) pick = [0, 1];
+      if (at.has(key(cur.i + pick[0], cur.j + pick[1]))) break;
+      const next = mk(cur.i + pick[0], cur.j + pick[1]);
+      const e = link(cur, next, true);
+      e.gate = h < 0.3; e.arc = h > 0.8; e.leak = h > 0.4 && h < 0.7;
+      route.push(next);
+      cur = next; hd = pick;
+      // side branch
+      if (this.hash(next.i, next.j, 7) < 0.4) {
+        const side = h > 0.5 ? [1, 0] : [-1, 0];
+        if (!at.has(key(next.i + side[0], next.j + side[1]))) {
+          const sn = mk(next.i + side[0], next.j + side[1]);
+          link(next, sn, false);
+          sn.role = this.hash(sn.i, sn.j, 8) < 0.5 ? "electrical" : "dead";
+        }
+      }
+    }
+    // place the return at ~100 m and the elevator at ~200 m, once the route is long enough
+    const backStep = Math.round(100 / S);
+    const exitStep = Math.round(200 / S);
+    if (!this.backNode && route.length > backStep) {
+      const n = route[backStep];
+      n.free = D.filter(d => n.dirs[d[0] + "," + d[1]] == null);
+      if (n.free.length) { n.backDir = n.free[n.free.length - 1]; this.backNode = n; }
+    }
+    if (!this.exitNode && route.length > exitStep) {
+      const n = route[exitStep];
+      n.role = "elevator";
+      n.free = D.filter(d => n.dirs[d[0] + "," + d[1]] == null);
+      n.elevDir = n.free[0] || [0, 1];
+      this.exitNode = n;
+      this.exitPos = new THREE.Vector3(n.x, this.baseY, n.z);
+    }
+    this.nodes = nodes;
+    this.edges = edges;
   },
 
   /* ------------------------------------------------------------------
@@ -702,8 +781,17 @@ const Level3 = {
       this.buttonRec = rec.button;
     }
     if (node.role === "spawn" && free.length) {
-      // the door you came in by: leads back to Level 2
+      // the door you came in by: sealed. No mark, no trigger, nothing happens if you use it.
       const d = free[0];
+      const px = node.x + d[0] * (R / 2 - 0.06), pz = node.z + d[1] * (R / 2 - 0.06);
+      const sx = d[0] !== 0 ? 0.1 : 1.2, sz = d[0] !== 0 ? 1.2 : 0.1;
+      this.deco(rec, this.shared.ironLight, px, by + 1.1, pz, sx, 2.25, sz);
+      this.deco(rec, this.shared.iron, px - d[0] * 0.05, by + 1.1, pz - d[1] * 0.05,
+        d[0] !== 0 ? 0.06 : 0.9, 2.05, d[0] !== 0 ? 0.9 : 0.06);
+    }
+    if (node === this.backNode && node.backDir) {
+      // the way back to Level 2: further in, marked with the hazard plate
+      const d = node.backDir;
       const px = node.x + d[0] * (R / 2 - 0.06), pz = node.z + d[1] * (R / 2 - 0.06);
       const sx = d[0] !== 0 ? 0.1 : 1.2, sz = d[0] !== 0 ? 1.2 : 0.1;
       this.deco(rec, this.shared.ironLight, px, by + 1.1, pz, sx, 2.25, sz);
@@ -943,6 +1031,7 @@ const Level3 = {
   stream(force) {
     if (!this.active || !this.group) return;
     const px = Player.position.x, pz = Player.position.z;
+    this.extend(px, pz);
     const key = Math.floor(px / 8) + "," + Math.floor(pz / 8);
     if (!force && key === this.lastKey) return;
     this.lastKey = key;
