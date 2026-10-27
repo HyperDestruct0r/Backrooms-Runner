@@ -10,9 +10,11 @@
        are closed and do nothing.
      - a few guest rooms open off the sides of halls (bed, side table, lamp). They dead-end.
      - up to two dead-end stub halls branch off the spine. They dead-end too.
-   One way back, in the lobby (to the office). One way forward, at the far end (ends the run).
+   One way back, to the office: NOT in the lobby (that wall is blank, you arrived by it). It is a door in
+   the hall two spaces along the spine, 30 m or more from the spawn. One way forward, at the far end
+   (ends the run).
 
-   Spawn is the exact centre of the lobby at baseY. Nothing is placed within 2.5 m of it.
+   Spawn is the exact centre of the lobby at baseY. The lobby has no door but the way into the hotel. Nothing is placed within 2.5 m of it.
    Lights are a fixed pool of point lights re-aimed at the nearest fixtures, so streaming never
    changes the light count and never forces a shader recompile. */
 const Level5 = {
@@ -25,6 +27,7 @@ const Level5 = {
   edges: [],
   rooms: [],
   endNode: null,
+  backNode: null,
   doors: [],
   spawn: new THREE.Vector3(),
   spawnYaw: 0,
@@ -50,7 +53,7 @@ const Level5 = {
   poolFx: [],
   fixtures: [],
   // Warm and low. The lobby is lit by its chandelier; halls by a few pendants; rooms by a lamp.
-  look: { ambient: 0.62, hemi: 0.34, poolSize: 8, fog: 0x15100c, fogNear: 6, fogFar: 42 },
+  look: { ambient: 0.95, hemi: 0.55, poolSize: 8, fog: 0x1c1612, fogNear: 8, fogFar: 58 },
   lastKey: "",
   infoText: "",
   time: 0,
@@ -102,7 +105,7 @@ const Level5 = {
     const key = (i, j) => i + "," + j;
     const addNode = (i, j, type) => {
       const n = { id: nodes.length, i, j, x: i * S, z: j * S, type: "", R: 0, H: 0,
-        open: [false, false, false, false], edges: [], backSide: -1, fwdSide: -1 };
+        open: [false, false, false, false], edges: [], backSide: -1, arriveSide: -1, fwdSide: -1 };
       this.setType(n, type);
       nodes.push(n); cells.set(key(i, j), n); return n;
     };
@@ -113,8 +116,8 @@ const Level5 = {
       return e;
     };
 
-    // the spine: a self-avoiding walk that likes to keep going straight
-    const count = 8 + Math.floor(r() * 5);
+    // the spine starts long enough for the 750 m return. extend() grows it further.
+    const count = 60;
     let cur = addNode(0, 0, "lobby"), last = -1;
     for (let k = 1; k < count; k++) {
       const opts = [];
@@ -128,7 +131,6 @@ const Level5 = {
       cur = nx; last = d;
     }
     if (nodes.length < 8 && !force) return false;
-    this.setType(cur, "end");
     const spineCount = nodes.length;
 
     // up to two dead-end stub halls
@@ -146,9 +148,23 @@ const Level5 = {
       stubs++;
     }
 
-    // the way back: lobby wall opposite the hall. The way on: landing wall opposite the hall.
-    nodes[0].backSide = (nodes[0].open.indexOf(true) + 2) % 4;
-    cur.fwdSide = (cur.open.indexOf(true) + 2) % 4;
+    // The lobby is where you arrive: its wall opposite the hall (arriveSide) has no door at all, and
+    // that is the side the spawn faces away from. The way back to the office is NOT in the lobby: it is
+    // a door on a closed wall of the hall two spaces along the spine. The way on: landing wall
+    // opposite the hall.
+    nodes[0].arriveSide = (nodes[0].open.indexOf(true) + 2) % 4;
+    // return at ~750 m, forward at ~900 m
+    const backStep = Math.min(nodes.length - 2, Math.round(750 / S));
+    const fwdStep = Math.min(nodes.length - 1, Math.round(900 / S));
+    const backN = nodes[backStep];
+    const fwdN = nodes[fwdStep];
+    this.setType(fwdN, "end");
+    fwdN.fwdSide = (fwdN.open.indexOf(true) + 2) % 4;
+    for (let k = 0; k < 4; k++) {
+      const d = (backN.open.indexOf(true) + 2 + k) % 4;
+      if (!backN.open[d]) { backN.backSide = d; break; }
+    }
+    this.backNode = backN;
 
     // guest rooms off the sides of halls. A room is placed only if its box clears every other space.
     const rects = [];
@@ -197,15 +213,19 @@ const Level5 = {
     this.nodes = nodes;
     this.edges = edges;
     this.rooms = rooms;
-    const lobby = nodes[0], endN = cur;
+    const lobby = nodes[0], endN = fwdN;
     this.spawn.set(lobby.x, this.baseY, lobby.z);
-    const bd = DIRS[lobby.backSide], fd = DIRS[endN.fwdSide];
-    // face into the hotel: away from the back door (forward is (-sin yaw, -cos yaw))
+    const bd = DIRS[lobby.arriveSide], fd = DIRS[endN.fwdSide], rd = DIRS[backN.backSide];
+    // face into the hotel: away from the lobby's blank back wall (forward is (-sin yaw, -cos yaw))
     this.spawnYaw = Math.atan2(bd[0], bd[1]);
-    this.backPos = new THREE.Vector3(lobby.x + bd[0] * (lobby.R / 2 - 1.8), this.baseY, lobby.z + bd[1] * (lobby.R / 2 - 1.8));
+    this.backPos = new THREE.Vector3(backN.x + rd[0] * (backN.R / 2 - 1.2), this.baseY, backN.z + rd[1] * (backN.R / 2 - 1.2));
     this.exitPos = new THREE.Vector3(endN.x + fd[0] * (endN.R / 2 - 1.8), this.baseY, endN.z + fd[1] * (endN.R / 2 - 1.8));
     this.endNode = endN;
-    this.infoText = "SPACES " + spineCount + " · STUBS " + stubs + " · GUEST ROOMS " + rooms.length;
+    this.infoText = "SPACES " + spineCount + " · STUBS " + stubs + " · GUEST ROOMS " + rooms.length + " · RETURN ~750m";
+    this._route = nodes.filter(n => n.type === "hall" || n.type === "lobby" || n.type === "end");
+    this._cells = cells;
+    this._nodes = nodes;
+    this._edges = edges;
     return true;
   },
 
@@ -512,7 +532,7 @@ const Level5 = {
     Player.position.copy(this.spawn);        // streaming never moves the player; the spawn is re-applied anyway
     Player.velocity.set(0, 0, 0);
     Player.yaw = this.spawnYaw;
-    if (typeof CameraRig !== "undefined" && CameraRig.apply) CameraRig.apply(0);
+    if (typeof CameraRig !== "undefined" && CameraRig.apply && CameraRig.camera) CameraRig.apply(0);
     this.attachEntities();
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 5 · THE HOTEL");
   },
@@ -714,7 +734,7 @@ const Level5 = {
     else if (node.type === "end") this.dressLanding(rec, node);
     else this.dressJunction(rec, node);
 
-    if (node.backSide >= 0) this.buildDoor(rec, node, node.backSide, "back");
+    if (node.backSide >= 0) this.buildDoor(rec, node, node.backSide, "back");     // only the hall two spaces in
     if (node.fwdSide >= 0) this.buildDoor(rec, node, node.fwdSide, "forward");
     this.group.add(rec.group);
     this.segments.set(key, rec);
@@ -793,7 +813,9 @@ const Level5 = {
     }
 
     // pictures
-    let w = wall(-R / 2, 3.2, 1, 0);  this.picture(rec, w.px, w.pz, w.nx, w.nz, 0, 2.0, 0, 1.0, 0.72);
+    // the blank back wall: no door here. A large picture hangs where one might be expected.
+    let w = wall(-R / 2, 0, 1, 0);    this.picture(rec, w.px, w.pz, w.nx, w.nz, 0, 2.1, 1, 1.2, 0.9);
+    w = wall(-R / 2, 3.2, 1, 0);      this.picture(rec, w.px, w.pz, w.nx, w.nz, 0, 2.0, 0, 1.0, 0.72);
     w = wall(-R / 2, -3.2, 1, 0);     this.picture(rec, w.px, w.pz, w.nx, w.nz, 0, 2.0, 1, 0.7, 0.9);
     w = wall(2.4, -R / 2, 0, 1);      this.picture(rec, w.px, w.pz, w.nx, w.nz, 0, 2.0, 2, 1.1, 0.75);
     w = wall(1.6, R / 2, 0, -1);      this.picture(rec, w.px, w.pz, w.nx, w.nz, 0, 2.0, 0, 1.3, 0.8);
@@ -857,6 +879,7 @@ const Level5 = {
     } else {
       // one picture on a closed wall, sometimes
       for (const d of closed) {
+        if (d === node.backSide) continue;                   // the return door is on this wall
         if (this.hash(node.id, d, 9) > 0.55) continue;
         const D = DIRS[d];
         this.picture(rec, cx + D[0] * R / 2, cz + D[1] * R / 2, -D[0], -D[1], 0, 1.9, Math.floor(this.hash(node.id, d, 4) * 3), 0.8, 0.6);
@@ -1060,6 +1083,41 @@ const Level5 = {
     this.wallPlane(rec, this.numberMat(num), nc.x, nc.z, alongX ? 0 : -s, alongX ? -s : 0, 0, 1.75, 0.26, 0.13, 0.03);
   },
 
+  // Grow the hotel ahead of the player.
+  extend(px, pz) {
+    if (!this._route || !this._cells) return;
+    const S = this.S, DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    const need = Math.ceil(Math.max(0, pz) / S) + 8;
+    const cells = this._cells, nodes = this._nodes, edges = this._edges, route = this._route;
+    const key = (i, j) => i + "," + j;
+    const addNode = (i, j, type) => {
+      const n = { id: nodes.length, i, j, x: i * S, z: j * S, type, R: 3.6, H: 3.0,
+        open: [false, false, false, false], edges: [], backSide: -1, arriveSide: -1, fwdSide: -1 };
+      nodes.push(n); cells.set(key(i, j), n); return n;
+    };
+    const link = (a, b, d) => {
+      a.open[d] = true; b.open[(d + 2) % 4] = true;
+      const e = { id: edges.length, a: a.id, b: b.id, d, ax: a.x, az: a.z, bx: b.x, bz: b.z };
+      edges.push(e); a.edges.push(e.id); b.edges.push(e.id);
+    };
+    let cur = route[route.length - 1];
+    while (route.length < need) {
+      const h = this.hash(route.length, 2, 9);
+      let d = 1;
+      if (h > 0.78) d = h > 0.9 ? 0 : 2;
+      const di = DIRS[d];
+      if (cells.has(key(cur.i + di[0], cur.j + di[1]))) d = 1;
+      const di2 = DIRS[d];
+      if (cells.has(key(cur.i + di2[0], cur.j + di2[1]))) break;
+      const nx = addNode(cur.i + di2[0], cur.j + di2[1], "hall");
+      link(cur, nx, d);
+      route.push(nx);
+      cur = nx;
+    }
+    this.nodes = nodes;
+    this.edges = edges;
+  },
+
   /* ------------------------------------------------------------------
      STREAMING
      ------------------------------------------------------------------ */
@@ -1078,6 +1136,7 @@ const Level5 = {
   stream(force) {
     if (!this.active || !this.group) return;
     const px = Player.position.x, pz = Player.position.z;
+    this.extend(px, pz);
     const key = Math.floor(px / 8) + "," + Math.floor(pz / 8);
     if (!force && key === this.lastKey) return;
     this.lastKey = key;
