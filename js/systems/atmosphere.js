@@ -15,8 +15,8 @@ const DarknessSystem = {
       // washing out the local fluorescent pools. Test Beta is a much larger
       // field with fewer lights, so it needs a little more fill to stay readable.
       const beta = !!(LevelGenerator.last && LevelGenerator.last.beta);
-      if (LightingSystem.ambient) LightingSystem.ambient.intensity = beta ? 0.16 : 0.06;
-      if (LightingSystem.hemi) LightingSystem.hemi.intensity = beta ? 0.22 : 0.10;
+      if (LightingSystem.ambient) LightingSystem.ambient.intensity = beta ? 0.28 : 0.22;
+      if (LightingSystem.hemi) LightingSystem.hemi.intensity = beta ? 0.36 : 0.30;
       const overlay = document.getElementById("dark-fog");
       if (overlay) overlay.style.opacity = "0";
       return;
@@ -65,10 +65,10 @@ const DarknessSystem = {
     scene.fog.color.lerp(targetColorObj, Math.min(1, dt * 4));
     scene.background.lerp(targetColorObj, Math.min(1, dt * 4));
     if (LightingSystem.ambient && LightingSystem.hemi) {
-      const normalAmb = 0.30 + brightBlend * 0.04;
-      const normalHemi = 0.36 + brightBlend * 0.04;
-      const darkAmb = flashlightOn ? 0.10 : 0.045;
-      const darkHemi = flashlightOn ? 0.14 : 0.075;
+      const normalAmb = 0.48 + brightBlend * 0.06;
+      const normalHemi = 0.55 + brightBlend * 0.06;
+      const darkAmb = flashlightOn ? 0.08 : 0.03;
+      const darkHemi = flashlightOn ? 0.10 : 0.045;
       const amb = normalAmb*(1-darkBlend) + darkAmb*darkBlend;
       const hemi = normalHemi*(1-darkBlend) + darkHemi*darkBlend;
       LightingSystem.ambient.intensity += (amb - LightingSystem.ambient.intensity) * Math.min(1, dt * 4);
