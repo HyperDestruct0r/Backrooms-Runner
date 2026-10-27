@@ -10,6 +10,11 @@
        are closed and do nothing.
      - a few guest rooms open off the sides of halls (bed, side table, lamp). They dead-end.
      - up to two dead-end stub halls branch off the spine. They dead-end too.
+   - three landmarks, so the hotel reads as a hotel. The lobby is a reception (desk, pigeonhole rack, chair, sign).
+     A ballroom (one at most, off a hall at least four spaces along) and a dining room with a kitchen behind it
+     (off another hall) are placed from the seed on free lattice cells. They are placed LAST, from their own random
+     stream, and only if they clear every other space: the spine, the stubs, the guest rooms and the two real doors
+     are exactly where they were without them. A landmark that does not fit is skipped.
    One way back, to the office: NOT in the lobby (that wall is blank, you arrived by it). It is a door in
    the hall two spaces along the spine, 30 m or more from the spawn. One way forward, at the far end
    (ends the run).
@@ -33,18 +38,26 @@ const Level5 = {
   spawnYaw: 0,
   exitPos: null,      // just inside the forward door (console `level 5 exit`)
   backPos: null,      // just inside the back door
+  landmarks: { ballroom: null, dining: null },
+  ballPos: null,      // just inside the ballroom doors (console `level 5 ballroom`)
+  dinePos: null,      // just inside the dining room (console `level 5 dining`)
   baseY: 0,
   S: 16,              // lattice spacing between space centres
   T: 0.3,             // wall thickness
   W: 3.6,             // hall width (interior)
   EH: 3.0,            // hall ceiling height
   ROOM: 5.0,          // guest room interior size
+  DOOR_W: 2.4,        // cased opening into the ballroom (double doors) and the dining room
+  DOOR_H: 2.5,
+  KITCHEN: { w: 6.0, d: 5.0 },   // kitchen interior: across the dining wall x out from it
   DIRS: [[1, 0], [0, 1], [-1, 0], [0, -1]],
   TYPES: {
     lobby: { R: 10, H: 4.4 },
     hall: { R: 3.6, H: 3.0 },
     end: { R: 5.0, H: 3.0 },
-    nook: { R: 3.6, H: 3.0 }
+    nook: { R: 3.6, H: 3.0 },
+    ballroom: { R: 12, H: 5.6 },
+    dining: { R: 9, H: 3.0 }
   },
   shared: null,
   numMats: {},
@@ -53,7 +66,7 @@ const Level5 = {
   poolFx: [],
   fixtures: [],
   // Warm and low. The lobby is lit by its chandelier; halls by a few pendants; rooms by a lamp.
-  look: { ambient: 0.95, hemi: 0.55, poolSize: 8, fog: 0x1c1612, fogNear: 8, fogFar: 58 },
+  look: { ambient: 0.62, hemi: 0.34, poolSize: 8, fog: 0x15100c, fogNear: 6, fogFar: 42 },
   lastKey: "",
   infoText: "",
   time: 0,
@@ -91,11 +104,16 @@ const Level5 = {
 
   // Geometry of the hall between two linked spaces, centred on the clear span between them.
   edgeGeom(e) {
-    const a = this.nodes[e.a], b = this.nodes[e.b], D = this.DIRS[e.d];
+    return this._spanGeom(this.nodes[e.a], this.nodes[e.b], e.d);
+  },
+
+  // The same geometry for any two space-like objects {x, z, R}, linked or not (placement probes with it).
+  _spanGeom(a, b, d) {
+    const D = this.DIRS[d];
     const fa = a.R / 2 + this.T, fb = b.R / 2 + this.T;
     const L = this.S - fa - fb;
     const m = fa + L / 2;
-    return { mx: a.x + D[0] * m, mz: a.z + D[1] * m, L, alongX: e.d % 2 === 0 };
+    return { mx: a.x + D[0] * m, mz: a.z + D[1] * m, L, alongX: d % 2 === 0 };
   },
 
   _generate(seed, force) {
@@ -213,6 +231,8 @@ const Level5 = {
     this.nodes = nodes;
     this.edges = edges;
     this.rooms = rooms;
+    // landmarks last: own random stream, every probe checked against every rect above
+    const lm = this.placeLandmarks({ seed, nodes, edges, cells, rects, addNode, link, backN, fwdN });
     const lobby = nodes[0], endN = fwdN;
     this.spawn.set(lobby.x, this.baseY, lobby.z);
     const bd = DIRS[lobby.arriveSide], fd = DIRS[endN.fwdSide], rd = DIRS[backN.backSide];
@@ -221,12 +241,106 @@ const Level5 = {
     this.backPos = new THREE.Vector3(backN.x + rd[0] * (backN.R / 2 - 1.2), this.baseY, backN.z + rd[1] * (backN.R / 2 - 1.2));
     this.exitPos = new THREE.Vector3(endN.x + fd[0] * (endN.R / 2 - 1.8), this.baseY, endN.z + fd[1] * (endN.R / 2 - 1.8));
     this.endNode = endN;
-    this.infoText = "SPACES " + spineCount + " · STUBS " + stubs + " · GUEST ROOMS " + rooms.length + " · RETURN ~750m";
+    this.landmarks = lm;
+    this.ballPos = this.dinePos = null;
+    for (const [nd, field, inset] of [[lm.ballroom, "ballPos", 2.2], [lm.dining, "dinePos", 1.6]]) {
+      if (!nd) continue;
+      const K = DIRS[nd.open.indexOf(true)];
+      this[field] = new THREE.Vector3(nd.x + K[0] * (nd.R / 2 - inset), this.baseY, nd.z + K[1] * (nd.R / 2 - inset));
+    }
+    this.infoText = "SPACES " + spineCount + " · STUBS " + stubs + " · GUEST ROOMS " + rooms.length +
+      " · BALLROOM " + (lm.ballroom ? "YES" : "NO") + " · DINING " + (lm.dining ? "YES" : "NO") + " · RETURN ~750m";
     this._route = nodes.filter(n => n.type === "hall" || n.type === "lobby" || n.type === "end");
     this._cells = cells;
     this._nodes = nodes;
     this._edges = edges;
     return true;
+  },
+
+  /* Ballroom, and dining room + kitchen. Each hangs off a spine hall on a free lattice cell, like a stub does, joined by an
+     ordinary hall. The kitchen is an annex on one of the dining room's other three walls, like a guest room is on a hall.
+     Draws come from a stream of their own, so the spine, stubs, guest rooms and both real doors do not move.
+     Every probe is checked against every other space (rects) with the same 0.4 m margin guest rooms use. */
+  placeLandmarks(c) {
+    const { nodes, rects, addNode, link, backN, fwdN } = c;
+    const T = this.T, W = this.W, S = this.S, DIRS = this.DIRS, KIT = this.KITCHEN;
+    const r = this.rng((c.seed ^ 0x4C4D4B53) >>> 0);
+    const out = { ballroom: null, dining: null };
+    const rectOf = (x0, x1, z0, z1) => ({ x0, x1, z0, z1 });
+    const clashes = (rc, o) => rc.x0 < o.x1 + 0.4 && rc.x1 > o.x0 - 0.4 && rc.z0 < o.z1 + 0.4 && rc.z1 > o.z0 - 0.4;
+    const hit = (rc, skip, extra) => {
+      for (const o of rects) { if (skip.indexOf(o.owner) < 0 && clashes(rc, o)) return true; }
+      for (const o of extra || []) { if (clashes(rc, o)) return true; }
+      return false;
+    };
+    const nodeRect = (n) => { const f = n.R / 2 + T; return rectOf(n.x - f, n.x + f, n.z - f, n.z + f); };
+    const spanRect = (a, b, d) => {
+      const g = this._spanGeom(a, b, d), hw = W / 2 + T;
+      return g.alongX ? rectOf(g.mx - g.L / 2, g.mx + g.L / 2, g.mz - hw, g.mz + hw)
+        : rectOf(g.mx - hw, g.mx + hw, g.mz - g.L / 2, g.mz + g.L / 2);
+    };
+    // the kitchen's footprint on side s of node n: across the wall by its width, out from the wall's outer face
+    const annexRect = (n, s) => {
+      const K = DIRS[s], o0 = n.R / 2 + T, o1 = o0 + KIT.d + T, hw = KIT.w / 2 + T;
+      return K[0] !== 0
+        ? rectOf(Math.min(n.x + K[0] * o0, n.x + K[0] * o1), Math.max(n.x + K[0] * o0, n.x + K[0] * o1), n.z - hw, n.z + hw)
+        : rectOf(n.x - hw, n.x + hw, Math.min(n.z + K[1] * o0, n.z + K[1] * o1), Math.max(n.z + K[1] * o0, n.z + K[1] * o1));
+    };
+    // the host junction and every hall already meeting at it: the new hall touches them at the corners, by design
+    const own = (h) => ["n" + h.id].concat(h.edges.map((id) => "e" + id));
+    const free = (h, d) => !h.open[d] && !c.cells.has((h.i + DIRS[d][0]) + "," + (h.j + DIRS[d][1]));
+    // hosts: spine halls only, never the way-back hall, and well short of the forward door
+    const hi = Math.min(backN.id, fwdN.id) - 3;
+    const candidates = (lo, top, skipId) => {
+      const list = [];
+      for (let k = lo; k <= Math.min(top, hi) && k < nodes.length; k++) {
+        const h = nodes[k];
+        if (h.type !== "hall" || h.id === skipId) continue;
+        for (let d = 0; d < 4; d++) if (free(h, d)) list.push({ h, d });
+      }
+      for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)), t = list[i]; list[i] = list[j]; list[j] = t; }
+      return list;
+    };
+
+    // ballroom: off a hall at least three spaces along, so at least four from the lobby
+    let ballHost = -1;
+    for (const { h, d } of candidates(3, 14, -1)) {
+      const D = DIRS[d];
+      const probe = { x: (h.i + D[0]) * S, z: (h.j + D[1]) * S, R: this.TYPES.ballroom.R };
+      const nr = nodeRect(probe), er = spanRect(h, probe, d);
+      if (hit(nr, []) || hit(er, own(h))) continue;
+      const b = addNode(h.i + D[0], h.j + D[1], "ballroom");
+      const e = link(h, b, d);
+      nr.owner = "n" + b.id; er.owner = "e" + e.id;
+      rects.push(nr, er);
+      out.ballroom = b; ballHost = h.id;
+      break;
+    }
+
+    // dining room, and its kitchen on one of the other three walls (seeded order). No kitchen, no dining room.
+    for (const { h, d } of candidates(2, 22, ballHost)) {
+      const D = DIRS[d];
+      const probe = { x: (h.i + D[0]) * S, z: (h.j + D[1]) * S, R: this.TYPES.dining.R };
+      const nr = nodeRect(probe), er = spanRect(h, probe, d);
+      if (hit(nr, []) || hit(er, own(h))) continue;
+      const sides = [d, (d + 1) % 4, (d + 3) % 4];            // the far wall and the two side walls: (d + 2) is the entrance
+      for (let i = sides.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)), t = sides[i]; sides[i] = sides[j]; sides[j] = t; }
+      let ks = -1, ar = null;
+      for (const s of sides) {
+        const rc = annexRect(probe, s);
+        if (hit(rc, [], [er])) continue;
+        ks = s; ar = rc; break;
+      }
+      if (ks < 0) continue;
+      const dn = addNode(h.i + D[0], h.j + D[1], "dining");
+      const e = link(h, dn, d);
+      dn.kitchen = { side: ks };
+      nr.owner = "n" + dn.id; er.owner = "e" + e.id; ar.owner = "a" + dn.id;
+      rects.push(nr, er, ar);
+      out.dining = dn;
+      break;
+    }
+    return out;
   },
 
   /* ------------------------------------------------------------------
@@ -430,7 +544,11 @@ const Level5 = {
       rug: decal(this.rugTex()),
       pic: [0, 1, 2].map((k) => std({ map: this.pictureTex(k), roughness: 0.6, metalness: 0 })),
       plaqueBack: new THREE.MeshBasicMaterial({ map: this.plaqueTex("OFFICE") }),
-      plaqueFwd: new THREE.MeshBasicMaterial({ map: this.plaqueTex("WAY ON") })
+      plaqueFwd: new THREE.MeshBasicMaterial({ map: this.plaqueTex("WAY ON") }),
+      // the three landmark signs: made once here with the other two, never per room
+      plaqueRecep: new THREE.MeshBasicMaterial({ map: this.plaqueTex("RECEPTION") }),
+      plaqueBall: new THREE.MeshBasicMaterial({ map: this.plaqueTex("BALLROOM") }),
+      plaqueDine: new THREE.MeshBasicMaterial({ map: this.plaqueTex("DINING") })
     };
     this.planeGeo = new THREE.PlaneGeometry(1, 1);
     this.box = (typeof Geometries !== "undefined" && Geometries.box) ? Geometries.box : new THREE.BoxGeometry(1, 1, 1);
@@ -457,12 +575,15 @@ const Level5 = {
     this.nodes = [];
     this.edges = [];
     this.rooms = [];
+    this.landmarks = { ballroom: null, dining: null };
+    this.ballPos = this.dinePos = null;
     this.group = null;
     this.active = false;
     this.lastKey = "";
     this.time = 0;
     this._ended = false;
     if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+    if (typeof BeastSystem !== "undefined") BeastSystem.detach();     // leaving or rebuilding Level 5 removes the Beast
     if (wasActive && typeof CameraRig !== "undefined" && CameraRig.camera && typeof CONFIG !== "undefined") {
       CameraRig.camera.far = CONFIG.cameraFar;
       CameraRig.camera.updateProjectionMatrix();
@@ -537,14 +658,42 @@ const Level5 = {
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 5 · THE HOTEL");
   },
 
-  // At most one entity: a Hound, and only on an even seed. Never a Smiler.
+  // One entity, and only one: the Beast (Entity 18). No Hound and no Smiler of Level 5's own.
+  // (`/spawn hound` still works through attachSpare below.)
   attachEntities() {
-    if (this.seed % 2 === 0) {
-      if (typeof HoundSystem !== "undefined") {
-        HoundSystem.attach({ colliders: this.colliders, cap: 1, graceSeconds: 8, graceRadius: 30, minDist: 18, maxDist: 36, seed: this.seed });
-      }
-    } else if (typeof HoundSystem !== "undefined") HoundSystem.detach();
+    if (typeof HoundSystem !== "undefined") HoundSystem.detach();
     if (typeof SmilerSystem !== "undefined") SmilerSystem.detach();
+    if (typeof BeastSystem !== "undefined") {
+      BeastSystem.attach({
+        colliders: this.colliders, cap: 1, graceSeconds: 20, minDist: 25, maxDist: 40, seed: this.seed,
+        avoid: (x, z, m) => this._inBallroom(x, z, m),
+        canSpawn: (x, z) => this._beastMaySpawn(x, z)
+      });
+    }
+  },
+
+  // The Beast never enters the ballroom: its square (inside face of the walls, plus a margin).
+  _inBallroom(x, z, m) {
+    const b = this.landmarks && this.landmarks.ballroom;
+    if (!b) return false;
+    const h = b.R / 2 + this.T + (m || 0);
+    return Math.abs(x - b.x) < h && Math.abs(z - b.z) < h;
+  },
+
+  // Where a natural Beast spawn is allowed: a space or a hall, never the lobby, never the ballroom.
+  // Guest rooms and the kitchen are not spaces or halls, so it does not spawn in them either.
+  _beastMaySpawn(x, z) {
+    for (const n of this.nodes) {
+      const h = n.R / 2 + this.T;
+      if (Math.abs(x - n.x) < h && Math.abs(z - n.z) < h) return n.type !== "lobby" && n.type !== "ballroom";
+    }
+    const hw = this.W / 2 + this.T;
+    for (const e of this.edges) {
+      const g = this.edgeGeom(e);
+      const ax = g.alongX ? g.L / 2 : hw, az = g.alongX ? hw : g.L / 2;
+      if (Math.abs(x - g.mx) < ax && Math.abs(z - g.mz) < az) return true;
+    }
+    return false;
   },
 
   // For the console: attach a Hound that never spawns by itself, so /spawn hound can place one.
@@ -699,8 +848,11 @@ const Level5 = {
     rec.edge = { ax: node.x, az: node.z, bx: node.x, bz: node.z };
     const S = this.shared, DIRS = this.DIRS, t = this.T, W = this.W;
     const R = node.R, H = node.H, cx = node.x, cz = node.z, full = R + 2 * t;
-    const lobby = node.type === "lobby";
-    const wallMat = lobby ? S.wallLobby : S.wallHall;
+    const lobby = node.type === "lobby", ball = node.type === "ballroom", dine = node.type === "dining";
+    const wallMat = (lobby || ball) ? S.wallLobby : S.wallHall;
+    // landmark entrances are cased openings, not the full hall width. Everything else is cut exactly as before.
+    const ow = (ball || dine) ? this.DOOR_W : W, oh = (ball || dine) ? this.DOOR_H : this.EH;
+    const split = this.TYPES.lobby.H;      // the lobby wall texture is one tile, 4.4 m tall
 
     // floor (top face at y 0) and ceiling slab (underside at y H)
     this.texBox(rec, S.carpet, cx, -0.1, cz, full, 0.2, full);
@@ -718,13 +870,26 @@ const Level5 = {
       const piece = (l0, l1, y0, y1) => {
         const len = l1 - l0;
         if (len < 0.01 || y1 - y0 < 0.01) return;
-        const p = at((l0 + l1) / 2, dist);
-        this.solidBox(rec, wallMat, p.x, (y0 + y1) / 2, p.z, alongZ ? t : len, y1 - y0, alongZ ? len : t);
+        const p = at((l0 + l1) / 2, dist), sx = alongZ ? t : len, sz = alongZ ? len : t;
+        if (ball && y1 > split + 0.01) {
+          // taller than one wall tile: the tile to 4.4 m, a plaster band above it. One collider for the whole piece.
+          if (y0 < split - 0.01) {
+            const cl = this.solidBox(rec, wallMat, p.x, (y0 + split) / 2, p.z, sx, split - y0, sz);
+            cl.max.y = y1;
+            this.texBox(rec, S.ceil, p.x, (split + y1) / 2, p.z, sx, y1 - split, sz);
+          } else this.solidBox(rec, S.ceil, p.x, (y0 + y1) / 2, p.z, sx, y1 - y0, sz);
+          return;
+        }
+        this.solidBox(rec, wallMat, p.x, (y0 + y1) / 2, p.z, sx, y1 - y0, sz);
       };
       if (node.open[d]) {
-        piece(L0, -W / 2, 0, H);
-        piece(-W / 2, W / 2, this.EH, H);        // header over the opening (lobby only: halls are EH tall)
-        piece(W / 2, L1, 0, H);
+        piece(L0, -ow / 2, 0, H);
+        piece(-ow / 2, ow / 2, oh, H);           // header over the opening (lobby, ballroom, dining; halls are EH tall)
+        piece(ow / 2, L1, 0, H);
+      } else if (dine && node.kitchen && node.kitchen.side === d) {
+        piece(L0, -0.55, 0, H);                  // the door through to the kitchen
+        piece(-0.55, 0.55, 2.2, H);
+        piece(0.55, L1, 0, H);
       } else {
         piece(L0, L1, 0, H);
       }
@@ -732,12 +897,102 @@ const Level5 = {
 
     if (lobby) this.dressLobby(rec, node);
     else if (node.type === "end") this.dressLanding(rec, node);
+    else if (ball) this.dressBallroom(rec, node);
+    else if (dine) this.dressDining(rec, node);
     else this.dressJunction(rec, node);
 
     if (node.backSide >= 0) this.buildDoor(rec, node, node.backSide, "back");     // only the hall two spaces in
     if (node.fwdSide >= 0) this.buildDoor(rec, node, node.fwdSide, "forward");
     this.group.add(rec.group);
     this.segments.set(key, rec);
+  },
+
+  // Chandelier: rod, ring, hub, candle bulbs, one pooled light.
+  chandelier(rec, x, z, H, base, dist, candles) {
+    const S = this.shared, chY = H - 0.9, n = candles || 8;
+    this.cyl(rec, S.brass, x, H - 0.45, z, 0.02, 0.9);
+    this.cyl(rec, S.brass, x, chY, z, 0.75, 0.05);
+    this.cyl(rec, S.brass, x, chY - 0.12, z, 0.12, 0.2);
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2;
+      this.sph(rec, S.lampOn, x + Math.cos(a) * 0.72, chY + 0.1, z + Math.sin(a) * 0.72, 0.07);
+    }
+    this.sph(rec, S.lampOn, x, chY - 0.28, z, 0.12);
+    this.addFixture(rec, x, chY - 0.1, z, "chandelier", base, dist, 0xffc890);
+  },
+
+  // A table lamp standing on a surface whose top is at y0.
+  tableLamp(rec, x, y0, z) {
+    const S = this.shared;
+    this.cyl(rec, S.brass, x, y0 + 0.1, z, 0.06, 0.2);
+    const sh = new THREE.Mesh(this.shadeGeo, S.shade);
+    sh.position.set(x, y0 + 0.34, z); sh.scale.set(0.15, 0.2, 0.15); rec.group.add(sh);
+    this.sph(rec, S.lampOn, x, y0 + 0.3, z, 0.05);
+    this.addFixture(rec, x, y0 + 0.5, z, "lamp", 1.4, 8, 0xffb070);
+  },
+
+  // A frame for dressing one space. a runs along K (toward the open side), l runs across it. K is axis-aligned, so a box
+  // sized (da, dl) lands exactly on x and z. Only the shared box/cylinder/sphere geometry and shared materials are used.
+  frame(rec, cx, cz, K) {
+    const L = this, ux = K[0], uz = K[1], vx = -uz, vz = ux;
+    const P = (a, l) => ({ x: cx + ux * a + vx * l, z: cz + uz * a + vz * l });
+    const dims = (da, dl) => ux !== 0 ? [da, dl] : [dl, da];
+    return {
+      rec, ux, uz, vx, vz, P,
+      box(mat, a, y, l, da, h, dl) { const p = P(a, l), d = dims(da, dl); return L.deco(rec, mat, p.x, y, p.z, d[0], h, d[1]); },
+      tex(mat, a, y, l, da, h, dl) { const p = P(a, l), d = dims(da, dl); return L.texBox(rec, mat, p.x, y, p.z, d[0], h, d[1]); },
+      solid(mat, a, y, l, da, h, dl) { const p = P(a, l), d = dims(da, dl); return L.solidBox(rec, mat, p.x, y, p.z, d[0], h, d[1]); },
+      col(a, l, da, dl, y0, y1) {
+        const p = P(a, l), d = dims(da, dl);
+        return L.collider(rec, p.x - d[0] / 2, y0, p.z - d[1] / 2, p.x + d[0] / 2, y1, p.z + d[1] / 2);
+      },
+      cyl(mat, a, y, l, r, h) { const p = P(a, l); return L.cyl(rec, mat, p.x, y, p.z, r, h); },
+      sph(mat, a, y, l, r) { const p = P(a, l); return L.sph(rec, mat, p.x, y, p.z, r); },
+      wall(a, l, na, nl) { const p = P(a, l); return { px: p.x, pz: p.z, nx: ux * na + vx * nl, nz: uz * na + vz * nl }; },
+      picture(a, l, na, nl, y, variant, w, h) { const q = this.wall(a, l, na, nl); L.picture(rec, q.px, q.pz, q.nx, q.nz, 0, y, variant, w, h); },
+      pendant(a, l, H, base, dist) { const p = P(a, l); L.pendant(rec, p.x, p.z, H, base, dist); },
+      lamp(a, y0, l) { const p = P(a, l); L.tableLamp(rec, p.x, y0, p.z); }
+    };
+  },
+
+  // A dining chair at (a, l) facing (fa, fl): seat block and an upholstered back on the far side. Two meshes.
+  chair(F, a, l, fa, fl) {
+    const S = this.shared;
+    F.box(S.woodLight, a, 0.22, l, 0.46, 0.44, 0.46);
+    F.box(S.fabric, a - fa * 0.2, 0.74, l - fl * 0.2, fa ? 0.06 : 0.46, 0.56, fl ? 0.06 : 0.46);
+  },
+
+  // A round table in a floor-length cloth with a candle, and four chairs (skip: a direction to leave the chair out).
+  // The collider covers the table and its chairs in one box, so nobody snags on a chair back.
+  roundTable(F, a, l, skip) {
+    const S = this.shared;
+    F.cyl(S.linen, a, 0.38, l, 0.7, 0.76);
+    F.cyl(S.blanket, a, 0.768, l, 0.42, 0.016);
+    F.cyl(S.brass, a, 0.81, l, 0.05, 0.08);
+    F.sph(S.lampOn, a, 0.88, l, 0.035);
+    for (const [da, dl] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (skip && skip[0] === da && skip[1] === dl) continue;
+      this.chair(F, a + da * 0.98, l + dl * 0.98, -da, -dl);
+    }
+    F.col(a, l, 2.5, 2.5, 0, 0.95);
+  },
+
+  // The cased opening in a landmark's wall on its open side: jambs, a head, a sign on the hall side. Double leaves for the ballroom.
+  entrance(F, node, plaque, leaves) {
+    const S = this.shared, t = this.T, hw = node.R / 2, ow = this.DOOR_W, dh = this.DOOR_H;
+    for (const sg of [-1, 1]) F.box(S.doorFrame, hw + t / 2, dh / 2, sg * (ow / 2 + 0.06), t + 0.06, dh, 0.12);
+    F.box(S.doorFrame, hw + t / 2, dh - 0.07, 0, t + 0.06, 0.14, ow + 0.24);
+    const p = F.P(hw + t, 0);
+    this.wallPlane(F.rec, plaque, p.x, p.z, F.ux, F.uz, 0, 2.78, 0.9, 0.2, 0.012);
+    if (!leaves) return;
+    // two leaves thrown back into the room, square to the wall, either side of the opening
+    for (const sg of [-1, 1]) {
+      const lc = sg * (ow / 2 - 0.04), ac = hw - 0.58;
+      F.box(S.doorLeaf, ac, 1.22, lc, 1.16, 2.4, 0.06);
+      for (const py of [0.75, 1.7]) F.box(S.doorPanel, ac, py, lc - sg * 0.04, 0.8, 0.7, 0.04);
+      F.box(S.brass, hw - 1.05, 1.15, lc - sg * 0.05, 0.1, 0.08, 0.1);
+      F.col(ac, lc, 1.16, 0.08, 0, 2.4);
+    }
   },
 
   // Coffer beams over a room: a grid of dark wood across the ceiling.
@@ -780,16 +1035,7 @@ const Level5 = {
     rec.group.add(rug);
 
     // chandelier over the middle of the room: ring, arms, candle bulbs
-    const chY = H - 0.9;
-    this.cyl(rec, S.brass, cx, H - 0.45, cz, 0.02, 0.9);
-    this.cyl(rec, S.brass, cx, chY, cz, 0.75, 0.05);
-    this.cyl(rec, S.brass, cx, chY - 0.12, cz, 0.12, 0.2);
-    for (let i = 0; i < 8; i++) {
-      const a = i / 8 * Math.PI * 2;
-      this.sph(rec, S.lampOn, cx + Math.cos(a) * 0.72, chY + 0.1, cz + Math.sin(a) * 0.72, 0.07);
-    }
-    this.sph(rec, S.lampOn, cx, chY - 0.28, cz, 0.12);
-    this.addFixture(rec, cx, chY - 0.1, cz, "chandelier", 7.5, 26, 0xffc890);
+    this.chandelier(rec, cx, cz, H, 7.5, 26, 8);
 
     // sofa against one side wall
     box(S.fabric, -1.6, 4.35, 0.225, 2.4, 0.45, 0.95);
@@ -831,6 +1077,180 @@ const Level5 = {
     const f1 = P(-R / 2 + 0.7, 0), f2 = P(R / 2 - 0.7, 0);
     this.addFixture(rec, f1.x, 2.3, f1.z, "sconce", 2.0, 11, 0xffb878);
     this.addFixture(rec, f2.x, 2.3, f2.z, "sconce", 1.8, 11, 0xffb878);
+
+    // RECEPTION. On the flank of the wall that holds the way into the hotel, so it is in view from the spawn: a pigeonhole
+    // rack on the wall, the desk facing the room, the clerk's chair between them, a sign. Nothing within 3.3 m of the spawn.
+    const rv = -3.4;
+    box(S.doorFrame, R / 2 - 0.07, rv, 1.45, 0.14, 1.0, 2.2);                // dark back of the rack
+    const rows = 4, cols = 6;
+    for (let k = 0; k <= rows; k++) box(S.woodLight, R / 2 - 0.08, rv, 0.97 + k * 0.245, 0.16, 0.04, 2.24);
+    for (let k = 0; k <= cols; k++) box(S.woodLight, R / 2 - 0.08, rv - 1.1 + k * (2.2 / cols), 1.45, 0.16, 1.0, 0.03);
+    for (let rr = 0; rr < rows; rr++) for (let cc = 0; cc < cols; cc++) {
+      if (this.hash(rr, cc, 71) > 0.4) continue;                               // a key in some of the pigeonholes
+      box(S.brass, R / 2 - 0.12, rv - 1.1 + (cc + 0.5) * (2.2 / cols), 1.0 + rr * 0.245 + 0.1, 0.03, 0.11, 0.03);
+    }
+    // the desk: wood body, marble top, panelled front, solid
+    box(S.wood, R / 2 - 1.3, rv, 0.5, 0.7, 1.0, 2.6);
+    box(S.marble, R / 2 - 1.3, rv, 1.03, 0.86, 0.06, 2.8);
+    for (const dv of [-0.9, 0, 0.9]) box(S.woodLight, R / 2 - 1.67, rv + dv, 0.5, 0.04, 0.6, 0.7);
+    col(R / 2 - 1.3, rv, 0.86, 2.8, 0, 1.06);
+    // on the desk: lamp, bell, ledger
+    const lp = P(R / 2 - 0.95, rv - 0.85);
+    this.tableLamp(rec, lp.x, 1.06, lp.z);
+    const bp = P(R / 2 - 1.55, rv + 0.5);
+    this.cyl(rec, S.brass, bp.x, 1.09, bp.z, 0.06, 0.04);
+    this.sph(rec, S.brass, bp.x, 1.12, bp.z, 0.025);
+    box(S.blanket, R / 2 - 1.4, rv - 0.3, 1.09, 0.3, 0.05, 0.4);
+    box(S.linen, R / 2 - 1.4, rv - 0.3, 1.12, 0.26, 0.02, 0.36);
+    // the clerk's chair behind it, back to the rack
+    box(S.woodLight, R / 2 - 0.5, rv, 0.22, 0.5, 0.44, 0.5);
+    box(S.fabric, R / 2 - 0.5, rv, 0.47, 0.46, 0.08, 0.46);
+    box(S.woodLight, R / 2 - 0.28, rv, 0.78, 0.06, 0.55, 0.46);
+    col(R / 2 - 0.5, rv, 0.5, 0.5, 0, 0.95);
+    // the sign, over the rack
+    const rs = wall(R / 2, rv, -1, 0);
+    this.wallPlane(rec, S.plaqueRecep, rs.px, rs.pz, rs.nx, rs.nz, 0, 2.5, 0.9, 0.225, 0.01);
+  },
+
+  // The ballroom: 12 x 12 m, 5.6 m high, cased double doors on its one open side. A raised parquet dance floor in a brass
+  // inlay, a stage with a piano and drapes at the far end, tables down both sides, pilasters, three chandeliers.
+  // a runs from the middle toward the doors (+6), l across.
+  dressBallroom(rec, node) {
+    const S = this.shared, DIRS = this.DIRS;
+    const R = node.R, H = node.H, cx = node.x, cz = node.z, h = R / 2;
+    const F = this.frame(rec, cx, cz, DIRS[node.open.indexOf(true)]);
+    this.coffers(rec, cx, cz, R, H, 3.0);
+    for (const sg of [-1, 1]) {                                   // cornice
+      F.box(S.beam, sg * (h - 0.11), H - 0.13, 0, 0.22, 0.26, R);
+      F.box(S.beam, 0, H - 0.13, sg * (h - 0.11), R, 0.26, 0.22);
+    }
+    this.entrance(F, node, S.plaqueBall, true);
+
+    // dance floor: parquet a few cm proud of the carpet (visual only), brass inlay round it
+    F.box(S.woodLight, 0, 0.02, 0, 7.0, 0.04, 6.0);
+    for (const sg of [-1, 1]) {
+      F.box(S.brass, sg * 3.47, 0.04, 0, 0.06, 0.016, 6.06);
+      F.box(S.brass, 0, 0.04, sg * 2.97, 7.0, 0.016, 0.06);
+    }
+    // stage across the far wall: wood body, trim, brass edge. 0.33 m up: a jump, not a walk.
+    F.box(S.wood, -4.99, 0.165, 0, 2.0, 0.33, 7.0);
+    F.box(S.woodLight, -4.99, 0.318, 0, 2.04, 0.03, 7.04);
+    F.box(S.brass, -3.98, 0.2, 0, 0.04, 0.06, 7.0);
+    F.col(-4.99, 0, 2.0, 7.0, 0, 0.33);
+    // piano on the stage, stool, drapes and valance behind
+    F.box(S.wood, -5.6, 0.955, -1.7, 0.7, 1.25, 1.5);
+    F.box(S.linen, -5.2, 1.05, -1.7, 0.16, 0.04, 1.4);
+    F.box(S.fabric, -4.6, 0.555, -1.7, 0.4, 0.45, 0.4);
+    F.col(-5.55, -1.7, 0.8, 1.6, 0.33, 1.6);
+    for (const sg of [-1, 1]) F.box(S.blanket, -h + 0.06, 2.5, sg * 3.1, 0.12, 4.4, 1.2);
+    F.box(S.blanket, -h + 0.06, 4.6, 0, 0.12, 0.6, 7.4);
+    for (const sg of [-1, 1]) {                                   // stage sconces, and their pooled light
+      F.box(S.brass, -h + 0.06, 2.6, sg * 4.2, 0.12, 0.3, 0.14);
+      F.box(S.lampOn, -h + 0.1, 2.83, sg * 4.2, 0.1, 0.12, 0.1);
+      const p = F.P(-h + 0.7, sg * 4.2);
+      this.addFixture(rec, p.x, 2.7, p.z, "sconce", 2.2, 12, 0xffb878);
+    }
+    // chandeliers down the middle
+    for (const a of [-3.0, 0, 3.0]) { const p = F.P(a, 0); this.chandelier(rec, p.x, p.z, H, a === 0 ? 8 : 6.5, 24, 6); }
+    // tables down both sides
+    for (const sg of [-1, 1]) for (const a of [-1.6, 2.4]) this.roundTable(F, a, sg * 4.3);
+    // pilasters and pictures along the side walls
+    for (const sg of [-1, 1]) {
+      for (const a of [-4.2, -1.4, 1.4, 4.2]) F.box(S.beam, a, 2.15, sg * (h - 0.07), 0.5, 4.3, 0.14);
+      [-2.8, 0, 2.8].forEach((a, i) => F.picture(a, sg * h, 0, -sg, 2.7, i + (sg > 0 ? 1 : 0), 1.4, 1.0));
+    }
+  },
+
+  // The dining room: 9 x 9 m, four round tables with four chairs each leaving a cross of aisle, a sideboard, pendants over the
+  // tables. A door in one of the other three walls leads to the kitchen.
+  dressDining(rec, node) {
+    const S = this.shared, DIRS = this.DIRS;
+    const R = node.R, H = node.H, cx = node.x, cz = node.z, h = R / 2;
+    const F = this.frame(rec, cx, cz, DIRS[node.open.indexOf(true)]);
+    const KK = DIRS[node.kitchen.side];
+    const ka = KK[0] * F.ux + KK[1] * F.uz, kl = KK[0] * F.vx + KK[1] * F.vz;   // which wall, in (a, l)
+    this.coffers(rec, cx, cz, R, H, 3.0);
+    this.entrance(F, node, S.plaqueDine, false);
+    for (const [a, l] of [[-2.4, -2.4], [-2.4, 2.4], [2.4, -2.4], [2.4, 2.4]]) {
+      this.roundTable(F, a, l);
+      F.pendant(a, l, H, 3.0, 14);
+    }
+    // sideboard centred on the first of far / left / right that is not the kitchen's wall
+    let sw = null;
+    for (const w of [[-1, 0], [0, 1], [0, -1]]) if (!(w[0] === ka && w[1] === kl)) { sw = w; break; }
+    const sa = sw[0] * (h - 0.27), sl = sw[1] * (h - 0.27), alongL = sw[0] !== 0;
+    const da = alongL ? 0.5 : 2.4, dl = alongL ? 2.4 : 0.5;
+    F.box(S.wood, sa, 0.45, sl, da, 0.9, dl);
+    F.box(S.woodLight, sa, 0.92, sl, da + 0.04, 0.04, dl + 0.04);
+    F.col(sa, sl, da, dl, 0, 0.95);
+    F.lamp(sa + (alongL ? 0 : 0.8), 0.94, sl + (alongL ? 0.8 : 0));
+    // pictures: one over the sideboard, two on each other wall, kept off the kitchen door
+    let v = 0;
+    for (const w of [[-1, 0], [0, 1], [0, -1], [1, 0]]) {
+      const isSide = w[0] === sw[0] && w[1] === sw[1];
+      const offs = isSide ? [0] : [-2.6, 2.6];
+      for (const o of offs) {
+        const a = w[0] !== 0 ? w[0] * h : o, l = w[0] !== 0 ? o : w[1] * h;
+        F.picture(a, l, -w[0], -w[1], isSide ? 1.95 : 1.9, v++, isSide ? 1.3 : 0.9, isSide ? 0.9 : 0.65);
+      }
+    }
+    this.buildKitchen(rec, node);
+  },
+
+  // The kitchen: an annex on the dining room's wall, 6 m across and 5 m out. Marble floor and tile band, a range with a hood,
+  // a prep island with a pot rack, a counter with a sink, a cabinet with shelves. The door is open against its near wall.
+  buildKitchen(rec, node) {
+    const S = this.shared, t = this.T, H = node.H, KIT = this.KITCHEN;
+    const F = this.frame(rec, node.x, node.z, this.DIRS[node.kitchen.side]);
+    const a0 = node.R / 2 + t, kd = KIT.d, kw = KIT.w, a1 = a0 + kd, hl = kw / 2, full = kw + 2 * t, len = kd + t;
+    const ac = a0 + len / 2;
+    F.tex(S.marble, ac, -0.1, 0, len, 0.2, full);
+    F.col(ac, 0, len, full, -0.5, 0.02);
+    F.tex(S.ceil, ac, H + 0.1, 0, len, 0.2, full);
+    F.col(ac, 0, len, full, H, H + 0.2);
+    for (const sg of [-1, 1]) F.solid(S.wallHall, a0 + kd / 2, H / 2, sg * (hl + t / 2), kd, H, t);
+    F.solid(S.wallHall, a1 + t / 2, H / 2, 0, t, H, full);
+    // door: frame in the dining wall, leaf open against the kitchen side
+    for (const sg of [-1, 1]) F.box(S.doorFrame, node.R / 2 + t / 2, 1.12, sg * 0.6, t + 0.04, 2.24, 0.1);
+    F.box(S.doorFrame, node.R / 2 + t / 2, 2.25, 0, t + 0.04, 0.1, 1.3);
+    F.box(S.doorLeaf, a0 + 0.5, 1.04, -0.72, 0.95, 2.08, 0.06);
+    // tile band
+    for (const sg of [-1, 1]) {
+      F.box(S.marble, a0 + kd / 2, 0.75, sg * (hl - 0.02), kd, 1.5, 0.04);
+      F.box(S.marble, a0 + 0.02, 0.75, sg * 1.83, 0.04, 1.5, 2.34);
+    }
+    F.box(S.marble, a1 - 0.02, 0.75, 0, 0.04, 1.5, kw);
+    // range on the far wall, hood and flue
+    F.box(S.black, a1 - 0.4, 0.45, 0, 0.75, 0.9, 1.7);
+    F.col(a1 - 0.4, 0, 0.75, 1.7, 0, 0.92);
+    for (const [da, dl] of [[-0.17, -0.45], [-0.17, 0.45], [0.17, -0.45], [0.17, 0.45]]) F.cyl(S.brass, a1 - 0.4 + da, 0.92, dl, 0.1, 0.02);
+    F.cyl(S.brass, a1 - 0.57, 1.02, -0.45, 0.13, 0.2);
+    F.cyl(S.brass, a1 - 0.23, 1.0, 0.45, 0.11, 0.16);
+    F.box(S.brass, a1 - 0.35, 2.1, 0, 0.8, 0.5, 1.8);
+    F.box(S.brass, a1 - 0.2, 2.675, 0, 0.35, 0.65, 0.4);
+    // prep island
+    F.box(S.wood, a0 + 2.1, 0.44, 0, 0.9, 0.88, 2.2);
+    F.box(S.marble, a0 + 2.1, 0.905, 0, 0.98, 0.05, 2.3);
+    F.box(S.woodLight, a0 + 2.1, 0.94, 0.5, 0.35, 0.03, 0.5);
+    F.col(a0 + 2.1, 0, 0.98, 2.3, 0, 0.93);
+    F.box(S.brass, a0 + 2.1, 2.3, 0, 0.05, 0.05, 1.8);
+    for (const l of [-0.6, 0, 0.6]) { F.cyl(S.brass, a0 + 2.1, 2.2, l, 0.01, 0.2); F.cyl(S.brass, a0 + 2.1, 2.02, l, 0.09, 0.16); }
+    // counter and sink down the left wall
+    F.box(S.wood, a0 + 3.05, 0.44, -(hl - 0.33), 3.7, 0.88, 0.66);
+    F.box(S.marble, a0 + 3.05, 0.905, -(hl - 0.36), 3.76, 0.05, 0.72);
+    F.box(S.black, a0 + 2.2, 0.935, -(hl - 0.36), 0.8, 0.012, 0.5);
+    F.cyl(S.brass, a0 + 2.2, 1.08, -(hl - 0.05), 0.02, 0.3);
+    F.cyl(S.brass, a0 + 4.2, 1.0, -(hl - 0.36), 0.13, 0.16);
+    F.col(a0 + 3.05, -(hl - 0.36), 3.76, 0.72, 0, 0.93);
+    // cabinet and two shelves of pots and plates down the right wall
+    F.box(S.wood, a0 + 3.0, 0.45, hl - 0.25, 3.2, 0.9, 0.5);
+    F.box(S.woodLight, a0 + 3.0, 0.92, hl - 0.27, 3.24, 0.04, 0.54);
+    F.col(a0 + 3.0, hl - 0.27, 3.24, 0.54, 0, 0.95);
+    for (const y of [1.55, 2.0]) F.box(S.wood, a0 + 3.0, y, hl - 0.17, 3.2, 0.04, 0.3);
+    for (let i = 0; i < 3; i++) F.cyl(S.brass, a0 + 1.9 + i * 0.5, 1.67, hl - 0.17, 0.12, 0.2);
+    for (let i = 0; i < 3; i++) F.cyl(S.linen, a0 + 3.4 + i * 0.4, 2.07, hl - 0.17, 0.14, 0.1);
+    // one pendant between the island and the range
+    F.pendant(a0 + 3.7, 0, H, 3.0, 14);
   },
 
   // The landing at the far end: a small square room, the way on straight ahead.
@@ -1051,10 +1471,12 @@ const Level5 = {
     // door frame on the hall wall, and the leaf swung open against the room's near wall
     for (const sp of [-1, 1]) ebox(S.doorFrame, sp * 0.6, 1.12, s * (W / 2 + t / 2), 0.1, 2.24, t + 0.04);
     ebox(S.doorFrame, 0, 2.25, s * (W / 2 + t / 2), 1.3, 0.1, t + 0.04);
-    ebox(S.doorLeaf, -0.74, 1.04, s * (q0 + 0.45), 0.06, 2.08, 0.95);
+    // one visual variant, from the seed: the bed on the other side, and sometimes a curtained window on the far wall
+    const mir = this.hash(edge.id, 8, 31) < 0.5 ? -1 : 1, win = this.hash(edge.id, 9, 32) < 0.5;
+    ebox(S.doorLeaf, -0.74 * mir, 1.04, s * (q0 + 0.45), 0.06, 2.08, 0.95);
 
-    // bed: head to the far wall, along the left side
-    const bp = -1.2, bq = q0 + 3.85;
+    // bed: head to the far wall, along the left side (or the right, when mirrored)
+    const bp = -1.2 * mir, bq = q0 + 3.85;
     esolid(S.wood, bp, 0.275, s * bq, 1.5, 0.35, 2.1);      // frame + collider
     const lastC = rec.colliders[rec.colliders.length - 1];
     lastC.min.y = 0; lastC.max.y = 0.66;
@@ -1073,6 +1495,13 @@ const Level5 = {
     sh.position.set(lc.x, 0.82, lc.z); sh.scale.set(0.15, 0.2, 0.15); rec.group.add(sh);
     this.sph(rec, S.lampOn, lc.x, 0.78, lc.z, 0.05);
     this.addFixture(rec, lc.x, 0.95, lc.z, "lamp", 1.5, 9, 0xffb070);
+    if (win) {
+      const wp = 1.5 * mir, wq = s * (q0 + D - 0.03);
+      ebox(S.doorFrame, wp, 1.55, wq, 1.3, 1.5, 0.06);
+      ebox(S.black, wp, 1.55, s * (q0 + D - 0.065), 1.1, 1.3, 0.03);
+      ebox(S.wood, wp, 0.78, s * (q0 + D - 0.1), 1.45, 0.05, 0.16);
+      for (const cp of [-0.62, 0.62]) ebox(S.fabric, wp + cp, 1.5, s * (q0 + D - 0.1), 0.34, 1.75, 0.1);
+    }
     // a picture over the bed
     const fc = E(bp, s * (q0 + D));
     const alongX = this.edgeGeom(edge).alongX;
@@ -1192,6 +1621,7 @@ const Level5 = {
     if (this._ended) return;
     this._ended = true;
     GameState.exitReached = true;
+    if (typeof BeastSystem !== "undefined") BeastSystem.detach();
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 5 CLEARED");
     if (typeof Game !== "undefined" && Game.complete) Game.complete();
   },
@@ -1224,6 +1654,7 @@ const Level5 = {
         d.gone = true;
         if (d.kind === "back") {
           const sd = this.seed;
+          if (typeof BeastSystem !== "undefined") BeastSystem.detach();
           setTimeout(() => { if (typeof Level4 !== "undefined") Level4.enter(sd, 5); }, 0);
         } else {
           this.finish();
