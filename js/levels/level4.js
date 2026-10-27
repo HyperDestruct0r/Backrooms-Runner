@@ -49,7 +49,7 @@ const Level4 = {
   fixtures: [],
   taken: {},
   // Tunable look. Rooms are lit mostly by ambient plus window light.
-  look: { ambient: 1.2, hemi: 0.75, poolSize: 10, fog: 0x808890, fogNear: 10, fogFar: 72 },
+  look: { ambient: 0.75, hemi: 0.5, poolSize: 10, fog: 0x70767c, fogNear: 7, fogFar: 50 },
   lastKey: "",
   infoText: "",
   time: 0,
