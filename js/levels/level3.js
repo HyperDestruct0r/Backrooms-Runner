@@ -50,7 +50,7 @@ const Level3 = {
   poolFx: [],
   fixtures: [],
   vents: [],
-  look: { ambient: 1.05, hemi: 0.65, poolSize: 10, fog: 0x221c12, fogNear: 8, fogFar: 60 },
+  look: { ambient: 0.8, hemi: 0.5, poolSize: 10, fog: 0x1a140c, fogNear: 6, fogFar: 46 },
   lastKey: "",
   infoText: "",
   time: 0,
