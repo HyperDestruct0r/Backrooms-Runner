@@ -155,6 +155,7 @@ const DevCommands = {
       if (cmd === "level3") return this.level(["3"].concat(args));
       if (cmd === "level4") return this.level(["4"].concat(args));
       if (cmd === "level5") return this.level(["5"].concat(args));
+      if (cmd === "level6") return this.level(["6"].concat(args));
       if (cmd === "spawn") return this.spawn(args);
       if (cmd === "despawn") return this.despawn(args);
       if (cmd === "give") return this.give(args);
@@ -184,17 +185,19 @@ const DevCommands = {
     this.toast("LEVEL 3 · LEVEL3 · LEVEL 3 RESET · LEVEL 3 SEED N · LEVEL 3 INFO · LEVEL 3 EXIT · LEVEL 3 POWER");
     this.toast("LEVEL 4 · LEVEL4 · LEVEL 4 RESET · LEVEL 4 SEED N · LEVEL 4 INFO · LEVEL 4 EXIT");
     this.toast("LEVEL 5 · LEVEL5 · LEVEL 5 RESET · LEVEL 5 SEED N · LEVEL 5 INFO · LEVEL 5 EXIT · LEVEL 5 BACK");
+    this.toast("LEVEL 6 · LEVEL6 · LEVEL 6 RESET · LEVEL 6 SEED N · LEVEL 6 INFO · LEVEL 6 EXIT · LEVEL 6 BACK");
   },
 
   level(args) {
     const n = parseInt(args[0], 10);
-    if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0, 1, 2, 3, 4, OR 5");
+    if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0, 1, 2, 3, 4, 5, OR 6");
     if (n === 0) return this.goLevel0();
     if (n === 1) return this.goLevel1();
     if (n === 2) return this.level2(args.slice(1));
     if (n === 3) return this.level3(args.slice(1));
     if (n === 4) return this.level4(args.slice(1));
     if (n === 5) return this.level5(args.slice(1));
+    if (n === 6) return this.level6(args.slice(1));
     this.toast("LEVEL " + n + " IS NOT AVAILABLE");
   },
   level2(args) {
@@ -347,6 +350,36 @@ const DevCommands = {
     if (sub) return this.toast("USAGE: LEVEL 5, RESET, SEED, INFO, EXIT, BACK, BALLROOM, DINING");
     Level5.enter((GameState.seed || 1) >>> 0);
     return this.toast("ENTERED LEVEL 5");
+  },
+  level6(args) {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "info") {
+      if (!Level6.active) return this.toast("NOT IN LEVEL 6");
+      return this.toast("SEED " + Level6.seed + " · " + Level6.infoText);
+    }
+    if (sub === "exit" || sub === "back") {
+      const pos = sub === "exit" ? Level6.exitPos : Level6.backPos;
+      if (!Level6.active || !pos) return this.toast("NO LEVEL 6 " + sub.toUpperCase() + " DOOR");
+      Player.position.copy(pos);
+      Player.velocity.set(0, 0, 0);
+      return this.toast("TELEPORTED TO LEVEL 6 " + sub.toUpperCase() + " DOOR");
+    }
+    if (sub === "reset") {
+      const next = ((GameState.seed || 1) + 1) >>> 0;
+      GameState.seed = next;
+      Level6.enter(next);
+      return this.toast("LEVEL 6 RESET · SEED " + next);
+    }
+    if (sub === "seed") {
+      const n = Number(args[1]);
+      if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 6 SEED 12345");
+      GameState.seed = n >>> 0;
+      Level6.enter(GameState.seed);
+      return this.toast("LEVEL 6 · SEED " + (GameState.seed >>> 0));
+    }
+    if (sub) return this.toast("USAGE: LEVEL 6, RESET, SEED, INFO, EXIT, BACK");
+    Level6.enter((GameState.seed || 1) >>> 0);
+    return this.toast("ENTERED LEVEL 6");
   },
   goLevel3() {
     Level3.enter((GameState.seed || 1) >>> 0);
@@ -579,12 +612,14 @@ const DevCommands = {
     else if (GameState.level === 3) Level3.enter(GameState.seed);
     else if (GameState.level === 4) Level4.enter(GameState.seed);
     else if (GameState.level === 5) Level5.enter(GameState.seed);
+    else if (GameState.level === 6) Level6.enter(GameState.seed);
     else this.goLevel0();
     this.toast("SEEDED " + (GameState.seed >>> 0));
   },
   exitInfo() {
     let target = null;
-    if (GameState.level === 5 && typeof Level5 !== "undefined" && Level5.exitPos) target = Level5.exitPos;
+    if (GameState.level === 6 && typeof Level6 !== "undefined" && Level6.exitPos) target = Level6.exitPos;
+    else if (GameState.level === 5 && typeof Level5 !== "undefined" && Level5.exitPos) target = Level5.exitPos;
     else if (GameState.level === 4 && typeof Level4 !== "undefined" && Level4.exitPos) target = Level4.exitPos;
     else if (GameState.level === 3 && typeof Level3 !== "undefined" && Level3.exitPos) target = Level3.exitPos;
     else if (GameState.level === 2 && typeof Level2 !== "undefined" && Level2.exitPos) target = Level2.exitPos;
