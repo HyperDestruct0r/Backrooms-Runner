@@ -28,3 +28,38 @@
     }
     @keyframes loadingPulse { 0%,100% { opacity:.45 } 50% { opacity:1 } }
     .loading-status.pulse { animation: loadingPulse 1.2s ease-in-out infinite; }
+
+#void-overlay {
+  position: fixed; inset: 0; z-index: 120; display: none;
+  align-items: center; justify-content: center; overflow: hidden;
+  background: #000; color: #efe6b0;
+  font-family: Consolas, "Segoe UI", monospace;
+}
+#void-overlay.is-on { display: flex; }
+.void-field { position: absolute; inset: 0; }
+.void-frag {
+  position: absolute; width: 28vw; height: 16vh; opacity: 0.35;
+  filter: blur(6px); border-radius: 2px;
+}
+.void-frag.f1 { left: -10%; top: 18%; background: #d6c36a; animation: voidDrift 1.6s linear infinite; }
+.void-frag.f2 { left: 60%; top: 8%; background: #6a6e72; animation: voidDrift 1.9s linear infinite reverse; }
+.void-frag.f3 { left: 20%; top: 62%; background: #8a7a4a; animation: voidDrift 1.4s linear infinite; }
+.void-frag.f4 { left: 70%; top: 55%; background: #3a3a3a; animation: voidDrift 2.1s linear infinite reverse; }
+.void-frag.f5 { left: 40%; top: 30%; background: #c4b46a; animation: voidDrift 1.7s linear infinite; }
+@keyframes voidDrift {
+  from { transform: translate3d(0, 8vh, 0) scale(0.8); opacity: 0; }
+  30% { opacity: 0.4; }
+  to { transform: translate3d(18vw, -16vh, 0) scale(1.2); opacity: 0; }
+}
+.void-line {
+  position: relative; z-index: 2; letter-spacing: .28em; font-size: clamp(16px, 3vw, 24px);
+  opacity: 0.7;
+}
+.void-resolve {
+  position: absolute; width: 12vmin; height: 12vmin; border-radius: 50%;
+  background: radial-gradient(circle, rgba(239,230,176,.55), rgba(0,0,0,0) 70%);
+  transform: scale(0.2); opacity: 0; z-index: 2;
+}
+#void-overlay.is-out .void-resolve { animation: voidResolve .45s ease forwards; }
+#void-overlay.is-out .void-line { opacity: 0; transition: opacity .3s; }
+@keyframes voidResolve { to { transform: scale(18); opacity: 1; } }
