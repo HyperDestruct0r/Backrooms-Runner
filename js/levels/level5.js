@@ -1635,7 +1635,7 @@ const Level5 = {
     const sd = this.seed;
     if (typeof BeastSystem !== "undefined") BeastSystem.detach();
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 5 CLEARED");
-    if (typeof Level6 !== "undefined" && Level6.enter) setTimeout(() => Level6.enter(sd, 5), 0);
+    if (typeof Level6 !== "undefined" && Level6.enter) setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => Level6.enter(sd, 5)); else Level6.enter(sd, 5); }, 0);
     else {
       GameState.exitReached = true;
       if (typeof Game !== "undefined" && Game.complete) Game.complete();
@@ -1671,7 +1671,7 @@ const Level5 = {
         if (d.kind === "back") {
           const sd = this.seed;
           if (typeof BeastSystem !== "undefined") BeastSystem.detach();
-          setTimeout(() => { if (typeof Level4 !== "undefined") Level4.enter(sd, 5); }, 0);
+          setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => { if (typeof Level4 !== "undefined") Level4.enter(sd, 5); }); else if (typeof Level4 !== "undefined") Level4.enter(sd, 5); }, 0);
         } else {
           this.finish();
         }
