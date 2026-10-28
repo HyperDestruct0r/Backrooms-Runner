@@ -1220,11 +1220,11 @@ const Level4 = {
         d.gone = true;
         if (d.kind === "back") {
           const sd = this.seed;
-          setTimeout(() => { if (typeof Level3 !== "undefined") Level3.enter(sd, 4); }, 0);
+          setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => { if (typeof Level3 !== "undefined") Level3.enter(sd, 4); }); else if (typeof Level3 !== "undefined") Level3.enter(sd, 4); }, 0);
         } else if (typeof Level5 !== "undefined" && Level5.enter) {
           // the forward door now leads on to Level 5; finish() is only the fallback if it is missing
           const sd = this.seed;
-          setTimeout(() => Level5.enter(sd, 4), 0);
+          setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => Level5.enter(sd, 4)); else Level5.enter(sd, 4); }, 0);
         } else {
           this.finish();
         }
