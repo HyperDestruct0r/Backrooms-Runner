@@ -1324,8 +1324,14 @@ const Stairwell = {
       this.pendingTransitionTimer=null;
       if (transitionToken !== this.transitionToken || GameState.phase !== 'playing' || runId !== GameState.runId) return;
       try{
-        if(typeof Level1!=='undefined') Level1.enter(exitSeed,exitState);
-        if(typeof Level1==='undefined' || !Level1.active) throw new Error('Level1.enter() completed without activating Level 1');
+        const go = () => {
+          if(typeof Level1!=='undefined') Level1.enter(exitSeed,exitState);
+          if(typeof Level1==='undefined' || !Level1.active) throw new Error('Level1.enter() completed without activating Level 1');
+        };
+        if (typeof VoidTransition !== 'undefined') {
+          const elev=document.getElementById('elevator-sequence'); if(elev) elev.style.display='none';
+          VoidTransition.then(go);
+        } else go();
         if (GameState.phase !== 'playing' || transitionToken !== this.transitionToken || runId !== GameState.runId) return;
         const level1Floor = (typeof Level1 !== 'undefined') ? Level1.baseY : 0;
         Player.position.set(exitState.origin.x-0.95*exitState.fx,level1Floor,exitState.origin.z-0.95*exitState.fz);
