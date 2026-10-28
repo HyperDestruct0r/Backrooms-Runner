@@ -628,6 +628,8 @@ function isGameplayKey(code) {
 }
 
 window.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   if (typeof DevCommands !== "undefined" && DevCommands.open) return;
   if (e.code === "ControlLeft" || e.code === "ControlRight") Input.ctrlDown = true;
   Input.keys[e.code] = true;
