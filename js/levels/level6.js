@@ -458,7 +458,7 @@ const Level6 = {
       d.gone = true;
       if (d.kind === "back") {
         const sd = this.seed;
-        setTimeout(() => { if (typeof Level5 !== "undefined") Level5.enter(sd, 6); }, 0);
+        setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => { if (typeof Level5 !== "undefined") Level5.enter(sd, 6); }); else if (typeof Level5 !== "undefined") Level5.enter(sd, 6); }, 0);
       } else this.finish();
     }
 
