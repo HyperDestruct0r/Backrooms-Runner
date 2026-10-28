@@ -1089,7 +1089,7 @@ const Level3 = {
     if (best.type === "back") {
       if (typeof HUD !== "undefined") HUD.toast("LEVEL 2");
       const sd = this.seed;
-      setTimeout(() => { if (typeof Level2 !== "undefined") Level2.enter(sd, 3); }, 0);
+      setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => { if (typeof Level2 !== "undefined") Level2.enter(sd, 3); }); else if (typeof Level2 !== "undefined") Level2.enter(sd, 3); }, 0);
       return true;
     }
     if (best.type === "gate") {
@@ -1126,7 +1126,7 @@ const Level3 = {
     this._arrived = true;
     if (typeof Level4 !== "undefined") {
       const sd = this.seed;
-      setTimeout(() => Level4.enter(sd, 3), 0);
+      setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => Level4.enter(sd, 3)); else Level4.enter(sd, 3); }, 0);
       return;
     }
     GameState.exitReached = true;
