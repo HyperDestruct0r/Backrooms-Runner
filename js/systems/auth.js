@@ -5,8 +5,8 @@
 "use strict";
 
 const SUPABASE_CONFIG = {
-  url: "lccastfpjhjvcndbcwzy.supabase.co",
-  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjY2FzdGZwamhqdmNuZGJjd3p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzNjg2NTEsImV4cCI6MjEwMzk0NDY1MX0.AO6-wVPLLZw_Ztsdg5oYEeJffIOI4RnFbtS4SwNTTbk"
+  url: "https://xinnkkbdljvvbksygtel.supabase.co",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhpbm5ra2JkbGp2dmJrc3lndGVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxNDI4NzIsImV4cCI6MjEwODcxODg3Mn0.0d7vYAeJRsZQ4QkI3n-aImMq1whXw0o-L8aowWf3bG8"
 };
 
 const AuthSystem = {
