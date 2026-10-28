@@ -216,18 +216,18 @@ const DevCommands = {
     if (sub === "reset") {
       const next = ((GameState.seed || 1) + 1) >>> 0;
       GameState.seed = next;
-      Level2.enter(next);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level2.enter(next)); else Level2.enter(next);
       return this.toast("LEVEL 2 RESET · SEED " + next);
     }
     if (sub === "seed") {
       const n = Number(args[1]);
       if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 2 SEED 12345");
       GameState.seed = n >>> 0;
-      Level2.enter(GameState.seed);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level2.enter(GameState.seed)); else Level2.enter(GameState.seed);
       return this.toast("LEVEL 2 · SEED " + (GameState.seed >>> 0));
     }
     if (sub && sub !== "tps") return this.toast("USAGE: LEVEL 2, LEVEL 2 TPS, RESET, SEED, INFO, EXIT");
-    Level2.enter((GameState.seed || 1) >>> 0);
+    if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level2.enter((GameState.seed || 1) >>> 0)); else Level2.enter((GameState.seed || 1) >>> 0);
     return this.toast(sub === "tps" ? "LEVEL 2 · TEST SPAWN" : "ENTERED LEVEL 2");
   },
   level3(args) {
@@ -258,18 +258,18 @@ const DevCommands = {
     if (sub === "reset") {
       const next = ((GameState.seed || 1) + 1) >>> 0;
       GameState.seed = next;
-      Level3.enter(next);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level3.enter(next)); else Level3.enter(next);
       return this.toast("LEVEL 3 RESET · SEED " + next);
     }
     if (sub === "seed") {
       const n = Number(args[1]);
       if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 3 SEED 12345");
       GameState.seed = n >>> 0;
-      Level3.enter(GameState.seed);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level3.enter(GameState.seed)); else Level3.enter(GameState.seed);
       return this.toast("LEVEL 3 · SEED " + (GameState.seed >>> 0));
     }
     if (sub) return this.toast("USAGE: LEVEL 3, RESET, SEED, INFO, EXIT, BUTTON, POWER");
-    Level3.enter((GameState.seed || 1) >>> 0);
+    if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level3.enter((GameState.seed || 1) >>> 0)); else Level3.enter((GameState.seed || 1) >>> 0);
     return this.toast("ENTERED LEVEL 3");
   },
   level4(args) {
@@ -289,18 +289,18 @@ const DevCommands = {
     if (sub === "reset") {
       const next = ((GameState.seed || 1) + 1) >>> 0;
       GameState.seed = next;
-      Level4.enter(next);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level4.enter(next)); else Level4.enter(next);
       return this.toast("LEVEL 4 RESET · SEED " + next);
     }
     if (sub === "seed") {
       const n = Number(args[1]);
       if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 4 SEED 12345");
       GameState.seed = n >>> 0;
-      Level4.enter(GameState.seed);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level4.enter(GameState.seed)); else Level4.enter(GameState.seed);
       return this.toast("LEVEL 4 · SEED " + (GameState.seed >>> 0));
     }
     if (sub) return this.toast("USAGE: LEVEL 4, RESET, SEED, INFO, EXIT");
-    Level4.enter((GameState.seed || 1) >>> 0);
+    if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level4.enter((GameState.seed || 1) >>> 0)); else Level4.enter((GameState.seed || 1) >>> 0);
     return this.toast("ENTERED LEVEL 4");
   },
   level5(args) {
@@ -337,18 +337,18 @@ const DevCommands = {
     if (sub === "reset") {
       const next = ((GameState.seed || 1) + 1) >>> 0;
       GameState.seed = next;
-      Level5.enter(next);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level5.enter(next)); else Level5.enter(next);
       return this.toast("LEVEL 5 RESET · SEED " + next);
     }
     if (sub === "seed") {
       const n = Number(args[1]);
       if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 5 SEED 12345");
       GameState.seed = n >>> 0;
-      Level5.enter(GameState.seed);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level5.enter(GameState.seed)); else Level5.enter(GameState.seed);
       return this.toast("LEVEL 5 · SEED " + (GameState.seed >>> 0));
     }
     if (sub) return this.toast("USAGE: LEVEL 5, RESET, SEED, INFO, EXIT, BACK, BALLROOM, DINING");
-    Level5.enter((GameState.seed || 1) >>> 0);
+    if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level5.enter((GameState.seed || 1) >>> 0)); else Level5.enter((GameState.seed || 1) >>> 0);
     return this.toast("ENTERED LEVEL 5");
   },
   level6(args) {
@@ -367,22 +367,22 @@ const DevCommands = {
     if (sub === "reset") {
       const next = ((GameState.seed || 1) + 1) >>> 0;
       GameState.seed = next;
-      Level6.enter(next);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level6.enter(next)); else Level6.enter(next);
       return this.toast("LEVEL 6 RESET · SEED " + next);
     }
     if (sub === "seed") {
       const n = Number(args[1]);
       if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 6 SEED 12345");
       GameState.seed = n >>> 0;
-      Level6.enter(GameState.seed);
+      if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level6.enter(GameState.seed)); else Level6.enter(GameState.seed);
       return this.toast("LEVEL 6 · SEED " + (GameState.seed >>> 0));
     }
     if (sub) return this.toast("USAGE: LEVEL 6, RESET, SEED, INFO, EXIT, BACK");
-    Level6.enter((GameState.seed || 1) >>> 0);
+    if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level6.enter((GameState.seed || 1) >>> 0)); else Level6.enter((GameState.seed || 1) >>> 0);
     return this.toast("ENTERED LEVEL 6");
   },
   goLevel3() {
-    Level3.enter((GameState.seed || 1) >>> 0);
+    if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level3.enter((GameState.seed || 1) >>> 0)); else Level3.enter((GameState.seed || 1) >>> 0);
   },
   goLevel0() {
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
@@ -410,7 +410,7 @@ const DevCommands = {
     if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
     const origin = { x: Player.position.x, z: Player.position.z };
     const fake = { origin: { x: origin.x, z: origin.z }, fx: 0, fz: 1 };
-    Level1.enter((GameState.seed || 1) >>> 0, fake);
+    if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level1.enter((GameState.seed || 1) >>> 0, fake)); else Level1.enter((GameState.seed || 1) >>> 0, fake);
     if (typeof Level1 !== "undefined" && Level1.active) Level1.stream(true);
     this.toast("ENTERED LEVEL 1");
   },
@@ -608,11 +608,11 @@ const DevCommands = {
     if (!Number.isFinite(n)) return this.toast("USAGE: SEED OR SEED 12345");
     GameState.seed = n >>> 0;
     if (GameState.level === 1) this.goLevel1();
-    else if (GameState.level === 2) Level2.enter(GameState.seed);
-    else if (GameState.level === 3) Level3.enter(GameState.seed);
-    else if (GameState.level === 4) Level4.enter(GameState.seed);
-    else if (GameState.level === 5) Level5.enter(GameState.seed);
-    else if (GameState.level === 6) Level6.enter(GameState.seed);
+    else if (GameState.level === 2) if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level2.enter(GameState.seed)); else Level2.enter(GameState.seed);
+    else if (GameState.level === 3) if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level3.enter(GameState.seed)); else Level3.enter(GameState.seed);
+    else if (GameState.level === 4) if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level4.enter(GameState.seed)); else Level4.enter(GameState.seed);
+    else if (GameState.level === 5) if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level5.enter(GameState.seed)); else Level5.enter(GameState.seed);
+    else if (GameState.level === 6) if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level6.enter(GameState.seed)); else Level6.enter(GameState.seed);
     else this.goLevel0();
     this.toast("SEEDED " + (GameState.seed >>> 0));
   },
