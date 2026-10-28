@@ -17,7 +17,7 @@
      are exactly where they were without them. A landmark that does not fit is skipped.
    One way back, to the office: NOT in the lobby (that wall is blank, you arrived by it). It is a door in
    the hall two spaces along the spine, 30 m or more from the spawn. One way forward, at the far end
-   (ends the run).
+   (enters Level 6).
 
    Spawn is the exact centre of the lobby at baseY. The lobby has no door but the way into the hotel. Nothing is placed within 2.5 m of it.
    Lights are a fixed pool of point lights re-aimed at the nearest fixtures, so streaming never
@@ -584,6 +584,8 @@ const Level5 = {
     this._ended = false;
     if (typeof HoundSystem !== "undefined") HoundSystem.reset();
     if (typeof BeastSystem !== "undefined") BeastSystem.detach();     // leaving or rebuilding Level 5 removes the Beast
+    // every path that resets Level 5 (Level 4's reset calls it) also clears Level 6
+    if (typeof Level6 !== "undefined") Level6.reset();
     if (wasActive && typeof CameraRig !== "undefined" && CameraRig.camera && typeof CONFIG !== "undefined") {
       CameraRig.camera.far = CONFIG.cameraFar;
       CameraRig.camera.updateProjectionMatrix();
@@ -655,6 +657,16 @@ const Level5 = {
     Player.yaw = this.spawnYaw;
     if (typeof CameraRig !== "undefined" && CameraRig.apply && CameraRig.camera) CameraRig.apply(0);
     this.attachEntities();
+    if (from === 6 && this.exitPos && this.endNode) {
+      // back from Level 6: the forward side of the hotel, just inside the landing door, facing into the hall
+      const fd = this.DIRS[this.endNode.fwdSide];
+      Player.position.copy(this.exitPos);
+      Player.velocity.set(0, 0, 0);
+      Player.yaw = Math.atan2(fd[0], fd[1]);
+      this.stream(true);
+      this.assignLights();
+      if (typeof CameraRig !== "undefined" && CameraRig.apply && CameraRig.camera) CameraRig.apply(0);
+    }
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 5 · THE HOTEL");
   },
 
@@ -1616,14 +1628,18 @@ const Level5 = {
     }
   },
 
-  // The forward door ends the run, the same way Level 4's used to. There is no Level 6.
+  // The forward door leads on to Level 6 (Lights Out).
   finish() {
     if (this._ended) return;
     this._ended = true;
-    GameState.exitReached = true;
+    const sd = this.seed;
     if (typeof BeastSystem !== "undefined") BeastSystem.detach();
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 5 CLEARED");
-    if (typeof Game !== "undefined" && Game.complete) Game.complete();
+    if (typeof Level6 !== "undefined" && Level6.enter) setTimeout(() => Level6.enter(sd, 5), 0);
+    else {
+      GameState.exitReached = true;
+      if (typeof Game !== "undefined" && Game.complete) Game.complete();
+    }
   },
 
   /* ------------------------------------------------------------------
