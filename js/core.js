@@ -627,9 +627,31 @@ function isGameplayKey(code) {
   return configured.includes(code) || code === "F3";
 }
 
+// Do not let global gameplay bindings intercept text entry or account-modal
+// keyboard input. The modal check also covers clicks on its buttons/selects,
+// where the focused element may not be a text field.
+function isTextEntryTarget(target) {
+  if (!target) return false;
+  const tag = String(target.tagName || "").toUpperCase();
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" ||
+    target.isContentEditable === true ||
+    !!(target.closest && target.closest('[contenteditable="true"], [role="textbox"]'));
+}
+
+function isAuthModalOpen() {
+  const modal = document.getElementById("auth-modal");
+  if (!modal) return false;
+  const style = window.getComputedStyle(modal);
+  return style.display !== "none" && style.visibility !== "hidden" &&
+    Number(style.opacity || 1) > 0;
+}
+
 window.addEventListener("keydown", (e) => {
-  const tag = (e.target && e.target.tagName) || "";
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (isTextEntryTarget(e.target) || isAuthModalOpen()) {
+    // Prevent a movement key held just before opening the modal from sticking.
+    clearInput();
+    return;
+  }
   if (typeof DevCommands !== "undefined" && DevCommands.open) return;
   if (e.code === "ControlLeft" || e.code === "ControlRight") Input.ctrlDown = true;
   Input.keys[e.code] = true;
@@ -729,6 +751,10 @@ window.addEventListener("keydown", (e) => {
   }
 }, true);
 window.addEventListener("keyup", (e) => {
+  if (isTextEntryTarget(e.target) || isAuthModalOpen()) {
+    clearInput();
+    return;
+  }
   if (typeof DevCommands !== "undefined" && DevCommands.open) return;
   Input.keys[e.code] = false;
   if (e.code === "ControlLeft" || e.code === "ControlRight") {
