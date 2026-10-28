@@ -29,7 +29,8 @@ function resolveAxis(pos, radius, height, axis) {
   const min = new THREE.Vector3(pos.x - radius, pos.y, pos.z - radius);
   const max = new THREE.Vector3(pos.x + radius, pos.y + height, pos.z + radius);
   let pushed = 0;
-  const boxes = (typeof Level5 !== "undefined" && Level5.active) ? Level5.colliders
+  const boxes = (typeof Level6 !== "undefined" && Level6.active) ? Level6.colliders
+    : (typeof Level5 !== "undefined" && Level5.active) ? Level5.colliders
     : (typeof Level4 !== "undefined" && Level4.active) ? Level4.colliders
     : (typeof Level3 !== "undefined" && Level3.active) ? Level3.colliders
     : (typeof Level2 !== "undefined" && Level2.active) ? Level2.colliders
@@ -79,12 +80,13 @@ const Physics = {
     }
 
     // Current level's start position. Level 1 uses its own floor height.
-    const levelFloor = (typeof Level5 !== "undefined" && Level5.active) ? Level5.baseY
+    const levelFloor = (typeof Level6 !== "undefined" && Level6.active) ? Level6.baseY
+      : (typeof Level5 !== "undefined" && Level5.active) ? Level5.baseY
       : (typeof Level4 !== "undefined" && Level4.active) ? Level4.baseY
       : (typeof Level3 !== "undefined" && Level3.active) ? Level3.baseY
       : (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
       : (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
-    if (((typeof Level2 !== "undefined" && Level2.active) || (typeof Level3 !== "undefined" && Level3.active) || (typeof Level4 !== "undefined" && Level4.active) || (typeof Level5 !== "undefined" && Level5.active)) && pos.y < levelFloor) {
+    if (((typeof Level2 !== "undefined" && Level2.active) || (typeof Level3 !== "undefined" && Level3.active) || (typeof Level4 !== "undefined" && Level4.active) || (typeof Level5 !== "undefined" && Level5.active) || (typeof Level6 !== "undefined" && Level6.active)) && pos.y < levelFloor) {
       pos.y = levelFloor;
       if (vel.y < 0) vel.y = 0;
       onGround = true;
@@ -152,7 +154,8 @@ const Player = {
 
   resetToStart() {
     this.position.copy(Level.startPos);
-    this.position.y = (typeof Level5 !== "undefined" && Level5.active) ? Level5.baseY
+    this.position.y = (typeof Level6 !== "undefined" && Level6.active) ? Level6.baseY
+      : (typeof Level5 !== "undefined" && Level5.active) ? Level5.baseY
       : (typeof Level4 !== "undefined" && Level4.active) ? Level4.baseY
       : (typeof Level3 !== "undefined" && Level3.active) ? Level3.baseY
       : (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
@@ -463,7 +466,7 @@ const Player = {
       AudioSystem.lastStep += dt * (spd * cadence);
       if (AudioSystem.lastStep > 1) {
         AudioSystem.lastStep = 0;
-        const mat = Stairwell.playerInside() ? "concrete" : "carpet";
+        const mat = (Stairwell.playerInside() || (typeof Level6 !== "undefined" && Level6.active)) ? "concrete" : "carpet";
         if (this.crouching) AudioSystem.footstepOn(mat, "crouch");
         else if (this.wishSprint) AudioSystem.footstepOn(mat, "sprint");
         else AudioSystem.footstepOn(mat, "walk");
@@ -618,6 +621,12 @@ const Flashlight = {
   },
   toggle() {
     this.init();
+    if (typeof Level6 !== "undefined" && Level6.active) {      // Level 6: the darkness eats the light
+      this.enabled = false;
+      if (this.light) this.light.intensity = 0;
+      if (typeof HUD !== "undefined" && HUD.toast) HUD.toast("THE DARKNESS EATS THE LIGHT");
+      return;
+    }
     this.enabled = !this.enabled;
     if (this.light) this.light.intensity = this.enabled ? CONFIG.flashlight.intensity : 0;
     AudioSystem._tone && AudioSystem._tone(this.enabled ? 240 : 160, "square", 0.04, 0.018, "events");
