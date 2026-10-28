@@ -193,11 +193,7 @@ const Level3 = {
     for (const n of nodes) {
       n.free = D.filter(d => n.dirs[d[0] + "," + d[1]] == null);
     }
-    // elevator opens onto a free side, preferring straight ahead
-    const ahead = hd;
-    let elevDir = exitNode.free.find(d => d[0] === ahead[0] && d[1] === ahead[1]) || exitNode.free[0];
-    exitNode.elevDir = elevDir || [0, 1];
-    exitNode.free = exitNode.free.filter(d => d !== elevDir);
+    // the elevator is placed later by extend(), once the route reaches ~200 m
 
     // per-edge dressing
     for (const e of edges) {
@@ -220,9 +216,9 @@ const Level3 = {
     this.edges = edges;
     this.backNode = backNode;
     this.seedUsed = seed;
-    this.exitNode = exitNode;
+    this.exitNode = null;
     this.buttonNode = buttonNode;
-    this.exitPos = new THREE.Vector3(exitNode.x, this.baseY, exitNode.z);
+    this.exitPos = null;
     this.buttonPos = buttonNode ? new THREE.Vector3(buttonNode.x, this.baseY, buttonNode.z) : null;
     this.spawn.set(0, this.baseY, 0);
     this.infoText = "ROOMS " + nodes.length + " · HALLS " + edges.length + " · ROUTE " + route.length +
