@@ -746,6 +746,7 @@ window.addEventListener("keydown", (e) => {
     if (typeof Level4 !== "undefined" && Level4.tryUse && Level4.tryUse()) return;
     if (typeof Level5 !== "undefined" && Level5.tryUse && Level5.tryUse()) return;
     if (typeof Level6 !== "undefined" && Level6.tryUse && Level6.tryUse()) return;
+    if (typeof Level8 !== "undefined" && Level8.tryUse && Level8.tryUse()) return;
     if (typeof PassC !== "undefined" && PassC.openNearestCrate && PassC.openNearestCrate()) return;
     PickupSystem.tryPickup();
   }
