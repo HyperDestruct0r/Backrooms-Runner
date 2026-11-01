@@ -1724,25 +1724,49 @@ const Level = {
     }
     this.chunks.delete(key);
   },
+  // Standing chunk, its neighbours, and whatever the view hits out to the fog.
+  // A circle shows its edge in an open room. A cone does not.
+  wantedChunks(cx, cz, px, pz) {
+    const S = this.chunkTiles, T = CONFIG.tile, CS = S * T;
+    const reach = (CONFIG.fogFar || 175) + CS;
+    const half = ((CONFIG.fovDeg || 84) * 0.5 + 12) * Math.PI / 180;
+    const cosH = Math.cos(half);
+    const yaw = (Player && Player.yaw != null) ? Player.yaw : 0;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const span = Math.ceil(reach / CS);
+    const out = [];
+    for (let dz = -span; dz <= span; dz++) {
+      for (let dx = -span; dx <= span; dx++) {
+        const near = Math.max(Math.abs(dx), Math.abs(dz)) <= 1;
+        if (near) { out.push([dx, dz]); continue; }
+        const ccx = (cx + dx + 0.5) * CS, ccz = (cz + dz + 0.5) * CS;
+        const vx = ccx - px, vz = ccz - pz;
+        const dist = Math.hypot(vx, vz);
+        if (dist > reach || dist < 0.001) continue;
+        if ((vx / dist) * fx + (vz / dist) * fz >= cosH) out.push([dx, dz]);
+      }
+    }
+    return out;
+  },
   stream(force) {
     if (!this.group || !this.tiles || !this.tiles.length) return;
     if (!force && GameState.level !== 0) return;
-    const radius = (LevelGenerator.last && LevelGenerator.last.beta) ? 1 : this.streamRadius;
     const S = this.chunkTiles, T = CONFIG.tile;
     const px = (Player && Player.position) ? Player.position.x : this.startPos.x;
     const pz = (Player && Player.position) ? Player.position.z : this.startPos.z;
     const cx = Math.floor(px / (S * T));
     const cz = Math.floor(pz / (S * T));
-    const key = cx + "," + cz;
+    const yawKey = Math.round(((Player && Player.yaw) || 0) * 4);
+    const key = cx + "," + cz + "," + yawKey;
     if (!force && key === this.lastChunk) return;
     this.lastChunk = key;
-    for (let dz = -radius; dz <= radius; dz++) {
-      for (let dx = -radius; dx <= radius; dx++) this.buildChunk(cx + dx, cz + dz);
+    const keep = new Set();
+    for (const [dx, dz] of this.wantedChunks(cx, cz, px, pz)) {
+      this.buildChunk(cx + dx, cz + dz);
+      keep.add((cx + dx) + "," + (cz + dz));
     }
     for (const k of Array.from(this.chunks.keys())) {
-      const parts = k.split(",");
-      const dx = (parts[0] | 0) - cx, dz = (parts[1] | 0) - cz;
-      if (Math.max(Math.abs(dx), Math.abs(dz)) > radius) this.unloadChunk(k);
+      if (!keep.has(k)) this.unloadChunk(k);
     }
   },
   buildHandcrafted(sceneRef) {
