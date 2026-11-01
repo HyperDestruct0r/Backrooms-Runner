@@ -325,6 +325,8 @@ const Level6 = {
     this.active = false;
     this.time = 0;
     this._ended = false;
+    // every path that resets Level 6 (Level 5's reset calls it) also clears Level 8
+    if (typeof Level8 !== "undefined") Level8.reset();
     if (wasActive && typeof CameraRig !== "undefined" && CameraRig.camera && typeof CONFIG !== "undefined") {
       CameraRig.camera.far = CONFIG.cameraFar;
       CameraRig.camera.updateProjectionMatrix();
@@ -390,6 +392,13 @@ const Level6 = {
     if (seedEl) seedEl.textContent = String(this.seed);
     this.stream(true);
     this.assignLights();
+    if (from === 8 && this.exitPos && this._exit) {
+      // back from Level 8: just inside the glowing door, facing into the maze
+      const ed = this.DIRS[this._exit.side];
+      Player.position.copy(this.exitPos);
+      Player.velocity.set(0, 0, 0);
+      Player.yaw = Math.atan2(ed[0], ed[1]);
+    }
     if (typeof CameraRig !== "undefined" && CameraRig.apply && CameraRig.camera) CameraRig.apply(0);
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 6 · LIGHTS OUT");
   },
@@ -418,7 +427,7 @@ const Level6 = {
     if (best.used) return true;
     best.used = true;
     best.t = 0;
-    if (best.kind === "exit" && typeof HUD !== "undefined" && HUD.toast) HUD.toast("LEVEL 7 IS NOT BUILT YET");
+    if (best.kind === "exit" && typeof HUD !== "undefined" && HUD.toast) HUD.toast("LEVEL 6 CLEARED");
     return true;
   },
 
@@ -431,10 +440,15 @@ const Level6 = {
     }
   },
 
-  // The glowing door is the end for now: Level 7 is not built.
+  // The glowing door leads on to Level 8 (the Cave System), through the Void. Level 7 is not built.
   finish() {
     if (this._ended) return;
     this._ended = true;
+    const sd = this.seed;
+    if (typeof Level8 !== "undefined" && Level8.enter) {
+      setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => Level8.enter(sd, 6)); else Level8.enter(sd, 6); }, 0);
+      return;
+    }
     GameState.exitReached = true;
     if (typeof Game !== "undefined" && Game.complete) Game.complete();
   },
