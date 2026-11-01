@@ -14,6 +14,7 @@ const Sanity = {
     if (level === 4) return { class: 1, e: false };
     if (level === 5) return { class: 5, e: false };
     if (level === 6) return { class: 2, e: false };
+    if (level === 8) return { class: 2, e: false };
     return { class: 0, e: false };
   },
 
