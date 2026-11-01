@@ -488,28 +488,50 @@ const Level1 = {
     this.colliders.length=0;
     for(const rec of this.chunks.values()) for(const c of rec.colliders) this.colliders.push(c);
   },
-  unloadFar(cx,cz){
+  // Standing chunk, neighbours, and the view out to this level's fog.
+  wantedChunks(mcx, mcz, px, pz) {
+    const CS = this.microSize;
+    const reach = 90 + CS; // past the concrete fog, not the whole cone
+    const half = ((CONFIG.fovDeg || 84) * 0.5 + 12) * Math.PI / 180;
+    const cosH = Math.cos(half);
+    const yaw = (typeof Player !== 'undefined' && Player.yaw != null) ? Player.yaw : 0;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const span = Math.ceil(reach / CS);
+    const out = [];
+    for (let dz = -span; dz <= span; dz++) {
+      for (let dx = -span; dx <= span; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) <= 1) { out.push([dx, dz]); continue; }
+        const ccx = (mcx + dx + 0.5) * CS, ccz = (mcz + dz + 0.5) * CS;
+        const vx = ccx - px, vz = ccz - pz;
+        const dist = Math.hypot(vx, vz);
+        if (dist > reach || dist < 0.001) continue;
+        if ((vx / dist) * fx + (vz / dist) * fz >= cosH) out.push([dx, dz]);
+      }
+    }
+    return out;
+  },
+  unloadFar(cx,cz,keep){
     for(const [key,rec] of this.chunks){
-      if(Math.max(Math.abs(rec.cx-cx),Math.abs(rec.cz-cz))>this.activeRadius){
+      if(keep && !keep.has(key)){
         if(rec.group.parent) rec.group.parent.remove(rec.group);
         this.disposeChunkResources(rec);
         this.chunks.delete(key);
       }
     }
-    // Remove puddles belonging to unloaded chunks from the proximity list.
-    this.puddles=this.puddles.filter(p=>Math.max(Math.abs(Math.floor(p.x/this.microSize)-cx),Math.abs(Math.floor(p.z/this.microSize)-cz))<=this.activeRadius);
+    this.puddles=this.puddles.filter(p=>keep && keep.has(Math.floor(p.x/this.microSize)+","+Math.floor(p.z/this.microSize)));
   },
   stream(force=false){
     if(!this.active) return;
     const source=(typeof Player!=='undefined'&&Player.position)?Player.position:this.center;
     const mcx=Math.floor(source.x/this.microSize), mcz=Math.floor(source.z/this.microSize);
-    if(!force&&mcx===this.lastMCX&&mcz===this.lastMCZ) return;
-    this.lastMCX=mcx; this.lastMCZ=mcz;
-    const wanted=[];
-    for(let dz=-this.activeRadius;dz<=this.activeRadius;dz++) for(let dx=-this.activeRadius;dx<=this.activeRadius;dx++) wanted.push([dx*dx+dz*dz,dx,dz]);
-    wanted.sort((a,b)=>a[0]-b[0]);
-    for(const [,dx,dz] of wanted) this.buildChunk(mcx+dx,mcz+dz);
-    this.unloadFar(mcx,mcz); this.rebuildColliders();
+    const yawKey=Math.round(((typeof Player!=='undefined'?Player.yaw:0)||0)*4);
+    if(!force&&mcx===this.lastMCX&&mcz===this.lastMCZ&&yawKey===this.lastYaw) return;
+    this.lastMCX=mcx; this.lastMCZ=mcz; this.lastYaw=yawKey;
+    const keep=new Set();
+    const wanted=this.wantedChunks(mcx,mcz,source.x,source.z);
+    wanted.sort((a,b)=>a[0]*a[0]+a[1]*a[1]-b[0]*b[0]-b[1]*b[1]);
+    for(const [dx,dz] of wanted){ this.buildChunk(mcx+dx,mcz+dz); keep.add((mcx+dx)+","+(mcz+dz)); }
+    this.unloadFar(mcx,mcz,keep); this.rebuildColliders();
     this.center.copy(source); this.center.y=this.baseY;
   },
   setFixtureState(on,dim=1){
@@ -542,7 +564,7 @@ const Level1 = {
   endBlackout(){
     this.blackoutState='cooldown'; this.blackoutCooldown=60+this.rngFor(this.blackoutCycle,7,334)()*30;
     this.setFixtureState(true,1);
-    if(scene){ scene.fog=new THREE.Fog(0x1a1c1e,18,72); scene.background && scene.background.setHex(0x1a1c1e); }
+    if(scene){ scene.fog=new THREE.Fog(0x2a2c2e,14,64); scene.background && scene.background.setHex(0x2a2c2e); }
   },
   updateBlackout(dt){
     this.levelTime+=dt;
@@ -717,9 +739,9 @@ const Level1 = {
     PickupSystem.group=new THREE.Group(); PickupSystem.group.name='Level1_Pickups'; scene.add(PickupSystem.group);
     const hemi=new THREE.HemisphereLight(0xc5ccd2,0x1a1c1e,0.22);
     const amb=new THREE.AmbientLight(0x9aa0a6,0.08); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
-    scene.fog=new THREE.Fog(0x1a1c1e,18,72); if(scene.background) scene.background.setHex(0x1a1c1e);
+    scene.fog=new THREE.Fog(0x2a2c2e,14,64); if(scene.background) scene.background.setHex(0x2a2c2e);
     if(CameraRig.camera){ CameraRig.camera.far=160; CameraRig.camera.updateProjectionMatrix(); }
-    this.lastMCX=999999; this.lastMCZ=999999; this.stream(true); this.placeExit();
+    this.lastMCX=999999; this.lastMCZ=999999; this.lastYaw=999999; this.stream(true); this.placeExit();
   },
   enter(seed,elevatorState){
     if(Level.group&&scene)scene.remove(Level.group); LightingSystem.clear(scene);
@@ -758,7 +780,7 @@ const Level1 = {
   update(dt){
     if(!this.active) return;
     if(this.blackoutState!=='flicker' && this.blackoutState!=='outage'){
-      if(scene && !scene.fog) scene.fog=new THREE.Fog(0x1a1c1e,18,72);
+      if(scene && !scene.fog) scene.fog=new THREE.Fog(0x2a2c2e,14,64);
       const darkFog=document.getElementById('dark-fog');
       if(darkFog) darkFog.style.opacity='0';
     }
