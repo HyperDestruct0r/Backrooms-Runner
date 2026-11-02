@@ -62,7 +62,8 @@ const HoundSystem = {
       graceSeconds: o.graceSeconds == null ? 0 : o.graceSeconds,
       graceRadius: o.graceRadius == null ? 0 : o.graceRadius,
       minDist: o.minDist == null ? 18 : o.minDist,
-      maxDist: o.maxDist == null ? 42 : o.maxDist
+      maxDist: o.maxDist == null ? 42 : o.maxDist,
+      manual: !!o.manual            // the level places Hounds itself (Level 9): no spawn clock
     };
     let a = ((o.seed == null ? 1 : o.seed) ^ 0x9E3779B9) >>> 0 || 1;
     this._rng = () => { a ^= a << 13; a >>>= 0; a ^= a >>> 17; a ^= a << 5; a >>>= 0; return a / 4294967296; };
@@ -118,7 +119,7 @@ const HoundSystem = {
 
     // spawn schedule: nothing during grace, then one try every 6 to 9 s,
     // and no tries at all while at the cap
-    if (this.t >= o.graceSeconds) {
+    if (this.t >= o.graceSeconds && !o.manual) {
       if (this.list.length >= o.cap) this.spawnT = -1;
       else if (this.spawnT < 0) this.spawnT = this._between(C.spawnMin, C.spawnMax);
       else {
@@ -390,7 +391,10 @@ const HoundSystem = {
     }
 
     h.moved = 0;
-    if (h.stunT > 0) {
+    // a level may give a Hound its own brain (Level 9). It returns true when it has driven the Hound this frame.
+    if (h.brain && h.brain(h, dt, d)) {
+      // driven by the level
+    } else if (h.stunT > 0) {
       h.stunT -= dt;
     } else {
       if (h.state === "wander") {
@@ -438,7 +442,7 @@ const HoundSystem = {
   // while (15%) the Hound stumbles 0.3 to 0.6 s in, lets go, and is stunned.
   _contact(h, dt, d) {
     const C = this.C, P = Player.position;
-    const touching = d < C.radius + CONFIG.player.radius + 0.12 && P.y < C.height + 0.05 && h.stunT <= 0;
+    const touching = d < C.radius + CONFIG.player.radius + 0.12 && P.y < C.height + 0.05 && h.stunT <= 0 && !h.passive;
     if (!touching) { h.inContact = false; h.contactT = 0; h.dmgAcc = 0; return; }
     if (h.state === "wander") { h.state = "chase"; h.lostT = 0; h.los = true; this._growl(h); }
     if (!h.inContact) {
