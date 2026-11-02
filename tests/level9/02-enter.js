@@ -1,0 +1,11 @@
+const { ctx, run, stats } = require("./harness.js");
+let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log("FAIL", m); } else console.log("ok  ", m); };
+run(`Level9.enter(4242, 8);`, "enter");
+ok(run("Level9.active"), "level 9 active after enter");
+ok(run("Level9.blocks.size") >= 4, "blocks built at spawn: " + run("Level9.blocks.size"));
+ok(run("Level9.colliders.length") > 50, "colliders: " + run("Level9.colliders.length"));
+ok(run("scene.fog.far") === 21, "fog far 21");
+ok(run("Flashlight.light.distance") === 34, "flashlight range halved: " + run("Flashlight.light.distance"));
+ok(run("Level9.pool.length") === 6, "6-light pool");
+console.log("meshes", stats.meshes, "lights", stats.lightsAdded, "toasts", stats.toasts.join("|"));
+console.log(fails ? "FAILS " + fails : "PASS");
