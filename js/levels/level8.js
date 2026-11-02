@@ -900,6 +900,7 @@ const Level8 = {
 
   reset() {
     const wasActive = this.active;
+    if (typeof Level9 !== "undefined" && Level9.reset) Level9.reset();      // Level 9 hangs off this reset chain
     if (this.group && typeof scene !== "undefined" && scene) scene.remove(this.group);
     for (const rec of this.tiles.values()) for (const g of rec.geos) g.dispose();
     this.tiles = new Map();
@@ -984,6 +985,10 @@ const Level8 = {
     Player.velocity.set(0, 0, 0);
     Player.onGround = true;
     Player.yaw = this.spawnYaw;
+    if (from === 9 && this.exitPos) {                  // climbing back up: beside the nearest hole, not at the sealed arrival door
+      Player.position.copy(this.exitPos);
+      Player.yaw = 0;
+    }
     Player.pitch = 0;
     const obj = document.getElementById("hud-obj");
     if (obj) obj.textContent = "Objective: cross";
@@ -991,7 +996,7 @@ const Level8 = {
     if (lvl) lvl.textContent = "LEVEL 8";
     const seedEl = document.getElementById("hud-seed-val");
     if (seedEl) seedEl.textContent = String(this.seed);
-    this._good = new THREE.Vector3().copy(this.spawn);
+    this._good = new THREE.Vector3().copy(Player.position);
     this.stream(true);                                 // the first stretch: every tile within BUILD of the spawn
     if (typeof CameraRig !== "undefined" && CameraRig.apply && CameraRig.camera) CameraRig.apply(0);
     if (typeof HUD !== "undefined") HUD.toast("LEVEL 8 · THE CAVE SYSTEM");
@@ -1038,10 +1043,16 @@ const Level8 = {
     }
   },
 
-  // A real exit is the end for now: Level 9 is not built.
+  // A real exit leads down to Level 9 (the end of the run if that level is missing).
   finish() {
     if (this._ended) return;
     this._ended = true;
+    if (typeof Level9 !== "undefined" && Level9.enter) {
+      const sd = this.seed;
+      const go = () => Level9.enter(sd, 8);
+      if (typeof VoidTransition !== "undefined") VoidTransition.then(go); else go();
+      return;
+    }
     GameState.exitReached = true;
     const done = () => {
       if (typeof Game !== "undefined" && Game.complete) Game.complete();
@@ -1093,7 +1104,7 @@ const Level8 = {
     this._dropHole = hole;
     this.baseY = -80;
     for (let k = this.colliders.length - 1; k >= 0; k--) if (this.colliders[k].floor) this.colliders.splice(k, 1);
-    if (typeof HUD !== "undefined" && HUD.toast) HUD.toast("LEVEL 9 IS NOT BUILT YET");
+    if (typeof HUD !== "undefined" && HUD.toast) HUD.toast(typeof Level9 !== "undefined" ? "LEVEL 9" : "LEVEL 9 IS NOT BUILT YET");
   },
 
   _dropStep(dt) {
