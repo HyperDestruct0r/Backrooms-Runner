@@ -349,7 +349,7 @@ const Game = {
     GameState.cutscene = false;
     await this._nextFrame();
     AudioSystem.resume();
-    AudioSystem.ambientHumStart();
+    AudioSystem.setLevel(GameState.level);
     await this._nextFrame();
     if (loadOverlay) loadOverlay.style.display = "none";
     GameState.phase = "playing";
@@ -475,7 +475,7 @@ const Game = {
     GameState.cinematicCamera = false;
     GameState.cutscene = false;
     AudioSystem.resume();
-    AudioSystem.ambientHumStart();
+    AudioSystem.setLevel(GameState.level);
     GameState.regenerating = false;
     if (DeviceMode.mobile) Input.locked = true;
     else if (renderer && renderer.domElement) renderer.domElement.requestPointerLock();
