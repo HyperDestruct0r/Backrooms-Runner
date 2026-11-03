@@ -44,7 +44,7 @@ ok(byKind("level10")[0].dist > 250 && byKind("level10")[0].dist < 760, "nearest 
 ok(run("Level9.spawn.x") !== byKind("level8")[0].x, "arrival point is not the return hole");
 const stand = (e) => run(`(function(){ const e=${JSON.stringify(e)}; Player.position.set(e.x, 0, e.z); Level9.stream(true); Level9.update(0.05); })()`);
 // level 10 / 11: run ends (not built)
-for (const [k, n] of [["level10", 10], ["level11", 11]]) {
+for (const [k, n] of [["level11", 11]]) {       // level 10 is a real level now: see tests/level10
   run(`Level9.enter(${seed}, 8);`);
   const e = k === 'level10' ? run('Level9Gen.exitList()').filter(q=>q.kind==='level10').sort((a,b)=>a.dist-b.dist)[0] : byKind(k)[0];
   const S = run('Level9Gen.special()'); const lot = k === 'level11' ? S.exit11 : S.fields[0].lot; const L = run(`Level9Gen.block(${lot.bi},${lot.bj}).lots.find(l=>l.id==='${lot.id}')`); const ax = e.x + L.nx * 6, az = e.z + L.nz * 6;
