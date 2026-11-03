@@ -336,11 +336,12 @@ const Level9 = {
         b.push(theta, p.x, p.z);
         const path = this.col(0x3a3626);
         b.box(0, 0.02, 6.5, 2.6, 0.02, 13, path, 0);          // the worn path from the road
-        for (let i = 0; i < 150; i++) {                      // wheat
-          const x = (r() - 0.5) * 9, z = -3.2 + r() * 6.2;
-          if (z > -0.4 && Math.abs(x) < 1.5 && z > 1.5) continue;
-          const h = 0.8 + r() * 0.5;
-          b.box(x, h / 2, z, 0.07, h, 0.07, this.col(r() < 0.5 ? 0x6b6a2c : 0x59592a, 0.8 + r() * 0.3), r() * 3);
+        for (let i = 0; i < 280; i++) {                      // a wheat edge, not poles
+          const x = (r() - 0.5) * 11, z = -2.4 + r() * 7.5;
+          if (Math.abs(x) < 1.3 && z > 0.6 && z < 4.2) continue;
+          const h = 1.4 + r() * 0.7;
+          const yaw = r() * 3;
+          b.box(x, h / 2, z, 0.22, h, 0.06, this.col(r() < 0.5 ? 0x8a7a32 : 0x6e6428, 0.75 + r() * 0.35), yaw);
         }
         for (const sx of [-1.7, 1.7]) b.box(sx, 0.6, 9.5, 0.1, 1.2, 0.1, this.col(0x3a3128), 0);
         b.pop();
