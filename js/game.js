@@ -584,6 +584,9 @@ const Game = {
         if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
         if (typeof SmilerSystem !== "undefined") SmilerSystem.update(dt);
         GameState.levelTimes[9] = (GameState.levelTimes[9] || 0) + dt;
+      } else if (GameState.level === 10 && typeof Level10 !== "undefined" && Level10.active) {
+        Level10.update(dt);      // no entities in Level 10
+        GameState.levelTimes[10] = (GameState.levelTimes[10] || 0) + dt;
       } else if (GameState.level === 8 && typeof Level8 !== "undefined" && Level8.active) {
         Level8.update(dt);       // no entities in Level 8
         GameState.levelTimes[8] = (GameState.levelTimes[8] || 0) + dt;
@@ -613,7 +616,7 @@ const Game = {
         if (typeof DebugPath !== "undefined") DebugPath.update(dt);
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
-      } else if (GameState.level === 2 || GameState.level === 3 || GameState.level === 4 || GameState.level === 5 || GameState.level === 6 || GameState.level === 8 || GameState.level === 9) {
+      } else if (GameState.level === 2 || GameState.level === 3 || GameState.level === 4 || GameState.level === 5 || GameState.level === 6 || GameState.level === 8 || GameState.level === 9 || GameState.level === 10) {
         AudioSystem.setListener(Player.position, Player.yaw);
         CameraRig.update(dt);
       } else {
