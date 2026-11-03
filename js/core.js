@@ -834,7 +834,76 @@ const AudioSystem = {
     }
   },
   resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
-  loadBank(_map) { /* later: decode file buffers per category/key */ },
+  bank: {},
+  loops: [],
+  // Per-level beds. A missing file falls back to the generated hum.
+  // Drop a real file at assets/audio/<key>.mp3 to replace the placeholder.
+  LEVELS: {
+    0:  ["level0-hum"],
+    1:  ["level1-drone"],
+    2:  ["level2-pipe"],
+    3:  ["level3-electrical"],
+    4:  ["level4-rain"],
+    5:  ["level5-hotel"],
+    6:  ["level6-dark"],
+    8:  ["level8-cave"],
+    9:  ["level9-night"],
+    10: ["level10-wind"]
+  },
+  loadBank(map) { /* files are fetched on demand in ensure() */ },
+  async ensure(key) {
+    if (this.bank[key]) return this.bank[key];
+    if (!this.ctx) return null;
+    const url = "assets/audio/" + key + ".mp3";
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const buf = await this.ctx.decodeAudioData(await res.arrayBuffer());
+        this.bank[key] = buf;
+        return buf;
+      }
+    } catch (e) {}
+    const buf = this._placeholder(key);
+    this.bank[key] = buf;
+    return buf;
+  },
+  _placeholder(key) {
+    // A short loop so a level has a bed before a real file is dropped in.
+    const sr = this.ctx.sampleRate, len = sr * 4, data = new Float32Array(len);
+    const wind = key.indexOf("wind") >= 0 || key.indexOf("cave") >= 0;
+    const rain = key.indexOf("rain") >= 0;
+    for (let i = 0; i < len; i++) {
+      const n = Math.random() * 2 - 1;
+      const env = 0.5 + 0.5 * Math.sin(i / sr * Math.PI * 2 / 4);
+      data[i] = n * (rain ? 0.35 : wind ? 0.22 * env : 0.08);
+    }
+    const buf = this.ctx.createBuffer(1, len, sr);
+    buf.getChannelData(0).set(data);
+    return buf;
+  },
+  stopLoops() {
+    for (const s of this.loops) { try { s.stop(); } catch (e) {} }
+    this.loops = [];
+  },
+  async setLevel(level) {
+    this.stopLoops();
+    this.stopAll();
+    const keys = this.LEVELS[level];
+    if (!keys || !keys.length) { this.ambientHumStart(); return; }
+    for (const key of keys) {
+      const buf = await this.ensure(key);
+      if (!buf || !this.buses.ambient) continue;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const g = this.ctx.createGain();
+      g.gain.value = 0.6;
+      src.connect(g);
+      g.connect(this.buses.ambient);
+      src.start();
+      this.loops.push(src);
+    }
+  },
 
   setListener(pos, yaw) {
     if (!this.ctx || !this.ctx.listener) return;
