@@ -1,5 +1,5 @@
 /* Backrooms Runner PWA cache. Bump CACHE_VERSION when publishing future updates. */
-const CACHE_VERSION = 'backrooms-runner-v23';
+const CACHE_VERSION = 'backrooms-runner-v24';
 const APP_CACHE = `${CACHE_VERSION}-app`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const APP_SHELL = [
@@ -16,6 +16,16 @@ const APP_SHELL = [
   "./assets/level2-pipe.jpg",
   "./assets/level2-rust.jpg",
   "./assets/menu-wallpaper-v3.png",
+  "./assets/audio/level0-hum.mp3",
+  "./assets/audio/level1-drone.mp3",
+  "./assets/audio/level2-pipe.mp3",
+  "./assets/audio/level3-electrical.mp3",
+  "./assets/audio/level4-rain.mp3",
+  "./assets/audio/level5-hotel.mp3",
+  "./assets/audio/level6-dark.mp3",
+  "./assets/audio/level8-cave.mp3",
+  "./assets/audio/level9-night.mp3",
+  "./assets/audio/level10-wind.mp3",
   "./css/entities/smiler.css",
   "./css/levels/level0.css",
   "./css/levels/level1.css",
