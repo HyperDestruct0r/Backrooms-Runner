@@ -37,7 +37,8 @@ function resolveAxis(pos, radius, height, axis) {
   // push-out then slides it to the far end of that wall box, which can carry it through a thin perpendicular wall.
   // Ignoring overlaps under 0.1 mm there stops it. Every other level keeps the exact old test.
   const EPS = (typeof Level8 !== "undefined" && Level8.active) ? 1e-4 : 0;
-  const boxes = (typeof Level9 !== "undefined" && Level9.active) ? Level9.colliders
+  const boxes = (typeof Level10 !== "undefined" && Level10.active) ? Level10.colliders
+    : (typeof Level9 !== "undefined" && Level9.active) ? Level9.colliders
     : (typeof Level8 !== "undefined" && Level8.active) ? Level8.colliders
     : (typeof Level6 !== "undefined" && Level6.active) ? Level6.colliders
     : (typeof Level5 !== "undefined" && Level5.active) ? Level5.colliders
@@ -93,7 +94,8 @@ const Physics = {
     }
 
     // Current level's start position. Level 1 uses its own floor height.
-    const levelFloor = (typeof Level9 !== "undefined" && Level9.active) ? Level9.baseY
+    const levelFloor = (typeof Level10 !== "undefined" && Level10.active) ? Level10.baseY
+      : (typeof Level9 !== "undefined" && Level9.active) ? Level9.baseY
       : (typeof Level8 !== "undefined" && Level8.active) ? Level8.baseY
       : (typeof Level6 !== "undefined" && Level6.active) ? Level6.baseY
       : (typeof Level5 !== "undefined" && Level5.active) ? Level5.baseY
@@ -101,7 +103,7 @@ const Physics = {
       : (typeof Level3 !== "undefined" && Level3.active) ? Level3.baseY
       : (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
       : (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
-    if (((typeof Level2 !== "undefined" && Level2.active) || (typeof Level3 !== "undefined" && Level3.active) || (typeof Level4 !== "undefined" && Level4.active) || (typeof Level5 !== "undefined" && Level5.active) || (typeof Level6 !== "undefined" && Level6.active) || (typeof Level8 !== "undefined" && Level8.active) || (typeof Level9 !== "undefined" && Level9.active)) && pos.y < levelFloor) {
+    if (((typeof Level2 !== "undefined" && Level2.active) || (typeof Level3 !== "undefined" && Level3.active) || (typeof Level4 !== "undefined" && Level4.active) || (typeof Level5 !== "undefined" && Level5.active) || (typeof Level6 !== "undefined" && Level6.active) || (typeof Level8 !== "undefined" && Level8.active) || (typeof Level9 !== "undefined" && Level9.active) || (typeof Level10 !== "undefined" && Level10.active)) && pos.y < levelFloor) {
       pos.y = levelFloor;
       if (vel.y < 0) vel.y = 0;
       onGround = true;
