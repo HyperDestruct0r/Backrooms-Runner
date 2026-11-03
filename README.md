@@ -89,6 +89,18 @@ Backrooms Runner is an **active work in progress**.
 * More environmental variety and audio
 * Performance work
 
+## Developer console
+
+These commands are for testing. They are not part of play, and they will skip things you are meant to find.
+
+* `/level 0` through `/level 5` — enter a level (`/level5` also works)
+* `/level 2 reset`, `/level 3 reset` — regenerate
+* `/level 2 seed <n>`, `/level 3 seed <n>` — enter with a seed
+* `/level 2 info`, `/level 3 info` — seed and size
+* `/level 2 exit`, `/level 3 exit` — jump to the end of that level
+* `/level 3 button`, `/level 3 power` — testing shortcuts for Level 3
+* `/level 5 back` — jump to the lobby's back door (`/level 5 exit` jumps to the forward door)
+
 ## License
 
 This project is a personal development project.
