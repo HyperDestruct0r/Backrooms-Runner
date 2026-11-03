@@ -111,7 +111,7 @@ const Level9 = {
   COLLIDE: 28,
   ENT: 80,
   BUDGET: 3.5,            // ms of block building per frame
-  look: { ambient: 0.62, hemi: 0.55, moon: 0.62, fog: 0x161d1a, fogNear: 3, fogFar: 21, poolSize: 6, exposure: 1 },
+  look: { ambient: 1.05, hemi: 0.85, moon: 0.9, fog: 0x1c1e1d, fogNear: 8, fogFar: 38, poolSize: 6, exposure: 1.15 },
   flashRange: 0.5,
   flashPower: 0.5,
   persist: null,
@@ -344,7 +344,7 @@ const Level9 = {
         }
         for (const sx of [-1.7, 1.7]) b.box(sx, 0.6, 9.5, 0.1, 1.2, 0.1, this.col(0x3a3128), 0);
         b.pop();
-        rec.exits.push({ kind: "level10", x: p.x, z: p.z, r: 2.0 });
+        rec.exits.push({ kind: "level10", x: p.x, z: p.z, r: 2.0, nx: lot.nx, nz: lot.nz });
         rec.fixtures.push({ x: p.x, y: 1.6, z: p.z, base: 3.5, dist: 10, color: 0xd8c27a, ph: 2.2, kind: "exit", on: true });
       } else if (lot.special === "exit11") {
         b.push(theta, p.x, p.z);
@@ -601,13 +601,14 @@ const Level9 = {
     this.exitPos = null; this.backPos = null;
     this._flashRestore();
     if (typeof Level9Entities !== "undefined") Level9Entities.reset();
+    if (typeof Level10 !== "undefined" && Level10.reset) Level10.reset();      // Level 10 hangs off this reset chain
     if (wasActive) {
       if (typeof CameraRig !== "undefined" && CameraRig.camera && typeof CONFIG !== "undefined") { CameraRig.camera.far = CONFIG.cameraFar; CameraRig.camera.updateProjectionMatrix(); }
       if (typeof renderer !== "undefined" && renderer) renderer.toneMappingExposure = 1.28;
     }
   },
 
-  enter(seed, from) {
+  enter(seed, from, at) {
     if (typeof Level1 !== "undefined") Level1.resetVisuals();
     if (typeof Level2 !== "undefined") Level2.reset();
     if (typeof Level3 !== "undefined") Level3.reset();
@@ -660,8 +661,13 @@ const Level9 = {
     if (typeof Flashlight !== "undefined") Flashlight.init();
     this._flashLimit();
     const S = Level9Gen.spawnInfo();
-    this.spawn.set(S.x, this.baseY, S.z);
-    this.spawnYaw = S.yaw;
+    let sx = S.x, sz = S.z, syaw = S.yaw;
+    if (from === "level10") {            // back out of the field: on the worn path, a few metres from the wheat, facing the road
+      const f = at || Level9Gen.exitList().filter(e => e.kind === "level10").sort((a, b) => a.dist - b.dist)[0];
+      if (f && f.nx != null) { sx = f.x + f.nx * 4; sz = f.z + f.nz * 4; syaw = Math.atan2(-f.nx, -f.nz); }
+    }
+    this.spawn.set(sx, this.baseY, sz);
+    this.spawnYaw = syaw;
     Level.startPos.copy(this.spawn);
     Player.position.copy(this.spawn);
     Player.velocity.set(0, 0, 0);
@@ -685,7 +691,7 @@ const Level9 = {
     this._aim(true);
     if (typeof Level9Entities !== "undefined") Level9Entities.attach(this);
     if (typeof CameraRig !== "undefined" && CameraRig.apply && CameraRig.camera) CameraRig.apply(0);
-    if (typeof HUD !== "undefined") HUD.toast("LEVEL 9 · THE SUBURBS");
+    if (typeof HUD !== "undefined" && from !== "level10") HUD.toast("LEVEL 9 · THE SUBURBS");
   },
 
   /* ------------------------------------------------------------------
@@ -704,7 +710,16 @@ const Level9 = {
     }, 0);
   },
 
-  // Levels 10 and 11 are not built yet: the run ends here for now
+  // The field break: walk in, and you are in Level 10. No Void, no fade. Level 9 is torn down and rebuilt if you come back
+  toField(x) {
+    if (this._leaving) return;
+    if (typeof Level10 === "undefined" || !Level10.enter) return this.finish(10);
+    this._leaving = true;
+    this._remember();
+    Level10.enter(this.seed, "level9", x);
+  },
+
+  // Level 11 is not built yet: the run ends here for now
   finish(which) {
     if (this._ended) return;
     this._ended = true;
@@ -725,7 +740,7 @@ const Level9 = {
     for (const x of this.exits) {
       if (Math.hypot(p.x - x.x, p.z - x.z) > x.r) continue;
       if (x.kind === "level8") return this.goBack();
-      if (x.kind === "level10") return this.finish(10);
+      if (x.kind === "level10") return this.toField(x);
       if (x.kind === "level11") return this.finish(11);
     }
   },
@@ -784,6 +799,7 @@ const Level9 = {
     if (this._lightT <= 0) { this._lightT = 0.2; this._aim(false); }
     this._fadeLights(dt);
     if (!this._leaving) this._checkExits();
+    if (!this.active) return;               // walked into Level 10
     this._promptT -= dt;
     if (this._promptT <= 0) { this._promptT = 1.1; this.prompt(); }
     this._ambience(dt);
