@@ -21,9 +21,9 @@ const Level9Gen = {
   seed: 0,
   SP: 76,          // line pitch
   SW: 1.8,         // sidewalk width
-  LD: 19,          // lot depth
+  LD: 14,          // lot depth
   CORNER: 2,       // margin kept clear at the ends of a side
-  LOTW: 21.5,      // minimum lot width
+  LOTW: 15.5,      // minimum lot width
   GW: 3.6,         // garage width
   FLOOR_H: 3.0,    // floor to floor
   STEP_RISE: 0.3,
@@ -279,7 +279,7 @@ const Level9Gen = {
   exitList() {
     const out = [], S = this._special;
     if (S.hole8) { const p = this.exitPoint(this.block(S.hole8.bi, S.hole8.bj).lots.find(l => l.id === S.hole8.id)); out.push({ kind: "level8", x: p.x, z: p.z, dist: this._lotDist(S.hole8, 9) }); }
-    for (const f of S.fields) { const l = this.block(f.lot.bi, f.lot.bj).lots.find(q => q.id === f.lot.id); const p = this.exitPoint(l); out.push({ kind: "level10", x: p.x, z: p.z, dist: f.dist }); }
+    for (const f of S.fields) { const l = this.block(f.lot.bi, f.lot.bj).lots.find(q => q.id === f.lot.id); const p = this.exitPoint(l); out.push({ kind: "level10", x: p.x, z: p.z, dist: f.dist, nx: l.nx, nz: l.nz }); }
     if (S.exit11) { const l = this.block(S.exit11.bi, S.exit11.bj).lots.find(q => q.id === S.exit11.id); const p = this.exitPoint(l); out.push({ kind: "level11", x: p.x, z: p.z, dist: this._lotDist(S.exit11, 8) }); }
     return out;
   },
@@ -357,9 +357,9 @@ const Level9Gen = {
   /* ------------------------------------------------------------------
      HOUSES
      ------------------------------------------------------------------ */
-  SIDING: [0x4b4f55, 0x5a4f46, 0x3f4d46, 0x5b4a4a, 0x4e5348, 0x56524a, 0x434a58, 0x4d4540],
+  SIDING: [0x4a4c4e, 0x55524e, 0x464a48, 0x524e4e, 0x4c4e4a, 0x52504c, 0x484a50, 0x4e4c4a],
   ROOF: [0x2b2522, 0x302c2a, 0x3a2f2a, 0x26282b],
-  DOOR: [0x3a2a22, 0x2c3a2f, 0x40302a, 0x2a2f3d, 0x4a3328],
+  DOOR: [0x3a342e, 0x323834, 0x3c3632, 0x32343a, 0x403832],
 
   houseSpec(lot) {
     const hit = this._houses.get(lot.id);
