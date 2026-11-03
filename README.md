@@ -28,7 +28,8 @@ The layout is generated for each run. You cannot rely on a fixed map. What a lev
 * **Level 3** — "Electrical Station": claustrophobic yellow-brick tunnels, iron doors (openable ones, and locked ones that only show a black void), leaking and scalding pipes, hidden electrical rooms with generators, breaker boxes and old monitors, machinery that arcs when you pass, and an elevator to Level 4 that needs power first
 * **Level 5** — "The Hotel": a kept 1930s hotel of patterned carpet, dark wood and warm low light. A lobby that is a reception (desk, key rack, sign), long numbered halls, a few guest rooms and dead ends, and off the halls a ballroom with double doors and a dining room with a kitchen behind it. The lobby has no door back: the way back to the office is a door further in, the way on is at the far end
 * **Level 8** — "The Cave System": an endless cave of rocky chambers joined by short crooked passages, streamed in as you walk and dropped behind you. The arrival door is sealed; the way back to Level 6 is a few chambers in. Real exits are rare holes or narrow shafts in a chamber floor, roughly one per 400 m grid point the seed picks (never within 500 m of the start, at least one in every 1000 m square). Dropping through one leads down to Level 9
-* **Level 9** — "The Suburbs": an endless suburban neighbourhood at midnight, streamed in by block as you walk. Dark, muted colours, thick grey-green fog, a few warm windows and orange streetlights (some flicker, some are dead). Houses are real places: every front door swings, about a third are unlocked, and an open door builds the house behind it (two rooms down, a landing and one room up). Almond water is rare (a fridge, now and then). The flashlight works at half range and half strength. Hounds keep away from you unless chased for a long time; Smilers come out of the dark; the Mangled lurks in the dark and gets commoner the farther you go (nothing within 500 m); the Watch observes from a distance. The way back to Level 8 is a hole in a vacant lot about 200 m out. A worn path into a field leads to Level 10. The Level 11 exit is 2000 m or more out, at the end of a road with growing arrow signs. Levels 10 and 11 are not built yet, so reaching either ends the run for now
+* **Level 9** — "The Suburbs": an endless suburban neighbourhood at midnight, streamed in by block as you walk. Dark, muted colours, thick grey-green fog, a few warm windows and orange streetlights (some flicker, some are dead). Houses are real places: every front door swings, about a third are unlocked, and an open door builds the house behind it (two rooms down, a landing and one room up). Almond water is rare (a fridge, now and then). The flashlight works at half range and half strength. Hounds keep away from you unless chased for a long time; Smilers come out of the dark; the Mangled lurks in the dark and gets commoner the farther you go (nothing within 500 m); the Watch observes from a distance. The way back to Level 8 is a hole in a vacant lot about 200 m out. A worn path into a field leads to Level 10. The Level 11 exit is 2000 m or more out, at the end of a road with growing arrow signs. Walking into the field break enters Level 10; Level 11 is not built yet, so reaching it ends the run for now
+* **Level 10** — "The Field": an endless wheat field under a grey overcast sky, streamed in as you walk. The wheat is taller than your eyes and shorter than the top of a jump, so it blocks the view. Plots are split by low hedges and some fences; a dirt path is rare. You walk in from Level 9 through a thick ring of wheat: the sky and fog lighten from Level 9's night as you leave the ring, and walking back before about 150 m returns you to Level 9. Past 150 m the ring is gone and there is no way back. Empty barns and sheds with hay, and still lakes, are rare; almond water is only in a barn. The way on is a barn far out. Level 11 is not built yet, so reaching it ends the run for now
 
 Each level is meant to feel different. The same seed produces the same layout.
 
@@ -87,18 +88,6 @@ Backrooms Runner is an **active work in progress**.
 * More entities
 * More environmental variety and audio
 * Performance work
-
-## Developer console
-
-These commands are for testing. They are not part of play, and they will skip things you are meant to find.
-
-* `/level 0` through `/level 5` — enter a level (`/level5` also works)
-* `/level 2 reset`, `/level 3 reset` — regenerate
-* `/level 2 seed <n>`, `/level 3 seed <n>` — enter with a seed
-* `/level 2 info`, `/level 3 info` — seed and size
-* `/level 2 exit`, `/level 3 exit` — jump to the end of that level
-* `/level 3 button`, `/level 3 power` — testing shortcuts for Level 3
-* `/level 5 back` — jump to the lobby's back door (`/level 5 exit` jumps to the forward door)
 
 ## License
 
