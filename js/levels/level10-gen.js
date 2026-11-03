@@ -178,7 +178,7 @@ const Level10Gen = {
   clump(gi, gj) {
     const p = this.cellPos(gi, gj);
     return {
-      x: p.x, z: p.z, yaw: this.hash(gi, gj, 433) * Math.PI, w: 1.15 + 0.35 * this.hash(gi, gj, 434),
+      x: p.x, z: p.z, yaw: this.hash(gi, gj, 433) * Math.PI, w: 0.18 + 0.12 * this.hash(gi, gj, 434),
       h: this.WHEAT_H * (this.WHEAT_LO + (this.WHEAT_HI - this.WHEAT_LO) * this.hash(gi, gj, 435)),
       lean: (this.hash(gi, gj, 436) - 0.5) * 0.3, shade: 0.88 + 0.24 * this.hash(gi, gj, 437)
     };
