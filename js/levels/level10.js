@@ -35,7 +35,7 @@ const Level10 = {
   BUDGET: 3.5,
   // Level 9's night, as set by Level9.enter (the same numbers: the lerp starts exactly there)
   NIGHT: { fog: 0x1c1e1d, fogNear: 8, fogFar: 38, sky: 0x1c1e1d, hemiSky: 0x5a6c7a, hemiGround: 0x1a2218, hemi: 0.85, amb: 0x66707a, ambI: 1.05, moon: 0.9, exposure: 1.15 },
-  DAY: { fog: 0xbcc0c2, fogNear: 4, fogFar: 34, sky: 0xb5b9bb, hemiSky: 0xc4c8ca, hemiGround: 0x6e6a5c, hemi: 0.95, amb: 0xaeb1b2, ambI: 0.95, moon: 0, exposure: 1.0 },
+  DAY: { fog: 0xd8dce0, fogNear: 6, fogFar: 48, sky: 0xe4e8ec, hemiSky: 0xe8ecf0, hemiGround: 0x8a8678, hemi: 1.1, amb: 0xd0d4d8, ambI: 1.2, moon: 0, exposure: 1.2 },
   persist: null,
   fixtures: [],
   exits: [],
@@ -467,7 +467,7 @@ const Level10 = {
     this.pool.push(L); this.poolFx.push(null); this._cur.push(0);
     scene.fog = new THREE.Fog(N.fog, N.fogNear, N.fogFar);
     if (CameraRig.camera) { CameraRig.camera.far = 46; CameraRig.camera.updateProjectionMatrix(); }
-    GameState.level = 10;
+    GameState.level = 10; if (typeof AudioSystem !== 'undefined') AudioSystem.setLevel(GameState.level);
     GameState.seed = this.seed;
     GameState.phase = "playing";
     GameState.cutscene = false;
