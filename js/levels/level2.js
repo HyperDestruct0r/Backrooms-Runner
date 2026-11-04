@@ -356,7 +356,7 @@ const Level2 = {
     scene.fog = new THREE.Fog(lk.fog, lk.fogNear, lk.fogFar);
     if (scene.background) scene.background.setHex(lk.fog);
     if (CameraRig.camera) { CameraRig.camera.far = 100; CameraRig.camera.updateProjectionMatrix(); }
-    GameState.level = 2;
+    GameState.level = 2; if (typeof AudioSystem !== 'undefined') AudioSystem.setLevel(GameState.level);
     GameState.seed = this.seed;
     GameState.phase = "playing";
     GameState.cutscene = false;
