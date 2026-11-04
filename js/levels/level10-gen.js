@@ -23,8 +23,8 @@ const Level10Gen = {
   FENCE_H: 1.0, FENCE_T: 0.12,
   SP: 56, JIT: 16,
   VERGE: 1.5, PATH_W: 2.6, GATE_W: 3.2,
-  RING: { clear: 2.6, outer: 12, free: 26 },       // clearing radius, outer radius, nothing else is built within `free`
-  LOCK: 150, LERP_FROM: 12, LERP_TO: 120,
+  RING: { clear: 0.6, outer: 10, free: 22 },       // clearing radius, outer radius, nothing else is built within `free`
+  LOCK: 150, LERP_FROM: 3, LERP_TO: 36,
   EXIT: { min: 700, max: 1000 },
   SPAWN_DIST: 15,
 
