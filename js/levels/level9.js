@@ -336,12 +336,11 @@ const Level9 = {
         b.push(theta, p.x, p.z);
         const path = this.col(0x3a3626);
         b.box(0, 0.02, 6.5, 2.6, 0.02, 13, path, 0);          // the worn path from the road
-        for (let i = 0; i < 280; i++) {                      // a wheat edge, not poles
-          const x = (r() - 0.5) * 11, z = -2.4 + r() * 7.5;
-          if (Math.abs(x) < 1.3 && z > 0.6 && z < 4.2) continue;
-          const h = 1.4 + r() * 0.7;
-          const yaw = r() * 3;
-          b.box(x, h / 2, z, 0.22, h, 0.06, this.col(r() < 0.5 ? 0x8a7a32 : 0x6e6428, 0.75 + r() * 0.35), yaw);
+        for (let i = 0; i < 700; i++) {                      // dense field edge
+          const x = (r() - 0.5) * 12, z = -2.0 + r() * 8.5;
+          if (Math.abs(x) < 1.1 && z > 0.4 && z < 4.6) continue;
+          const h = 1.6 + r() * 0.8;
+          b.box(x, h / 2, z, 0.06, h, 0.04, this.col(r() < 0.5 ? 0x9a8a38 : 0x7a7030, 0.7 + r() * 0.4), r() * 3);
         }
         for (const sx of [-1.7, 1.7]) b.box(sx, 0.6, 9.5, 0.1, 1.2, 0.1, this.col(0x3a3128), 0);
         b.pop();
@@ -654,7 +653,7 @@ const Level9 = {
     if (scene.background) scene.background.setHex(lk.fog);
     if (CameraRig.camera) { CameraRig.camera.far = 46; CameraRig.camera.updateProjectionMatrix(); }
     if (typeof renderer !== "undefined" && renderer) renderer.toneMappingExposure = 1.28 * lk.exposure;
-    GameState.level = 9;
+    GameState.level = 9; if (typeof AudioSystem !== 'undefined') AudioSystem.setLevel(GameState.level);
     GameState.seed = this.seed;
     GameState.phase = "playing";
     GameState.cutscene = false;
