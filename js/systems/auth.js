@@ -1,6 +1,6 @@
 /* Backrooms Runner — Supabase authentication + run persistence.
- * IMPORTANT: replace the two values below with your Supabase project's
- * Project URL and anon/publishable key. Never put a service-role key here.
+ * The browser uses only the Supabase anon/publishable key. Never put a service-role key here.
+ * Staff role changes are performed by the database RPC in supabase/moderator-hierarchy.sql.
  */
 "use strict";
 
@@ -14,6 +14,7 @@ const AuthSystem = {
   user: null,
   profile: null,
   ready: false,
+  _adminEventsBound: false,
 
   async init() {
     if (!window.supabase || SUPABASE_CONFIG.url.startsWith("YOUR_")) {
@@ -21,58 +22,62 @@ const AuthSystem = {
       this.updateUI();
       return;
     }
-
     this.client = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
-
     const { data } = await this.client.auth.getSession();
     await this.applySession(data && data.session ? data.session : null);
-
     this.client.auth.onAuthStateChange((event, session) => {
       // Defer database work out of the auth callback to avoid auth-lock issues.
       setTimeout(() => this.applySession(session), 0);
     });
-
     this.ready = true;
+    this.bindAdminEvents();
     this.updateUI();
   },
 
   async applySession(session) {
     this.user = session ? session.user : null;
     this.profile = null;
-
     if (this.user && this.client) {
-      const { data, error } = await this.client
-        .from("profiles")
-        .select("username, role, owner")
-        .eq("id", this.user.id)
-        .maybeSingle();
+      const { data, error } = await this.client.from("profiles")
+        .select("username, role, owner").eq("id", this.user.id).maybeSingle();
       if (!error) this.profile = data;
+      else console.warn("AuthSystem: could not load profile", error.message);
     }
-
     this.updateUI();
   },
 
-
   role() { return (this.profile && this.profile.role) || "user"; },
   isOwner() { return !!(this.profile && this.profile.owner); },
-  canUseConsole() { return this.role() === "tester" || this.role() === "developer" || this.isOwner(); },
+  roleLabel(role) {
+    if (role === "developer" && this.isOwner()) return "Owner";
+    return ({ user: "User", tester: "Tester", moderator: "Moderator", developer: "Developer" })[role] || "User";
+  },
+  canUseConsole() { return ["tester", "moderator", "developer"].includes(this.role()) || this.isOwner(); },
+  isStaff() { return this.role() === "moderator" || this.role() === "developer" || this.isOwner(); },
+  canModerate() { return this.isStaff(); },
   canAdmin() { return this.role() === "developer" || this.isOwner(); },
 
   async listUsers(q) {
-    if (!this.canAdmin()) throw new Error("Not allowed.");
-    let query = this.client.from("profiles").select("username, role").order("username").limit(100);
-    if (q) query = query.ilike("username", "%" + q + "%");
-    const { data, error } = await query;
+    if (!this.canAdmin()) throw new Error("Only developers and the owner can manage roles.");
+    if (!this.client) throw new Error("Supabase is not connected.");
+    const { data, error } = await this.client.rpc("admin_list_profiles", { p_search: q || "" });
     if (error) throw error;
     return data || [];
   },
+
   async setRoles(usernames, role) {
-    if (!this.canAdmin()) throw new Error("Not allowed.");
-    if (!this.isOwner() && role === "developer") throw new Error("Only the owner can set developers.");
-    const { data, error } = await this.client.from("profiles").update({ role }).in("username", usernames).select("username, role");
+    if (!this.canAdmin()) throw new Error("Only developers and the owner can manage roles.");
+    if (!["user", "tester", "moderator", "developer"].includes(role)) throw new Error("Invalid role.");
+    if (role === "developer" && !this.isOwner()) throw new Error("Only the owner can promote developers.");
+    if (!this.client) throw new Error("Supabase is not connected.");
+    const { data, error } = await this.client.rpc("admin_set_profile_roles", {
+      p_usernames: usernames,
+      p_role: role
+    });
     if (error) throw error;
     return data || [];
   },
+
   username() {
     return (this.profile && this.profile.username) ||
       (this.user && this.user.user_metadata && this.user.user_metadata.username) ||
@@ -84,28 +89,23 @@ const AuthSystem = {
     username = username.trim();
     if (username.length < 3 || username.length > 20) throw new Error("Username must be 3–20 characters.");
     if (!/^[A-Za-z0-9_]+$/.test(username)) throw new Error("Username may contain letters, numbers, and underscores only.");
-
     const { data, error } = await this.client.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { data: { username } }
+      email: email.trim(), password, options: { data: { username } }
     });
     if (error) throw error;
-
     if (data.user) {
-      await this.client.from("profiles").upsert({ id: data.user.id, username, role: "user", owner: false });
+      const { error: profileError } = await this.client.from("profiles").upsert({
+        id: data.user.id, username, role: "user", owner: false
+      });
+      if (profileError) console.warn("AuthSystem: profile creation will need to be retried", profileError.message);
     }
-
-    // If email confirmation is disabled, a session may already exist.
     if (data.session) await this.applySession(data.session);
     return data;
   },
 
   async signIn(email, password) {
     if (!this.client) throw new Error("Supabase is not configured yet.");
-    const { data, error } = await this.client.auth.signInWithPassword({
-      email: email.trim(), password
-    });
+    const { data, error } = await this.client.auth.signInWithPassword({ email: email.trim(), password });
     if (error) throw error;
     await this.applySession(data.session);
     return data;
@@ -123,12 +123,9 @@ const AuthSystem = {
   async recordRun(result) {
     if (!this.client || !this.user) return;
     const payload = {
-      user_id: this.user.id,
-      level: Number(result.level || 0),
-      outcome: result.outcome || "complete",
-      time_seconds: Number(result.time || 0),
-      distance_meters: Number(result.distance || 0),
-      seed: String(result.seed || "")
+      user_id: this.user.id, level: Number(result.level || 0),
+      outcome: result.outcome || "complete", time_seconds: Number(result.time || 0),
+      distance_meters: Number(result.distance || 0), seed: String(result.seed || "")
     };
     const { error } = await this.client.from("runs").insert(payload);
     if (error) console.warn("AuthSystem: could not save run", error);
@@ -140,7 +137,6 @@ const AuthSystem = {
     const status = document.getElementById("auth-status");
     if (status) status.textContent = this.client ? "" : "Supabase is not configured yet — guest mode is available.";
   },
-
   closeModal() {
     const modal = document.getElementById("auth-modal");
     if (modal) modal.style.display = "none";
@@ -148,19 +144,61 @@ const AuthSystem = {
 
   async loadStats() {
     if (!this.client || !this.user) return { count: 0, time: 0, dist: 0, max: 0, runs: [] };
-    const { data } = await this.client.from("runs").select("level, outcome, time_seconds, distance_meters").eq("user_id", this.user.id).order("id", { ascending: false }).limit(10);
+    const { data } = await this.client.from("runs").select("level, outcome, time_seconds, distance_meters")
+      .eq("user_id", this.user.id).order("id", { ascending: false }).limit(10);
     const runs = data || [];
     const { data: all } = await this.client.from("runs").select("level, time_seconds, distance_meters").eq("user_id", this.user.id);
     const rows = all || [];
     return {
-      count: rows.length,
-      time: rows.reduce((s, r) => s + (r.time_seconds || 0), 0),
+      count: rows.length, time: rows.reduce((s, r) => s + (r.time_seconds || 0), 0),
       dist: rows.reduce((s, r) => s + (r.distance_meters || 0), 0),
-      max: rows.reduce((m, r) => Math.max(m, r.level || 0), 0),
-      runs
+      max: rows.reduce((m, r) => Math.max(m, r.level || 0), 0), runs
     };
   },
   fmt(s) { const m = Math.floor(s / 60), h = Math.floor(m / 60); return h ? h + "h " + (m % 60) + "m" : m + "m " + Math.floor(s % 60) + "s"; },
+
+  bindAdminEvents() {
+    if (this._adminEventsBound) return;
+    this._adminEventsBound = true;
+    const load = async (q) => {
+      const list = document.getElementById("admin-list");
+      const status = document.getElementById("admin-status");
+      if (!list) return;
+      try {
+        const rows = await this.listUsers(q);
+        list.replaceChildren();
+        rows.forEach((r) => {
+          const label = document.createElement("label");
+          label.style.display = "block";
+          const check = document.createElement("input");
+          check.type = "checkbox"; check.value = r.username;
+          const name = document.createTextNode(" " + r.username + " ");
+          const role = document.createElement("em");
+          role.textContent = "(" + (r.owner ? "Owner" : this.roleLabel(r.role)) + ")";
+          label.append(check, name, role); list.appendChild(label);
+        });
+        if (status) status.textContent = rows.length ? "" : "No matching accounts.";
+      } catch (err) { list.textContent = err.message || "Failed to load accounts."; }
+    };
+    const show = document.getElementById("admin-show");
+    if (show) show.addEventListener("click", () => load(""));
+    const search = document.getElementById("admin-search");
+    if (search) search.addEventListener("input", () => load(search.value.trim()));
+    const set = document.getElementById("admin-set");
+    if (set) set.addEventListener("click", async () => {
+      const list = document.getElementById("admin-list");
+      const names = list ? [...list.querySelectorAll("input:checked")].map(c => c.value) : [];
+      const role = document.getElementById("admin-role").value;
+      const status = document.getElementById("admin-status");
+      if (!names.length) { if (status) status.textContent = "Select at least one account."; return; }
+      try {
+        const result = await this.setRoles(names, role);
+        if (status) status.textContent = result.length + " account(s) set to " + this.roleLabel(role) + ".";
+        await load(search ? search.value.trim() : "");
+      } catch (err) { if (status) status.textContent = err.message || "Role update failed."; }
+    });
+  },
+
   updateUI() {
     const login = document.getElementById("auth-login");
     const signed = document.getElementById("auth-signed");
@@ -170,7 +208,7 @@ const AuthSystem = {
     if (shell) shell.style.display = this.canAdmin() ? "block" : "none";
     if (this.user) {
       const hello = document.getElementById("auth-hello");
-      if (hello) hello.textContent = "Logged in as " + this.username();
+      if (hello) hello.textContent = "Logged in as " + this.username() + " · " + (this.isOwner() ? "Owner" : this.roleLabel(this.role()));
       this.loadStats().then(s => {
         const box = document.getElementById("auth-stats");
         if (box) box.innerHTML = "<div>Runs</div><b>" + s.count + "</b><div>Time</div><b>" + this.fmt(s.time) + "</b><div>Distance</div><b>" + Math.round(s.dist) + " m</b><div>Furthest</div><b>Level " + s.max + "</b><div>Id</div><b style='font-size:11px'>" + this.user.id.slice(0, 8) + "</b>";
@@ -183,47 +221,18 @@ const AuthSystem = {
     }
     const label = document.getElementById("account-label");
     if (label) label.textContent = this.user ? this.username() : "Account";
-  
-  const adminList = document.getElementById("admin-list");
-  const render = (rows) => {
-    if (!adminList) return;
-    adminList.innerHTML = rows.map(r => '<label style="display:block"><input type="checkbox" value="' + r.username + '"> ' + r.username + ' <em>(' + r.role + ')</em></label>').join("");
-  };
-  const load = async (q) => {
-    try { render(await AuthSystem.listUsers(q)); } catch (err) { if (adminList) adminList.textContent = err.message || "Failed"; }
-  };
-  const show = document.getElementById("admin-show");
-  if (show) show.addEventListener("click", () => load(""));
-  const search = document.getElementById("admin-search");
-  if (search) search.addEventListener("input", () => load(search.value.trim()));
-  const adminSet = document.getElementById("admin-set");
-  if (adminSet) adminSet.addEventListener("click", async () => {
-    const names = [...adminList.querySelectorAll("input:checked")].map(c => c.value);
-    const role = document.getElementById("admin-role").value;
-    const status = document.getElementById("admin-status");
-    if (!names.length) { if (status) status.textContent = "Select at least one"; return; }
-    try {
-      const res = await AuthSystem.setRoles(names, role);
-      if (status) status.textContent = res.length + " set to " + role;
-      load(search ? search.value.trim() : "");
-    } catch (err) { if (status) status.textContent = err.message || "Failed"; }
-  });
-  const signOut = document.getElementById("auth-signout");
+    const signOut = document.getElementById("auth-signout");
     if (signOut) signOut.style.display = this.user ? "inline-block" : "none";
-    const authButtons = document.querySelectorAll("[data-auth-action]");
-    authButtons.forEach(btn => btn.style.display = this.user ? "none" : "inline-block");
+    document.querySelectorAll("[data-auth-action]").forEach(btn => btn.style.display = this.user ? "none" : "inline-block");
   }
 };
 
 window.addEventListener("load", () => AuthSystem.init());
-
 window.addEventListener("DOMContentLoaded", () => {
   const account = document.getElementById("account-button");
   if (account) account.addEventListener("click", () => AuthSystem.openModal());
-
   const close = document.getElementById("auth-close");
   if (close) close.addEventListener("click", () => AuthSystem.closeModal());
-
   const form = document.getElementById("auth-form");
   if (form) form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -241,32 +250,18 @@ window.addEventListener("DOMContentLoaded", () => {
         await AuthSystem.signIn(email, password);
         status.textContent = "Signed in.";
       }
-    } catch (err) {
-      status.textContent = err && err.message ? err.message : "Authentication failed.";
-    }
+    } catch (err) { status.textContent = err && err.message ? err.message : "Authentication failed."; }
   });
-
   const mode = document.getElementById("auth-mode");
   const usernameWrap = document.getElementById("auth-username-wrap");
   const submit = document.getElementById("auth-submit");
   const refreshMode = () => {
+    if (!mode || !usernameWrap || !submit) return;
     const signup = mode.value === "signup";
     usernameWrap.style.display = signup ? "block" : "none";
     submit.textContent = signup ? "Create account" : "Sign in";
   };
   if (mode) { mode.addEventListener("change", refreshMode); refreshMode(); }
-
-
-  const adminSet = document.getElementById("admin-set");
-  if (adminSet) adminSet.addEventListener("click", async () => {
-    const name = document.getElementById("admin-user").value.trim();
-    const role = document.getElementById("admin-role").value;
-    const status = document.getElementById("admin-status");
-    try {
-      const res = await AuthSystem.setRole(name, role);
-      if (status) status.textContent = res.username + " is now " + res.role;
-    } catch (err) { if (status) status.textContent = err.message || "Failed"; }
-  });
   const signOut = document.getElementById("auth-signout");
   if (signOut) signOut.addEventListener("click", async () => {
     try { await AuthSystem.signOut(); } catch (err) { console.warn(err); }
