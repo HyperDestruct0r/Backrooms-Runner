@@ -19,7 +19,7 @@ const MenuSystem = {
     ["unlockMouse", "Unlock mouse"]
   ],
   menuIndex: 0,
-  menuItems: ["play", "tutorial", "settings", "controls", "credits"],
+  menuItems: ["play", "tutorial", "settings", "controls", "chat", "credits"],
   playPage: "play-select",
   rebinding: null,
   settingsKey: "backroomsRunner.settings.v1",
@@ -220,6 +220,11 @@ const MenuSystem = {
     if (action === "tutorial") {
       if (typeof TutorialSystem !== "undefined") TutorialSystem.openHub();
       else this.showPage("tutorial");
+      return;
+    }
+    if (action === "chat") {
+      this.showPage("chat");
+      if (typeof ChatSystem !== "undefined") ChatSystem.open();
       return;
     }
     if (action === "settings" || action === "controls" || action === "credits") {
