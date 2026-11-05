@@ -52,3 +52,27 @@
 .run-fail { color: #c45a5a; }
 #admin-list { max-height: 140px; overflow: auto; margin: 8px 0; }
 #admin-list label { display: block; }
+
+/* Account panel close control: keep it visible and easy to reach. */
+#auth-panel .auth-x {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 8px;
+  background: rgba(0,0,0,.22);
+  color: #fff;
+  font-size: 27px;
+  line-height: 1;
+  cursor: pointer;
+}
+#auth-panel .auth-x:hover { background: rgba(255,255,255,.12); }
+#auth-panel { padding-top: 54px; }
