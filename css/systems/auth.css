@@ -41,3 +41,14 @@
 #auth-panel button { cursor: pointer; }
 #auth-close { margin-top: 8px; }
 #auth-status { min-height: 20px; margin-top: 12px; font-size: 13px; opacity: .85; }
+
+#auth-panel { width: min(640px, 92vw); max-height: 86vh; overflow: auto; background: #2a2c2e; border: 1px solid #4a4e52; border-top: 3px solid #c4a35a; color: #d8d6d0; position: relative; }
+.auth-x { position: absolute; top: 8px; right: 10px; background: none; border: none; color: #d8d6d0; font-size: 22px; cursor: pointer; }
+#auth-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin: 12px 0; font-size: 14px; }
+#auth-stats b { color: #c4a35a; }
+#auth-runs { font-size: 13px; }
+.run-row { display: flex; gap: 12px; padding: 4px 0; border-bottom: 1px solid #3a3e42; }
+.run-ok { color: #7dba6a; }
+.run-fail { color: #c45a5a; }
+#admin-list { max-height: 140px; overflow: auto; margin: 8px 0; }
+#admin-list label { display: block; }
