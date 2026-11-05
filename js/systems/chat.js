@@ -4,6 +4,7 @@
 const ChatSystem = {
   channelRows: [], currentChannel: null, subscription: null, presenceChannel: null,
   presenceTimer: null, replyTo: null, access: null, initialized: false,
+  targetSearchToken: 0, onlineUserIds: new Set(),
   reactions: ["👍", "❤️", "👀", "😂", "❗"],
 
   init() {
@@ -25,6 +26,8 @@ const ChatSystem = {
     if (appeal) appeal.addEventListener("click", () => this.submitAppeal());
     const mod = document.getElementById("chat-mod-submit");
     if (mod) mod.addEventListener("click", () => this.moderateUser());
+    const targetSearch = document.getElementById("chat-mod-search");
+    if (targetSearch) targetSearch.addEventListener("input", () => this.searchModerationTargets());
     const review = document.getElementById("chat-review-refresh");
     if (review) review.addEventListener("click", () => this.loadReviewQueue());
   },
@@ -284,12 +287,45 @@ const ChatSystem = {
     users.sort((a,b) => a.username.localeCompare(b.username));
     users.forEach(user => { const item = document.createElement("div"); item.className = "chat-online-user"; const dot = document.createElement("i"); const name = document.createElement("span"); name.textContent = user.username; item.append(dot,name); box.appendChild(item); });
     const count = document.getElementById("chat-online-count"); if (count) count.textContent = String(users.length);
+    this.onlineUserIds = new Set(users.map(user => user.user_id));
+    // Presence is display-only. Moderation targets are loaded from registered accounts.
     const target = document.getElementById("chat-mod-target");
-    if (target && document.activeElement !== target) {
-      const current = target.value; const options = users.map(u => u.username);
-      target.replaceChildren(); const empty = document.createElement("option"); empty.value = ""; empty.textContent = "Select online user"; target.appendChild(empty);
-      options.forEach(username => { const opt = document.createElement("option"); opt.value = username; opt.textContent = username; target.appendChild(opt); }); target.value = current;
+    if (target) Array.from(target.options).forEach(option => {
+      if (!option.value || !option.dataset.username) return;
+      const online = this.onlineUserIds.has(option.value);
+      option.textContent = "@" + option.dataset.username + (online ? " · online" : " · offline");
+    });
+  },
+
+  async searchModerationTargets() {
+    const input = document.getElementById("chat-mod-search");
+    const select = document.getElementById("chat-mod-target");
+    const status = document.getElementById("chat-mod-status");
+    if (!input || !select) return;
+    const query = input.value.trim();
+    const token = ++this.targetSearchToken;
+    select.replaceChildren();
+    const placeholder = document.createElement("option"); placeholder.value = "";
+    placeholder.textContent = query.length < 2 ? "Type at least 2 characters" : "Searching accounts…";
+    select.appendChild(placeholder);
+    if (query.length < 2) return;
+    const { data, error } = await AuthSystem.client.rpc("chat_search_moderation_targets", { p_query: query });
+    if (token !== this.targetSearchToken) return;
+    select.replaceChildren();
+    if (error) {
+      const option = document.createElement("option"); option.value = ""; option.textContent = "Account search unavailable"; select.appendChild(option);
+      if (status) status.textContent = error.message;
+      return;
     }
+    const empty = document.createElement("option"); empty.value = ""; empty.textContent = data && data.length ? "Select account" : "No matching accounts"; select.appendChild(empty);
+    (data || []).forEach(account => {
+      const option = document.createElement("option"); option.value = account.user_id;
+      option.dataset.username = account.username;
+      const online = this.onlineUserIds.has(account.user_id);
+      const role = account.owner ? "Owner" : account.role;
+      option.textContent = "@" + account.username + " · " + (online ? "online" : "offline") + " · " + role;
+      select.appendChild(option);
+    });
   },
 
   async moderateUser() {
@@ -298,9 +334,12 @@ const ChatSystem = {
     const reason = document.getElementById("chat-mod-reason").value.trim();
     const duration = Number(document.getElementById("chat-mod-duration").value || 0);
     const status = document.getElementById("chat-mod-status");
-    if (!target || !reason) { if (status) status.textContent = "Choose a user and provide a reason."; return; }
-    const { error } = await AuthSystem.client.rpc("chat_moderate_user", { p_target_username: target, p_action: action, p_reason: reason, p_duration_minutes: duration });
-    if (status) status.textContent = error ? error.message : "Moderation action recorded.";
+    if (!target || !reason) { if (status) status.textContent = "Search for an account, select it, and provide a reason."; return; }
+    const selected = document.getElementById("chat-mod-target").selectedOptions[0];
+    const username = selected && selected.dataset.username ? selected.dataset.username : "the selected account";
+    const { error } = await AuthSystem.client.rpc("chat_moderate_user", { p_target_user_id: target, p_action: action, p_reason: reason, p_duration_minutes: duration });
+    if (status) status.textContent = error ? error.message : "Action recorded for @" + username + ". It applies whether the account is online or offline.";
+    if (!error) { document.getElementById("chat-mod-reason").value = ""; }
   },
   async loadReviewQueue() {
     const list = document.getElementById("chat-review-list"); if (!list || !AuthSystem.canAdmin()) return;
