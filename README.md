@@ -141,3 +141,13 @@ The browser uses the existing Supabase anon/publishable key. Never put a service
 - Chat restrictions are separate from game access. This migration does not implement game suspensions or game bans.
 
 **Important:** Run the SQL migration before expecting chat to work. This ZIP contains the client and migration files; it does not apply changes to the hosted Supabase database.
+
+
+### Developer review queue SQL fix
+
+If the Developer Review Queue reports `column reference "id" is ambiguous`, run `supabase/fix-review-queue-ambiguous-id.sql` in the Supabase SQL Editor after the community-chat migrations. This is an incremental function replacement; it does not require rebuilding chat tables or changing account data.
+
+
+### Persistent chat appeal cases (v39)
+
+Run `supabase/appeal-case-interface.sql` after the existing chat and moderation migrations. Appeals are stored as persistent case records with WAITING, REJECTED, and APPROVED states. Users can edit a pending appeal, submit a new appeal after rejection (prior records remain in history), and acknowledge an approved appeal with Return to Chat. Approval clears chat-only restrictions; it does not change game restrictions.
