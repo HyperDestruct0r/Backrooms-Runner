@@ -236,6 +236,18 @@ window.addEventListener("DOMContentLoaded", () => {
   if (account) account.addEventListener("click", () => AuthSystem.openModal());
   const close = document.getElementById("auth-close");
   if (close) close.addEventListener("click", () => AuthSystem.closeModal());
+  const modal = document.getElementById("auth-modal");
+  const panel = document.getElementById("auth-panel");
+  // Clicking the dimmed backdrop closes the account panel; clicks inside do not.
+  if (modal) modal.addEventListener("click", (event) => {
+    if (event.target === modal) AuthSystem.closeModal();
+  });
+  if (panel) panel.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && modal && modal.style.display !== "none") {
+      AuthSystem.closeModal();
+    }
+  });
   const form = document.getElementById("auth-form");
   if (form) form.addEventListener("submit", async (event) => {
     event.preventDefault();
