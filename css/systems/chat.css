@@ -63,3 +63,20 @@
  .chat-mod-grid { grid-template-columns:1fr; }
  .chat-mod-reason { grid-column:auto; }
 }
+
+.chat-appeal-case { margin:14px 0; padding:16px; border:1px solid #514a36; background:rgba(0,0,0,.22); }
+.chat-appeal-case-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.chat-appeal-token { color:#e5dcb9; font-size:11px; letter-spacing:.1em; }
+.chat-appeal-status { font-size:10px; font-weight:900; letter-spacing:.12em; padding:5px 8px; border:1px solid currentColor; }
+.chat-appeal-status.waiting { color:#aaa99f; }
+.chat-appeal-status.rejected { color:#e06b65; }
+.chat-appeal-status.approved { color:#7fbd83; }
+.chat-appeal-username { color:#e2d7b5; font-size:12px; margin:0 0 8px; }
+.chat-appeal-reason-view { color:#c8c0a5; font-size:12px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; margin:0 0 12px; }
+.chat-appeal-decision { color:#a9a18a; font-size:11px; line-height:1.5; margin:10px 0 0; }
+.chat-appeal-history { margin-top:16px; border-top:1px solid #393425; padding-top:10px; }
+.chat-appeal-history h4 { color:#a79b70; font-size:10px; letter-spacing:.12em; }
+.chat-appeal-history-item { padding:8px 0; border-bottom:1px solid #393425; color:#aaa28b; font-size:10px; }
+.chat-appeal-form { margin-top:14px; }
+.chat-appeal-form-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.chat-appeal-case .chat-primary { margin-top:4px; }
