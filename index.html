@@ -363,7 +363,8 @@
           <section id="chat-moderation" class="chat-moderation" hidden>
             <h3>MODERATION TOOLS</h3>
             <div class="chat-mod-grid">
-              <label>Account<select id="chat-mod-target"><option value="">Select online user</option></select></label>
+              <label>Find account<input id="chat-mod-search" type="search" maxlength="40" autocomplete="off" placeholder="Search username (2+ characters)"></label>
+              <label>Account<select id="chat-mod-target"><option value="">Type a username to search all accounts</option></select></label>
               <label>Action<select id="chat-mod-action"><option value="warning">Warning</option><option value="mute">Temporary mute</option><option value="suspend">Chat suspension</option><option value="ban_request">Request permanent chat ban</option></select></label>
               <label>Duration in minutes<input id="chat-mod-duration" type="number" min="1" max="43200" value="60"></label>
               <label class="chat-mod-reason">Reason<input id="chat-mod-reason" maxlength="500" placeholder="Required moderation reason"></label>
