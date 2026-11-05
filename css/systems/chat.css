@@ -80,3 +80,7 @@
 .chat-appeal-form { margin-top:14px; }
 .chat-appeal-form-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .chat-appeal-case .chat-primary { margin-top:4px; }
+
+.chat-new-appeal { display:inline-flex; align-items:center; gap:9px; margin:14px 0 4px; padding:9px 13px; border:1px solid #756b43; background:rgba(216,201,105,.08); color:#e5dcb9; cursor:pointer; font-size:11px; font-weight:800; letter-spacing:.1em; }
+.chat-new-appeal:hover { background:rgba(216,201,105,.16); border-color:#b5a466; }
+.chat-new-appeal span { display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px; border:1px solid currentColor; border-radius:50%; font-size:19px; line-height:1; }
