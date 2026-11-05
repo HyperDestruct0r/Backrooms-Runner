@@ -1,5 +1,5 @@
 /* Backrooms Runner PWA cache. Bump CACHE_VERSION when publishing future updates. */
-const CACHE_VERSION = 'backrooms-runner-v36';
+const CACHE_VERSION = 'backrooms-runner-v37';
 const APP_CACHE = `${CACHE_VERSION}-app`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const APP_SHELL = [
@@ -31,6 +31,7 @@ const APP_SHELL = [
   "./css/levels/level1.css",
   "./css/main.css",
   "./css/systems/auth.css",
+  "./css/systems/chat.css",
   "./css/systems/menu.css",
   "./css/systems/transitions.css",
   "./css/systems/tutorial.css",
@@ -60,6 +61,7 @@ const APP_SHELL = [
   "./js/systems/atmosphere.js",
   "./js/systems/void.js",
   "./js/systems/auth.js",
+  "./js/systems/chat.js",
   "./js/systems/dev-commands.js",
   "./js/systems/keyboard-guide.js",
   "./js/systems/menu.js",
