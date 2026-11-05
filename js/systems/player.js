@@ -29,6 +29,7 @@ const STEP_TOLERANCE = 0.05;
 function stepTolerance() { return (typeof Level9 !== "undefined" && Level9.active) ? Level9.stepTol : STEP_TOLERANCE; }
 
 function resolveAxis(pos, radius, height, axis) {
+  if (GameState.noclip || (GameState.creative && Player.flying)) return 0;
   const min = new THREE.Vector3(pos.x - radius, pos.y, pos.z - radius);
   const max = new THREE.Vector3(pos.x + radius, pos.y + height, pos.z + radius);
   let pushed = 0;
@@ -234,7 +235,7 @@ const Player = {
     this.lastDamageAgo += dt;
     while (this.sanityAcc >= 1 && this.sanity > 0) {
       this.sanityAcc -= 1;
-      this.sanity -= 1;
+      if (!GameState.sanityLock) this.sanity -= 1;
     }
     if (this.sanity <= 0) { this.sanity = 0; this.sanityAcc = 0; }
     if (this.sanity > C.hpRegenSanityNeed &&
@@ -260,7 +261,7 @@ const Player = {
       this.stamAcc += drainRate * dt;
       while (this.stamAcc >= 1 && this.stamina > 0) {
         this.stamAcc -= 1;
-        this.stamina -= 1;
+        if (!GameState.saturation) this.stamina -= 1;
       }
       if (this.stamina <= 0) {
         this.stamina = 0;
@@ -339,6 +340,12 @@ const Player = {
     this.heightCurrent += (targetH - this.heightCurrent) * Math.min(1, dt * 12);
 
     this.wishSprint = wantSprint && !this.crouching && this.stamina > 0 && (this.onGround || this.sprintJumping);
+    if (GameState.creative) {
+      if (wantJump && this.onGround && !this._cjump) this._cjump = true;
+      else if (wantJump && this._cjump && !this.onGround) { this.flying = !this.flying; this._cjump = false; }
+      else if (!wantJump) this._cjump = false;
+      if (wantCrouch && this.flying) this.flying = false;
+    } else this.flying = false;
 
     // Camera-relative wish on XZ. Three.js yaw: local forward is (-sin(y), -cos(y)).
     let fwd = 0, str = 0;
@@ -369,6 +376,8 @@ const Player = {
     else if (this.crouching) speed = P.crouchSpeed;
     else if (this.sprintJumping && this.wishSprint) speed = P.sprintSpeed * P.sprintJumpMult;
     else if (this.wishSprint) speed = P.sprintSpeed;
+    if (GameState.speedMult && GameState.speedMult !== 1) speed *= GameState.speedMult;
+    if (GameState.creative && this.flying) speed = P.sprintSpeed * 2;
 
     const accel = this.onGround ? P.accel : P.airAccel;
     const fric = this.onGround ? P.friction : P.airFriction;
@@ -413,6 +422,11 @@ const Player = {
       }
     }
 
+    // Creative fly
+    if (GameState.creative && this.flying) {
+      this.velocity.y = isActionDown("jump") ? 8 : (isActionDown("crouch") ? -8 : 0);
+      this.onGround = false;
+    }
     // Jump / gravity
     if (wantJump && this.onGround && !this.sliding) {
       this.velocity.y = P.jumpVel;
