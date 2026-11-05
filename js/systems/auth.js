@@ -44,6 +44,8 @@ const AuthSystem = {
       else console.warn("AuthSystem: could not load profile", error.message);
     }
     this.updateUI();
+    const chatPage = document.getElementById("menu-page-chat");
+    if (chatPage && chatPage.classList.contains("is-open") && typeof ChatSystem !== "undefined") ChatSystem.open();
   },
 
   role() { return (this.profile && this.profile.role) || "user"; },
@@ -117,6 +119,7 @@ const AuthSystem = {
     if (error) throw error;
     this.user = null;
     this.profile = null;
+    if (typeof ChatSystem !== "undefined") { ChatSystem.teardownSubscriptions(); ChatSystem.showSignedOut(); }
     this.updateUI();
   },
 
