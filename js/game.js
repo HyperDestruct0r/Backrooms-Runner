@@ -3,6 +3,12 @@
 let scene, renderer;
 
 const Game = {
+  _hudChrome(show) {
+    const acct = document.getElementById("account-button");
+    const seed = document.getElementById("hud-seed");
+    if (acct) acct.style.display = show ? "" : "none";
+    if (seed) seed.style.display = show ? "" : "none";
+  },
   _nextFrame() { return new Promise(resolve => requestAnimationFrame(resolve)); },
   _setBoot(progress, status) {
     const fill = document.getElementById("boot-fill");
@@ -327,6 +333,7 @@ const Game = {
       return;
     }
     GameState.phase = "playing";
+    this._hudChrome(false);
     GameState.elapsed = 0;
     GameState.levelTimes = { 0: 0, 1: 0 };
     GameState.distance = 0;
@@ -353,6 +360,7 @@ const Game = {
     await this._nextFrame();
     if (loadOverlay) loadOverlay.style.display = "none";
     GameState.phase = "playing";
+    this._hudChrome(false);
     if (tutorial) {
       // Training uses the normal gameplay update path without taking over the
       // browser pointer. This keeps the tutorial card clickable on desktop.
@@ -459,6 +467,7 @@ const Game = {
     const go = document.getElementById("gameover-overlay");
     if (go) go.style.display = "none";
     GameState.phase = "playing";
+    this._hudChrome(false);
     GameState.elapsed = 0;
     GameState.levelTimes = { 0: 0, 1: 0 };
     GameState.distance = 0;
@@ -522,6 +531,7 @@ const Game = {
   
     const el = document.getElementById("gameover-overlay");
     if (el) el.style.display = "flex";
+    this._hudChrome(true);
   
     // Save the failed run for signed-in users.
     if (typeof AuthSystem !== "undefined") {
