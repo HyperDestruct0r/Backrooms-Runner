@@ -85,6 +85,10 @@ const AuthSystem = {
     });
     if (error) throw error;
 
+    if (data.user) {
+      await this.client.from("profiles").upsert({ id: data.user.id, username, role: "user", owner: false });
+    }
+
     // If email confirmation is disabled, a session may already exist.
     if (data.session) await this.applySession(data.session);
     return data;
