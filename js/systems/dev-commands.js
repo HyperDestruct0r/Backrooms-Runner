@@ -101,6 +101,7 @@ const DevCommands = {
     window.addEventListener("keydown", (e) => {
       if (e.code !== "Backquote" || e.repeat) return;
       if (!GameState.debug || GameState.phase !== "playing") return;
+      if (typeof AuthSystem !== "undefined" && AuthSystem.user && !AuthSystem.canUseConsole()) return;
       if (this.open) return;
       e.preventDefault();
       e.stopPropagation();
@@ -111,6 +112,7 @@ const DevCommands = {
   toggle() { this.open ? this.close() : this.show(); },
   show() {
     if (!GameState.debug || GameState.phase !== "playing") return;
+    if (typeof AuthSystem !== "undefined" && AuthSystem.user && !AuthSystem.canUseConsole()) return;
     this.open = true;
     const box = document.getElementById("dev-console");
     const input = document.getElementById("dev-console-input");
@@ -162,8 +164,17 @@ const DevCommands = {
       if (cmd === "spawn") return this.spawn(args);
       if (cmd === "despawn") return this.despawn(args);
       if (cmd === "give") return this.give(args);
-      if (cmd === "hp" || cmd === "stamina" || cmd === "sanity") return this.resource(cmd, args);
+      if (cmd === "hp" || cmd === "stamina") return this.resource(cmd, args);
+      if (cmd === "sanity") return args.length ? this.resource(cmd, args) : this.sanityLock();
       if (cmd === "god") return this.god();
+      if (cmd === "creative") return this.creative();
+      if (cmd === "noclip") return this.noclip();
+      if (cmd === "speed") return this.speed(args);
+      if (cmd === "saturation") return this.saturation();
+      if (cmd === "heal") return this.heal();
+      if (cmd === "effect") return this.effect(args);
+      if (cmd === "locate") return this.locate(args);
+      if (cmd === "ents") return this.ents(args);
       if (cmd === "kill") return this.kill();
       if (cmd === "tp") return this.tp(args);
       if (cmd === "seed") return this.seed(args);
@@ -197,7 +208,7 @@ const DevCommands = {
     const n = parseInt(args[0], 10);
     if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0, 1, 2, 3, 4, 5, 6, 8, 9, OR 10");
     if (n === 0) return this.goLevel0();
-    if (n === 1) return this.goLevel1();
+    if (n === 1) return this.level1(args.slice(1));
     if (n === 2) return this.level2(args.slice(1));
     if (n === 3) return this.level3(args.slice(1));
     if (n === 4) return this.level4(args.slice(1));
@@ -495,6 +506,17 @@ const DevCommands = {
     GameState.cutscene = false;
     Player.resetToStart();
     this.toast("ENTERED LEVEL 0");
+  },
+  level1(args) {
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "exit") {
+      if (typeof Level1 === "undefined" || !Level1.active || !Level1.exitPosition) return this.toast("NO LEVEL 1 EXIT");
+      Player.position.copy(Level1.exitPosition);
+      Player.velocity.set(0, 0, 0);
+      if (Level1.stream) Level1.stream(true);
+      return this.toast("TELEPORTED TO LEVEL 1 EXIT");
+    }
+    return this.goLevel1();
   },
   goLevel1() {
     if (typeof Level2 !== "undefined") Level2.reset();
@@ -798,7 +820,94 @@ const DevCommands = {
       return this.toast("UNDID CLEAR");
     }
     this.toast("CANNOT UNDO");
-  }
+  },
+
+  creative() {
+    GameState.creative = !GameState.creative;
+    if (GameState.creative) GameState.god = true;
+    this.toast(GameState.creative ? "CREATIVE ON" : "CREATIVE OFF");
+  },
+  noclip() {
+    GameState.noclip = !GameState.noclip;
+    this.toast(GameState.noclip ? "NOCLIP ON" : "NOCLIP OFF");
+  },
+  speed(args) {
+    const n = args[0] == null ? 1 : Number(args[0]);
+    if (!Number.isFinite(n) || n <= 0) return this.toast("USAGE: SPEED 2");
+    GameState.speedMult = n;
+    this.toast("SPEED " + n);
+  },
+  saturation() {
+    GameState.saturation = !GameState.saturation;
+    this.toast(GameState.saturation ? "SATURATION ON" : "SATURATION OFF");
+  },
+  sanityLock() {
+    GameState.sanityLock = !GameState.sanityLock;
+    this.toast(GameState.sanityLock ? "SANITY LOCK ON" : "SANITY LOCK OFF");
+  },
+  heal() {
+    Player.hp = Player.maxHp;
+    this.toast("HEALED");
+  },
+  effect(args) {
+    if ((args[0] || "").toLowerCase() !== "clear") return this.toast("USAGE: EFFECT CLEAR");
+    GameState.creative = false;
+    GameState.noclip = false;
+    GameState.god = false;
+    GameState.speedMult = 1;
+    GameState.saturation = false;
+    GameState.sanityLock = false;
+    this.toast("EFFECTS CLEARED");
+  },
+  locate(args) {
+    const what = (args[0] || "").toLowerCase();
+    const tp = (args[1] || "").toLowerCase() === "tp";
+    if (!what) return this.toast("USAGE: LOCATE BARN");
+    const lvl = GameState.level;
+    let target = null, label = what;
+    if (lvl === 10 && typeof Level10 !== "undefined") {
+      if (what === "highway" || what === "exit") target = Level10.exitPos;
+      else if (what === "barn" || what === "house" || what === "lake") target = this._nearestStruct(what);
+    } else if (lvl === 9 && typeof Level9 !== "undefined" && (what === "exit" || what === "house")) {
+      target = Level9.exitPos;
+    } else if (lvl === 8 && typeof Level8 !== "undefined" && what === "exit") {
+      target = Level8.exitPos;
+    }
+    if (!target) return this.toast("NO " + what.toUpperCase() + " HERE");
+    const dx = target.x - Player.position.x, dz = target.z - Player.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (tp) {
+      Player.position.set(target.x, Player.position.y, target.z);
+      Player.velocity.set(0, 0, 0);
+      return this.toast("TELEPORTED TO " + label.toUpperCase());
+    }
+    const dir = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? "EAST" : "WEST") : (dz > 0 ? "SOUTH" : "NORTH");
+    this.toast(label.toUpperCase() + " " + Math.round(dist) + "M " + dir);
+  },
+  _nearestStruct(kind) {
+    if (typeof Level10 === "undefined" || !Level10.blocks) return Level10.exitPos || null;
+    let best = null, bestD = 1e9;
+    for (const [, rec] of Level10.blocks) {
+      if (!rec.B || !rec.B.structs) continue;
+      for (const s of rec.B.structs) {
+        if (s.kind !== kind && !(kind === "barn" && s.kind === "barn")) continue;
+        const d = Math.hypot(s.x - Player.position.x, s.z - Player.position.z);
+        if (d < bestD) { bestD = d; best = s; }
+      }
+    }
+    return best || Level10.exitPos || null;
+  },
+  ents(args) {
+    if ((args[0] || "").toLowerCase() === "clear") {
+      if (typeof EntitySystem !== "undefined") EntitySystem.despawn();
+      if (typeof SmilerSystem !== "undefined") SmilerSystem.reset();
+      if (typeof HoundSystem !== "undefined") HoundSystem.reset();
+      return this.toast("ENTITIES CLEARED");
+    }
+    let n = 0;
+    if (typeof EntitySystem !== "undefined" && EntitySystem.entities) n += EntitySystem.entities.length;
+    this.toast(n + " ENTITIES");
+  },
 };
 
 window.addEventListener("load", () => DevCommands.init());
