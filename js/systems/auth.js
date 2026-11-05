@@ -43,7 +43,7 @@ const AuthSystem = {
     if (this.user && this.client) {
       const { data, error } = await this.client
         .from("profiles")
-        .select("username")
+        .select("username, role, owner")
         .eq("id", this.user.id)
         .maybeSingle();
       if (!error) this.profile = data;
@@ -52,6 +52,20 @@ const AuthSystem = {
     this.updateUI();
   },
 
+
+  role() { return (this.profile && this.profile.role) || "user"; },
+  isOwner() { return !!(this.profile && this.profile.owner); },
+  canUseConsole() { return this.role() === "tester" || this.role() === "developer" || this.isOwner(); },
+  canAdmin() { return this.role() === "developer" || this.isOwner(); },
+
+  async setRole(username, role) {
+    if (!this.canAdmin()) throw new Error("Not allowed.");
+    if (!this.isOwner() && role === "developer") throw new Error("Only the owner can set developers.");
+    const { data, error } = await this.client.from("profiles").update({ role }).eq("username", username).select("username, role").maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("No such user.");
+    return data;
+  },
   username() {
     return (this.profile && this.profile.username) ||
       (this.user && this.user.user_metadata && this.user.user_metadata.username) ||
@@ -122,9 +136,22 @@ const AuthSystem = {
   },
 
   updateUI() {
+    const shell = document.getElementById("admin-shell");
+    if (shell) shell.style.display = this.canAdmin() ? "block" : "none";
     const label = document.getElementById("account-label");
     if (label) label.textContent = this.user ? this.username() : "Account";
-    const signOut = document.getElementById("auth-signout");
+  
+  const adminSet = document.getElementById("admin-set");
+  if (adminSet) adminSet.addEventListener("click", async () => {
+    const name = document.getElementById("admin-user").value.trim();
+    const role = document.getElementById("admin-role").value;
+    const status = document.getElementById("admin-status");
+    try {
+      const res = await AuthSystem.setRole(name, role);
+      if (status) status.textContent = res.username + " is now " + res.role;
+    } catch (err) { if (status) status.textContent = err.message || "Failed"; }
+  });
+  const signOut = document.getElementById("auth-signout");
     if (signOut) signOut.style.display = this.user ? "inline-block" : "none";
     const authButtons = document.querySelectorAll("[data-auth-action]");
     authButtons.forEach(btn => btn.style.display = this.user ? "none" : "inline-block");
@@ -172,6 +199,17 @@ window.addEventListener("DOMContentLoaded", () => {
   };
   if (mode) { mode.addEventListener("change", refreshMode); refreshMode(); }
 
+
+  const adminSet = document.getElementById("admin-set");
+  if (adminSet) adminSet.addEventListener("click", async () => {
+    const name = document.getElementById("admin-user").value.trim();
+    const role = document.getElementById("admin-role").value;
+    const status = document.getElementById("admin-status");
+    try {
+      const res = await AuthSystem.setRole(name, role);
+      if (status) status.textContent = res.username + " is now " + res.role;
+    } catch (err) { if (status) status.textContent = err.message || "Failed"; }
+  });
   const signOut = document.getElementById("auth-signout");
   if (signOut) signOut.addEventListener("click", async () => {
     try { await AuthSystem.signOut(); } catch (err) { console.warn(err); }
