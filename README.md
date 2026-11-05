@@ -89,6 +89,12 @@ Backrooms Runner is an **active work in progress**.
 * More environmental variety and audio
 * Performance work
 
+## Account roles
+
+The account hierarchy is **User → Tester → Moderator → Developer → Owner**. Owner remains the existing `owner = true` profile flag; the owner's stored role remains `developer` for compatibility. Moderators are recognized as staff and can use the developer console, but the current build does not yet include chat moderation actions. Only Developers and the Owner can manage account roles. Developers can assign User, Tester, or Moderator; only the Owner can promote a Developer. Owner accounts are protected from role changes in the role-management database function.
+
+After updating the site files, run `supabase/moderator-hierarchy.sql` in the Supabase SQL Editor. This creates the role validation and the two server-side RPC functions used by the Admin panel. Review the `profiles` table's existing RLS policies as directed in the SQL file: do not leave a broad policy that lets ordinary users update other accounts' `role` or `owner` fields.
+
 ## Developer console
 
 These commands are for testing. They are not part of play, and they will skip things you are meant to find.
@@ -109,3 +115,27 @@ This project is a personal development project.
 
 **Backrooms Runner**
 *You weren't supposed to find this place.*
+
+## Community chat (new in v37)
+
+The main menu now includes **Community Chat**. The first release includes the `general`, `announcements`, `level-discussion`, and `feedback` channels; live messages; replies; editing and deletion of your own messages; reactions; online presence; and basic @mention highlighting. Direct messages, attachments, voice chat, and advanced search are intentionally not part of this release.
+
+### Supabase setup
+
+1. Open the Supabase SQL Editor for the project already used by Backrooms Runner.
+2. Confirm that `supabase/moderator-hierarchy.sql` has already been run successfully.
+3. Run the complete `supabase/community-chat.sql` migration.
+4. In Supabase, confirm that `chat_messages` and `chat_reactions` are included in the `supabase_realtime` publication. The migration attempts to add them automatically.
+5. Reload the deployed game and sign in. Open **Community Chat** from the main menu.
+
+The browser uses the existing Supabase anon/publishable key. Never put a service-role key in the game. Chat tables use row-level security; moderation and appeal actions use narrowly scoped database functions.
+
+### Roles and moderation
+
+- Users and Testers can use ordinary channels.
+- Moderators can remove messages, issue warnings, mute accounts temporarily, suspend chat access temporarily, and submit permanent chat-ban requests. They cannot act on accounts at their own staff level or above.
+- Developers and the Owner can review permanent chat-ban requests and appeals. The announcements channel is staff-post-only.
+- Muted accounts retain read access but cannot send messages or react. Chat-suspended and chat-banned accounts cannot read normal chat and are shown the appeal interface.
+- Chat restrictions are separate from game access. This migration does not implement game suspensions or game bans.
+
+**Important:** Run the SQL migration before expecting chat to work. This ZIP contains the client and migration files; it does not apply changes to the hosted Supabase database.
