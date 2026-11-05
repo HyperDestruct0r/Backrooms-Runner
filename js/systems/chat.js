@@ -4,7 +4,7 @@
 const ChatSystem = {
   channelRows: [], currentChannel: null, subscription: null, presenceChannel: null,
   presenceTimer: null, replyTo: null, access: null, initialized: false,
-  targetSearchToken: 0, onlineUserIds: new Set(), myAppeals: [], editingAppealId: null,
+  targetSearchToken: 0, onlineUserIds: new Set(), myAppeals: [], editingAppealId: null, creatingAppeal: false,
   reactions: ["👍", "❤️", "👀", "😂", "❗"],
 
   init() {
@@ -26,6 +26,8 @@ const ChatSystem = {
     if (appeal) appeal.addEventListener("click", () => this.submitAppeal());
     const appealCancel = document.getElementById("chat-appeal-cancel");
     if (appealCancel) appealCancel.addEventListener("click", () => this.cancelAppealEdit());
+    const appealNew = document.getElementById("chat-appeal-new");
+    if (appealNew) appealNew.addEventListener("click", () => this.openNewAppeal());
     const mod = document.getElementById("chat-mod-submit");
     if (mod) mod.addEventListener("click", () => this.moderateUser());
     const targetSearch = document.getElementById("chat-mod-search");
@@ -103,7 +105,7 @@ const ChatSystem = {
     if (status) status.textContent = "Chat access is restricted.";
     const detail = document.getElementById("chat-appeal-detail");
     const latest = (this.myAppeals || [])[0];
-    if (detail) detail.textContent = latest && latest.status === "approved"
+    if (detail) detail.textContent = latest && latest.status === "approved" && this.access.can_read
       ? "Your appeal was approved. Your chat restriction has been lifted. Select Return to Chat when you're ready."
       : (this.access.reason || "Your chat access is currently restricted.") + (this.access.expires_at ? " Until " + new Date(this.access.expires_at).toLocaleString() + "." : "");
     this.renderAppeals();
@@ -116,12 +118,15 @@ const ChatSystem = {
   renderAppeals() {
     const list = this.myAppeals || [];
     const latest = list[0] || null;
+    const activeRestriction = !!(this.access && this.access.can_read === false);
+    const pending = list.find(item => item.status === "pending") || null;
     const card = document.getElementById("chat-appeal-case");
     const form = document.getElementById("chat-appeal-form");
     const history = document.getElementById("chat-appeal-history");
     const heading = document.getElementById("chat-appeal-heading");
     const state = document.getElementById("chat-appeal-state");
-    if (heading) heading.textContent = latest && latest.status === "approved" ? "APPEAL APPROVED" : "CHAT ACCESS RESTRICTED";
+    const newButton = document.getElementById("chat-appeal-new");
+    if (heading) heading.textContent = latest && latest.status === "approved" && !activeRestriction ? "APPEAL APPROVED" : "CHAT ACCESS RESTRICTED";
     if (card) {
       card.replaceChildren(); card.hidden = !latest;
       if (latest) {
@@ -135,7 +140,7 @@ const ChatSystem = {
         if (latest.decision) { const decision = document.createElement("p"); decision.className = "chat-appeal-decision"; decision.textContent = "Staff decision: " + latest.decision; card.appendChild(decision); }
         if (latest.status === "pending") {
           const edit = this.actionButton("Edit reasoning", () => this.beginAppealEdit(latest)); card.appendChild(edit);
-        } else if (latest.status === "approved") {
+        } else if (latest.status === "approved" && !activeRestriction) {
           const back = document.createElement("button"); back.type = "button"; back.className = "chat-primary"; back.textContent = "RETURN TO CHAT"; back.addEventListener("click", () => this.returnToChat(latest.id)); card.appendChild(back);
         }
       }
@@ -144,28 +149,37 @@ const ChatSystem = {
       history.replaceChildren(); const older = list.slice(1); history.hidden = !older.length;
       if (older.length) { const h = document.createElement("h4"); h.textContent = "PREVIOUS APPEALS"; history.appendChild(h); older.forEach(item => { const row = document.createElement("div"); row.className = "chat-appeal-history-item"; row.textContent = "#" + String(item.id).slice(0,8).toUpperCase() + " · " + item.status.toUpperCase() + " · " + new Date(item.created_at).toLocaleDateString(); history.appendChild(row); }); }
     }
-    if (form) form.hidden = !!(latest && latest.status === "pending" && !this.editingAppealId) || !!(latest && latest.status === "approved");
+    const canStartNew = activeRestriction && !pending;
+    if (newButton) newButton.hidden = !canStartNew || !!this.editingAppealId;
+    if (form) form.hidden = !this.editingAppealId && !this.creatingAppeal;
     const submit = document.getElementById("chat-appeal-submit");
-    if (submit) submit.textContent = this.editingAppealId ? "SAVE CHANGES" : (latest && latest.status === "rejected" ? "SUBMIT NEW APPEAL" : "SUBMIT APPEAL");
-    const cancel = document.getElementById("chat-appeal-cancel"); if (cancel) cancel.hidden = !this.editingAppealId;
-    if (state) state.textContent = latest && latest.status === "pending" ? "Your appeal is waiting for review. You can edit its reasoning while it is pending." : latest && latest.status === "rejected" ? "Your appeal was rejected. You may submit a new appeal; previous submissions remain in your history." : latest && latest.status === "approved" ? "Your appeal was approved and your chat restriction has been lifted." : "You may submit an appeal for review by the development team.";
+    if (submit) submit.textContent = this.editingAppealId ? "SAVE CHANGES" : "SUBMIT APPEAL";
+    const cancel = document.getElementById("chat-appeal-cancel"); if (cancel) cancel.hidden = !this.editingAppealId && !this.creatingAppeal;
+    if (state) state.textContent = pending ? "Your appeal is waiting for review. You can edit its reasoning, but cannot open another application yet." : latest && latest.status === "rejected" && activeRestriction ? "Your appeal was rejected. You may submit a new application for this active restriction; previous applications remain in your history." : latest && latest.status === "approved" && activeRestriction ? "Your previous appeal was approved, but this account has since received a new chat restriction. You may submit a new application." : latest && latest.status === "approved" ? "Your appeal was approved and your chat restriction has been lifted." : "You may submit an appeal for this chat restriction.";
   },
   beginAppealEdit(appeal) {
     this.editingAppealId = appeal.id;
+    this.creatingAppeal = false;
+    const newButton = document.getElementById("chat-appeal-new"); if (newButton) newButton.hidden = true;
     const input = document.getElementById("chat-appeal-reason"); if (input) input.value = appeal.reason;
     const form = document.getElementById("chat-appeal-form"); if (form) form.hidden = false;
     const submit = document.getElementById("chat-appeal-submit"); if (submit) submit.textContent = "SAVE CHANGES";
     const cancel = document.getElementById("chat-appeal-cancel"); if (cancel) cancel.hidden = false;
   },
   openNewAppeal() {
+    if ((this.myAppeals || []).some(item => item.status === "pending")) return;
+    if (!this.access || this.access.can_read !== false) return;
     this.editingAppealId = null;
+    this.creatingAppeal = true;
+    const newButton = document.getElementById("chat-appeal-new"); if (newButton) newButton.hidden = true;
     const input = document.getElementById("chat-appeal-reason"); if (input) input.value = "";
     const form = document.getElementById("chat-appeal-form"); if (form) form.hidden = false;
     const submit = document.getElementById("chat-appeal-submit"); if (submit) submit.textContent = "SUBMIT APPEAL";
-    const cancel = document.getElementById("chat-appeal-cancel"); if (cancel) cancel.hidden = true;
+    const cancel = document.getElementById("chat-appeal-cancel"); if (cancel) cancel.hidden = false;
   },
   cancelAppealEdit() {
     this.editingAppealId = null;
+    this.creatingAppeal = false;
     const input = document.getElementById("chat-appeal-reason"); if (input) input.value = "";
     this.renderAppeals();
   },
@@ -180,6 +194,7 @@ const ChatSystem = {
     const { error } = await AuthSystem.client.rpc(fn, args);
     if (error) { if (state) state.textContent = error.message; return; }
     this.editingAppealId = null;
+    this.creatingAppeal = false;
     if (input) input.value = "";
     this.myAppeals = await this.loadMyAppeals();
     this.renderAppeals();
@@ -189,6 +204,7 @@ const ChatSystem = {
     if (error) { const state = document.getElementById("chat-appeal-state"); if (state) state.textContent = error.message; return; }
     this.myAppeals = await this.loadMyAppeals();
     this.access = await this.getAccess();
+    if (!this.access.can_read) { this.showAppealOnly(); return; }
     this.showChat();
     await this.loadChannels();
     await this.startPresence();
