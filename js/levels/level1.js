@@ -430,7 +430,9 @@ const Level1 = {
     // Structural grid is present in both spaces, but parking lots are more open.
     for(let ix=8;ix<S;ix+=16) for(let iz=8;iz<S;iz+=16){
       if(rng()<0.10) continue;
-      this.pillar(g,rec,ox+ix,oz+iz);
+      const px=ox+ix, pz=oz+iz;
+      if(this.exitPosition && Math.hypot(px-this.exitPosition.x, pz-this.exitPosition.z) < 9) continue;
+      this.pillar(g,rec,px,pz);
     }
     if(type==='maintenance'){
       this.buildMaintenanceMacroParts(g,rec,mx,mz,ox,oz,S,rng);
