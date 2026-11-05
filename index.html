@@ -24,32 +24,41 @@
 
   <div id="auth-modal">
     <div id="auth-panel">
-      <h2>Backrooms Runner Account</h2>
-      <p>Accounts are optional. You can keep playing as a guest.</p>
-      <form id="auth-form">
-        <select id="auth-mode">
-          <option value="signin">Sign in</option>
-          <option value="signup">Create account</option>
-        </select>
-        <div id="auth-username-wrap"><input id="auth-username" autocomplete="username" placeholder="Username"></div>
-        <input id="auth-email" type="email" autocomplete="email" placeholder="Email" required>
-        <input id="auth-password" type="password" autocomplete="current-password" placeholder="Password" required>
-        <button id="auth-submit" type="submit">Sign in</button>
-      </form>
-      <div id="auth-status"></div>
-      <button id="auth-signout" type="button" style="display:none">Sign out</button>
-      <div id="admin-shell" style="display:none">
-        <h3>Admin</h3>
-        <input id="admin-user" placeholder="Username">
-        <select id="admin-role">
-          <option value="user">User</option>
-          <option value="tester">Tester</option>
-          <option value="developer">Developer</option>
-        </select>
-        <button id="admin-set" type="button">Set role</button>
-        <div id="admin-status"></div>
+      <button id="auth-close" type="button" class="auth-x">×</button>
+      <div id="auth-login">
+        <h2>Account</h2>
+        <form id="auth-form">
+          <select id="auth-mode">
+            <option value="signin">Sign in</option>
+            <option value="signup">Create account</option>
+          </select>
+          <div id="auth-username-wrap"><input id="auth-username" autocomplete="username" placeholder="Username"></div>
+          <input id="auth-email" type="email" autocomplete="email" placeholder="Email" required>
+          <input id="auth-password" type="password" autocomplete="current-password" placeholder="Password" required>
+          <button id="auth-submit" type="submit">Sign in</button>
+        </form>
+        <div id="auth-status"></div>
       </div>
-      <button id="auth-close" type="button">Close</button>
+      <div id="auth-signed" style="display:none">
+        <h2 id="auth-hello">Logged in</h2>
+        <div id="auth-stats"></div>
+        <h3>Recent runs</h3>
+        <div id="auth-runs"></div>
+        <div id="admin-shell" style="display:none">
+          <h3>Admin</h3>
+          <input id="admin-search" placeholder="Search username">
+          <button id="admin-show" type="button">Show all</button>
+          <div id="admin-list"></div>
+          <select id="admin-role">
+            <option value="user">User</option>
+            <option value="tester">Tester</option>
+            <option value="developer">Developer</option>
+          </select>
+          <button id="admin-set" type="button">Set role</button>
+          <div id="admin-status"></div>
+        </div>
+        <button id="auth-signout" type="button">Sign out</button>
+      </div>
     </div>
   </div>
 
