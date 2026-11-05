@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="css/levels/level1.css">
   <link rel="stylesheet" href="css/entities/smiler.css">
   <link rel="stylesheet" href="css/systems/auth.css">
+  <link rel="stylesheet" href="css/systems/chat.css">
   <link rel="stylesheet" href="css/systems/menu.css">
   <link rel="stylesheet" href="css/systems/tutorial.css">
 </head>
@@ -201,7 +202,8 @@
           <button class="menu-option" type="button" data-menu-index="1" data-menu-action="tutorial">TUTORIAL</button>
           <button class="menu-option" type="button" data-menu-index="2" data-menu-action="settings">SETTINGS</button>
           <button class="menu-option" type="button" data-menu-index="3" data-menu-action="controls">CONTROLS</button>
-          <button class="menu-option" type="button" data-menu-index="4" data-menu-action="credits">CREDITS</button>
+          <button class="menu-option" type="button" data-menu-index="4" data-menu-action="chat">COMMUNITY CHAT</button>
+          <button class="menu-option" type="button" data-menu-index="5" data-menu-action="credits">CREDITS</button>
         </div>
         <button id="install-app-button" class="app-install-button" type="button" hidden>INSTALL BACKROOMS RUNNER</button>
         <a class="menu-discord" href="https://discord.gg/a5EMAUuc46" target="_blank" rel="noopener noreferrer">
@@ -318,6 +320,61 @@
           <button id="open-keyboard-guide" class="tutorial-manual-launch" type="button">OPEN KEYBOARD GUIDE</button>
           <div id="controls-error" class="controls-message info">Select any key to begin rebinding.</div>
           <div id="controls-list" class="controls-list"></div>
+        </div>
+      </section>
+
+      <section id="menu-page-chat" class="menu-page chat-page" aria-label="Community chat">
+        <div class="menu-page-inner chat-page-inner">
+          <button id="chat-back" class="menu-back" type="button">← BACK</button>
+          <h2>COMMUNITY CHAT</h2>
+          <p class="page-desc">A place for wanderers to compare notes. Keep it constructive and respectful.</p>
+          <div id="chat-status" class="chat-status" aria-live="polite">Sign in to join the community.</div>
+          <div id="chat-mention-notice" class="chat-mention-notice" role="status" hidden></div>
+          <div id="chat-signin" class="chat-signin">
+            <p>Community chat requires an account.</p>
+            <button id="chat-signin-button" type="button" class="chat-primary">SIGN IN / CREATE ACCOUNT</button>
+          </div>
+          <div id="chat-appeal" class="chat-appeal" hidden>
+            <h3>CHAT ACCESS RESTRICTED</h3>
+            <p id="chat-appeal-detail"></p>
+            <p id="chat-appeal-state"></p>
+            <label for="chat-appeal-reason">Appeal to the development team</label>
+            <textarea id="chat-appeal-reason" maxlength="1500" placeholder="Explain why you believe this restriction should be reviewed..."></textarea>
+            <button id="chat-appeal-submit" class="chat-primary" type="button">SUBMIT APPEAL</button>
+          </div>
+          <div id="chat-workspace" class="chat-workspace" hidden>
+            <aside class="chat-sidebar">
+              <h3>CHANNELS</h3>
+              <nav id="chat-channel-list" aria-label="Chat channels"></nav>
+              <div class="chat-online-heading">ONLINE <span id="chat-online-count">0</span></div>
+              <div id="chat-online-list" class="chat-online-list"></div>
+            </aside>
+            <section class="chat-main" aria-label="Messages">
+              <header class="chat-channel-header"><div><h3 id="chat-channel-title"># general</h3><p id="chat-channel-description"></p></div></header>
+              <div id="chat-readonly" class="chat-readonly" hidden></div>
+              <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+              <div class="chat-composer">
+                <div id="chat-replying" class="chat-replying" hidden><span id="chat-replying-text"></span><button id="chat-reply-cancel" type="button" class="chat-action">CANCEL</button></div>
+                <textarea id="chat-input" maxlength="1200" rows="2" placeholder="Message this channel... (Enter to send, Shift+Enter for a new line)"></textarea>
+                <div class="chat-compose-footer"><span id="chat-compose-status" aria-live="polite"></span><button id="chat-send" class="chat-primary" type="button">SEND</button></div>
+              </div>
+            </section>
+          </div>
+          <section id="chat-moderation" class="chat-moderation" hidden>
+            <h3>MODERATION TOOLS</h3>
+            <div class="chat-mod-grid">
+              <label>Account<select id="chat-mod-target"><option value="">Select online user</option></select></label>
+              <label>Action<select id="chat-mod-action"><option value="warning">Warning</option><option value="mute">Temporary mute</option><option value="suspend">Chat suspension</option><option value="ban_request">Request permanent chat ban</option></select></label>
+              <label>Duration in minutes<input id="chat-mod-duration" type="number" min="1" max="43200" value="60"></label>
+              <label class="chat-mod-reason">Reason<input id="chat-mod-reason" maxlength="500" placeholder="Required moderation reason"></label>
+            </div>
+            <button id="chat-mod-submit" class="chat-primary" type="button">APPLY MODERATION ACTION</button>
+            <p id="chat-mod-status" aria-live="polite"></p>
+          </section>
+          <section id="chat-review" class="chat-review" hidden>
+            <div class="chat-review-head"><h3>DEVELOPER REVIEW QUEUE</h3><button id="chat-review-refresh" type="button" class="chat-action">REFRESH</button></div>
+            <div id="chat-review-list"></div>
+          </section>
         </div>
       </section>
 
@@ -467,6 +524,7 @@
 <script src="js/systems/atmosphere.js"></script>
 <script src="js/systems/void.js"></script>
 <script src="js/systems/auth.js"></script>
+<script src="js/systems/chat.js"></script>
 <script src="js/systems/seed.js"></script>
 <script src="js/systems/noise-architectural.js"></script>
 <script src="js/systems/keyboard-guide.js"></script>
