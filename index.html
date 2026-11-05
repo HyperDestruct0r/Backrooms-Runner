@@ -335,12 +335,19 @@
             <button id="chat-signin-button" type="button" class="chat-primary">SIGN IN / CREATE ACCOUNT</button>
           </div>
           <div id="chat-appeal" class="chat-appeal" hidden>
-            <h3>CHAT ACCESS RESTRICTED</h3>
+            <h3 id="chat-appeal-heading">CHAT ACCESS RESTRICTED</h3>
             <p id="chat-appeal-detail"></p>
-            <p id="chat-appeal-state"></p>
-            <label for="chat-appeal-reason">Appeal to the development team</label>
-            <textarea id="chat-appeal-reason" maxlength="1500" placeholder="Explain why you believe this restriction should be reviewed..."></textarea>
-            <button id="chat-appeal-submit" class="chat-primary" type="button">SUBMIT APPEAL</button>
+            <div id="chat-appeal-case" class="chat-appeal-case" hidden></div>
+            <div id="chat-appeal-history" class="chat-appeal-history" hidden></div>
+            <div id="chat-appeal-form" class="chat-appeal-form">
+              <label for="chat-appeal-reason">Appeal reasoning</label>
+              <textarea id="chat-appeal-reason" maxlength="1500" placeholder="Explain why you believe this restriction should be reviewed..."></textarea>
+              <div class="chat-appeal-form-actions">
+                <button id="chat-appeal-submit" class="chat-primary" type="button">SUBMIT APPEAL</button>
+                <button id="chat-appeal-cancel" class="chat-action" type="button" hidden>CANCEL</button>
+              </div>
+            </div>
+            <p id="chat-appeal-state" aria-live="polite"></p>
           </div>
           <div id="chat-workspace" class="chat-workspace" hidden>
             <aside class="chat-sidebar">
