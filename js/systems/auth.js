@@ -58,13 +58,20 @@ const AuthSystem = {
   canUseConsole() { return this.role() === "tester" || this.role() === "developer" || this.isOwner(); },
   canAdmin() { return this.role() === "developer" || this.isOwner(); },
 
-  async setRole(username, role) {
+  async listUsers(q) {
+    if (!this.canAdmin()) throw new Error("Not allowed.");
+    let query = this.client.from("profiles").select("username, role").order("username").limit(100);
+    if (q) query = query.ilike("username", "%" + q + "%");
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+  async setRoles(usernames, role) {
     if (!this.canAdmin()) throw new Error("Not allowed.");
     if (!this.isOwner() && role === "developer") throw new Error("Only the owner can set developers.");
-    const { data, error } = await this.client.from("profiles").update({ role }).eq("username", username).select("username, role").maybeSingle();
+    const { data, error } = await this.client.from("profiles").update({ role }).in("username", usernames).select("username, role");
     if (error) throw error;
-    if (!data) throw new Error("No such user.");
-    return data;
+    return data || [];
   },
   username() {
     return (this.profile && this.profile.username) ||
@@ -139,20 +146,66 @@ const AuthSystem = {
     if (modal) modal.style.display = "none";
   },
 
+  async loadStats() {
+    if (!this.client || !this.user) return { count: 0, time: 0, dist: 0, max: 0, runs: [] };
+    const { data } = await this.client.from("runs").select("level, outcome, time_seconds, distance_meters").eq("user_id", this.user.id).order("id", { ascending: false }).limit(10);
+    const runs = data || [];
+    const { data: all } = await this.client.from("runs").select("level, time_seconds, distance_meters").eq("user_id", this.user.id);
+    const rows = all || [];
+    return {
+      count: rows.length,
+      time: rows.reduce((s, r) => s + (r.time_seconds || 0), 0),
+      dist: rows.reduce((s, r) => s + (r.distance_meters || 0), 0),
+      max: rows.reduce((m, r) => Math.max(m, r.level || 0), 0),
+      runs
+    };
+  },
+  fmt(s) { const m = Math.floor(s / 60), h = Math.floor(m / 60); return h ? h + "h " + (m % 60) + "m" : m + "m " + Math.floor(s % 60) + "s"; },
   updateUI() {
+    const login = document.getElementById("auth-login");
+    const signed = document.getElementById("auth-signed");
     const shell = document.getElementById("admin-shell");
+    if (login) login.style.display = this.user ? "none" : "block";
+    if (signed) signed.style.display = this.user ? "block" : "none";
     if (shell) shell.style.display = this.canAdmin() ? "block" : "none";
+    if (this.user) {
+      const hello = document.getElementById("auth-hello");
+      if (hello) hello.textContent = "Logged in as " + this.username();
+      this.loadStats().then(s => {
+        const box = document.getElementById("auth-stats");
+        if (box) box.innerHTML = "<div>Runs</div><b>" + s.count + "</b><div>Time</div><b>" + this.fmt(s.time) + "</b><div>Distance</div><b>" + Math.round(s.dist) + " m</b><div>Furthest</div><b>Level " + s.max + "</b><div>Id</div><b style='font-size:11px'>" + this.user.id.slice(0, 8) + "</b>";
+        const list = document.getElementById("auth-runs");
+        if (list) list.innerHTML = s.runs.map(r => {
+          const ok = r.outcome === "complete";
+          return '<div class="run-row"><span>Level ' + r.level + '</span><span>' + this.fmt(r.time_seconds || 0) + '</span><span class="' + (ok ? "run-ok" : "run-fail") + '">' + (ok ? "COMPLETE" : "GAME OVER") + '</span></div>';
+        }).join("") || "<div>No runs yet</div>";
+      });
+    }
     const label = document.getElementById("account-label");
     if (label) label.textContent = this.user ? this.username() : "Account";
   
+  const adminList = document.getElementById("admin-list");
+  const render = (rows) => {
+    if (!adminList) return;
+    adminList.innerHTML = rows.map(r => '<label style="display:block"><input type="checkbox" value="' + r.username + '"> ' + r.username + ' <em>(' + r.role + ')</em></label>').join("");
+  };
+  const load = async (q) => {
+    try { render(await AuthSystem.listUsers(q)); } catch (err) { if (adminList) adminList.textContent = err.message || "Failed"; }
+  };
+  const show = document.getElementById("admin-show");
+  if (show) show.addEventListener("click", () => load(""));
+  const search = document.getElementById("admin-search");
+  if (search) search.addEventListener("input", () => load(search.value.trim()));
   const adminSet = document.getElementById("admin-set");
   if (adminSet) adminSet.addEventListener("click", async () => {
-    const name = document.getElementById("admin-user").value.trim();
+    const names = [...adminList.querySelectorAll("input:checked")].map(c => c.value);
     const role = document.getElementById("admin-role").value;
     const status = document.getElementById("admin-status");
+    if (!names.length) { if (status) status.textContent = "Select at least one"; return; }
     try {
-      const res = await AuthSystem.setRole(name, role);
-      if (status) status.textContent = res.username + " is now " + res.role;
+      const res = await AuthSystem.setRoles(names, role);
+      if (status) status.textContent = res.length + " set to " + role;
+      load(search ? search.value.trim() : "");
     } catch (err) { if (status) status.textContent = err.message || "Failed"; }
   });
   const signOut = document.getElementById("auth-signout");
