@@ -30,10 +30,16 @@ const ChatSystem = {
     if (appealNew) appealNew.addEventListener("click", () => this.openNewAppeal());
     const mod = document.getElementById("chat-mod-submit");
     if (mod) mod.addEventListener("click", () => this.moderateUser());
+    const historyLoad = document.getElementById("chat-mod-history-load");
+    if (historyLoad) historyLoad.addEventListener("click", () => this.loadTargetAutomodHistory());
     const targetSearch = document.getElementById("chat-mod-search");
     if (targetSearch) targetSearch.addEventListener("input", () => this.searchModerationTargets());
     const review = document.getElementById("chat-review-refresh");
     if (review) review.addEventListener("click", () => this.loadReviewQueue());
+    const configSave = document.getElementById("chat-automod-save");
+    if (configSave) configSave.addEventListener("click", () => this.saveAutomodConfig());
+    const configReload = document.getElementById("chat-automod-config-refresh");
+    if (configReload) configReload.addEventListener("click", () => this.loadAutomodConfig());
   },
 
   async open() {
@@ -46,6 +52,7 @@ const ChatSystem = {
     if (status) status.textContent = "Connecting to community...";
     this.setVisible("chat-workspace", false); this.setVisible("chat-appeal", false);
     this.setVisible("chat-moderation", false); this.setVisible("chat-review", false);
+    this.setVisible("chat-automod-config", false);
     this.teardownSubscriptions();
     try {
       this.access = await this.getAccess();
@@ -55,6 +62,8 @@ const ChatSystem = {
         this.showAppealOnly(); return;
       }
       this.showChat();
+      await this.loadAutomodStatus();
+      if (AuthSystem.canAdmin()) { await this.loadAutomodConfig(); await this.loadAutomodStats(); }
       await this.loadChannels();
       await this.startPresence();
       if (AuthSystem.canModerate()) {
@@ -63,7 +72,9 @@ const ChatSystem = {
       }
       if (AuthSystem.canAdmin()) {
         const queue = document.getElementById("chat-review");
+        const config = document.getElementById("chat-automod-config");
         if (queue) queue.hidden = false;
+        if (config) config.hidden = false;
         await this.loadReviewQueue();
       }
     } catch (error) {
@@ -81,12 +92,13 @@ const ChatSystem = {
   showSignedOut() {
     this.setVisible("chat-signin", true); this.setVisible("chat-workspace", false);
     this.setVisible("chat-appeal", false); this.setVisible("chat-moderation", false); this.setVisible("chat-review", false);
+    this.setVisible("chat-automod-config", false); this.setVisible("chat-automod-status", false);
     const status = document.getElementById("chat-status");
     if (status) status.textContent = "Sign in to join the Backrooms Runner community.";
   },
   showChat() {
     this.setVisible("chat-signin", false); this.setVisible("chat-workspace", true);
-    this.setVisible("chat-appeal", false);
+    this.setVisible("chat-appeal", false); this.setVisible("chat-automod-status", true);
     this.setVisible("chat-moderation", AuthSystem.canModerate());
     this.setVisible("chat-review", AuthSystem.canAdmin());
     const status = document.getElementById("chat-status");
@@ -101,6 +113,7 @@ const ChatSystem = {
   showAppealOnly() {
     this.setVisible("chat-signin", false); this.setVisible("chat-workspace", false);
     this.setVisible("chat-appeal", true); this.setVisible("chat-moderation", false); this.setVisible("chat-review", false);
+    this.setVisible("chat-automod-config", false); this.setVisible("chat-automod-status", true);
     const status = document.getElementById("chat-status");
     if (status) status.textContent = "Chat access is restricted.";
     const detail = document.getElementById("chat-appeal-detail");
@@ -307,6 +320,7 @@ const ChatSystem = {
       actions.appendChild(this.actionButton("Delete", () => this.deleteMessage(message.id, false)));
     }
     if (AuthSystem.canModerate()) actions.appendChild(this.actionButton("Remove", () => this.deleteMessage(message.id, true)));
+    if (message.user_id !== AuthSystem.user.id) actions.appendChild(this.actionButton("Report", () => this.reportMessage(message)));
     if (this.access.can_send) this.reactions.forEach(emoji => {
       const count = message.reaction_counts ? (message.reaction_counts[message.id + "|" + emoji] || 0) : 0;
       const button = this.actionButton(emoji + (count ? " " + count : ""), () => this.toggleReaction(message.id, emoji), "chat-reaction");
@@ -349,19 +363,61 @@ const ChatSystem = {
     const body = input ? input.value.trim() : "";
     if (!body) return;
     if (body.length > 1200) { if (status) status.textContent = "Messages are limited to 1,200 characters."; return; }
-    const payload = { channel_id: this.currentChannel.id, user_id: AuthSystem.user.id, body, reply_to: this.replyTo };
     if (input) input.disabled = true;
     try {
-      const { error } = await AuthSystem.client.from("chat_messages").insert(payload);
+      const { data, error } = await AuthSystem.client.rpc("chat_send_message", {
+        p_channel_id: this.currentChannel.id, p_body: body, p_reply_to: this.replyTo
+      });
       if (error) throw error;
-      if (input) input.value = ""; if (status) status.textContent = ""; this.clearReply();
+      if (data && data.sent === false && data.staff_review) {
+        if (status) status.textContent = data.reason || "This message was blocked and sent for Developer/Owner review.";
+        if (input) input.value = "";
+        await this.loadReviewQueue();
+        return;
+      }
+      if (data && data.sent === false && data.automod) {
+        if (status) {
+          const strike = data.penalty && data.penalty.strike_number;
+          const response = strike === 1 ? "Informal reminder issued; another violation may result in a formal warning." : "Formal warning recorded.";
+          const duration = data.penalty && data.penalty.applied_minutes;
+          status.textContent = "AutoMod: " + data.reason + " · " + response + (duration ? " · Restriction: " + (duration >= 60 ? (duration / 60) + " hour(s)" : duration + " minute(s)") : "");
+        }
+        if (input) input.value = "";
+        await this.loadAutomodStatus();
+        this.access = await this.getAccess();
+        if (!this.access.can_read) {
+          this.myAppeals = await this.loadMyAppeals();
+          this.showAppealOnly();
+        } else {
+          this.showChat();
+        }
+        return;
+      }
+      if (input) input.value = "";
+      if (status) status.textContent = data && data.notice ? data.notice : "";
+      this.clearReply();
+      if (data && data.staff_review) await this.loadReviewQueue();
     } catch (error) { if (status) status.textContent = error.message || "Message could not be sent."; }
     finally { if (input) input.disabled = !this.access.can_send; }
+  },
+  async reportMessage(message) {
+    const category = window.prompt("Report category: harassment, hate_speech, spam, links, evasion, or other", "harassment");
+    if (!category) return;
+    const normalized = category.trim().toLowerCase();
+    if (!["harassment", "hate_speech", "spam", "links", "evasion", "other"].includes(normalized)) {
+      window.alert("Please enter one of the listed report categories."); return;
+    }
+    const reason = window.prompt("Briefly explain what concerns you (at least 8 characters):", "");
+    if (!reason) return;
+    const { error } = await AuthSystem.client.rpc("chat_report_message", {
+      p_message_id: message.id, p_category: normalized, p_reason: reason.trim()
+    });
+    if (error) window.alert(error.message); else window.alert("Report submitted for staff review. A report does not automatically punish the other account.");
   },
   async editMessage(message) {
     const body = window.prompt("Edit your message:", message.body);
     if (body === null || !body.trim()) return;
-    const { error } = await AuthSystem.client.from("chat_messages").update({ body: body.trim() }).eq("id", message.id).eq("user_id", AuthSystem.user.id);
+    const { error } = await AuthSystem.client.rpc("chat_edit_message", { p_message_id: message.id, p_body: body.trim() });
     if (error) window.alert(error.message);
   },
   async deleteMessage(id, staff) {
@@ -435,6 +491,28 @@ const ChatSystem = {
     });
   },
 
+  async loadTargetAutomodHistory() {
+    const target = document.getElementById("chat-mod-target").value;
+    const box = document.getElementById("chat-mod-automod-history");
+    if (!target || !box) { if (box) box.textContent = "Select an account first."; return; }
+    const { data, error } = await AuthSystem.client.rpc("chat_list_target_automod_history", { p_target_user_id: target });
+    box.replaceChildren();
+    if (error) { box.textContent = error.message; return; }
+    (data || []).forEach(item => {
+      const row = document.createElement("div"); row.className = "chat-review-item";
+      const detail = document.createElement("p");
+      detail.textContent = item.category + " · " + item.reason + " · " + new Date(item.created_at).toLocaleString() + " · " + item.outcome + (item.strike_number ? " · Strike " + item.strike_number : "");
+      row.appendChild(detail);
+      if (item.outcome === "applied") row.appendChild(this.actionButton("Reverse", async () => {
+        const reason = window.prompt("Why is this AutoMod action being reversed? (at least 8 characters)", "False positive");
+        if (!reason) return;
+        const { error: reverseError } = await AuthSystem.client.rpc("chat_reverse_automod_event", { p_event_id: item.id, p_reason: reason });
+        if (reverseError) window.alert(reverseError.message); else await this.loadTargetAutomodHistory();
+      }));
+      box.appendChild(row);
+    });
+    if (!data || !data.length) box.textContent = "No AutoMod history for this account.";
+  },
   async moderateUser() {
     const target = document.getElementById("chat-mod-target").value;
     const action = document.getElementById("chat-mod-action").value;
@@ -450,10 +528,28 @@ const ChatSystem = {
   },
   async loadReviewQueue() {
     const list = document.getElementById("chat-review-list"); if (!list || !AuthSystem.canAdmin()) return;
-    const { data, error } = await AuthSystem.client.rpc("chat_list_moderation_queue");
     list.replaceChildren();
-    if (error) { list.textContent = error.message; return; }
-    (data || []).forEach(item => {
+    const { data: moderation, error: moderationError } = await AuthSystem.client.rpc("chat_list_moderation_queue");
+    const { data: automod, error: automodError } = await AuthSystem.client.rpc("chat_list_automod_review_queue");
+    if (moderationError && automodError) { list.textContent = moderationError.message; return; }
+    (automod || []).forEach(item => {
+      const callerRank = AuthSystem.isOwner() ? 4 : (AuthSystem.role() === "developer" ? 3 : 0);
+      const targetRank = item.target_owner ? 4 : (item.target_role === "developer" ? 3 : item.target_role === "moderator" ? 2 : item.target_role === "tester" ? 1 : 0);
+      const canReview = targetRank < callerRank || (AuthSystem.isOwner() && item.target_owner && item.target_user_id !== AuthSystem.user.id);
+      const row = document.createElement("div"); row.className = "chat-review-item";
+      const text = document.createElement("p");
+      text.textContent = "AUTOMOD · " + item.target_username + " · " + item.category + " · " + item.reason + " · Suggested: " + item.suggested_action;
+      row.appendChild(text);
+      if (canReview) {
+        const approve = this.actionButton("Approve punishment", () => this.reviewAutomodItem(item, "approve"));
+        const dismiss = this.actionButton("Dismiss", () => this.reviewAutomodItem(item, "dismiss"));
+        row.append(approve, dismiss);
+      } else {
+        const note = document.createElement("small"); note.textContent = "Requires review by a higher-ranked staff member."; row.appendChild(note);
+      }
+      list.appendChild(row);
+    });
+    (moderation || []).forEach(item => {
       const row = document.createElement("div"); row.className = "chat-review-item";
       const text = document.createElement("p"); text.textContent = item.queue_type + " · " + item.target_username + " · " + item.reason;
       row.appendChild(text);
@@ -463,13 +559,104 @@ const ChatSystem = {
       }
       list.appendChild(row);
     });
-    if (!data || !data.length) list.textContent = "No pending reviews.";
+    if (!list.children.length) list.textContent = "No pending reviews.";
+  },
+  async reviewAutomodItem(item, decision) {
+    const note = window.prompt("Optional review note:", "") || "";
+    const { error } = await AuthSystem.client.rpc("chat_review_automod_case", {
+      p_case_id: item.id, p_decision: decision, p_note: note
+    });
+    if (error) window.alert(error.message); else { await this.loadReviewQueue(); await this.loadAutomodStats(); }
   },
   async reviewItem(item, approve) {
     const fn = item.queue_type === "appeal" ? "chat_review_appeal" : "chat_review_ban_request";
     const args = item.queue_type === "appeal" ? { p_appeal_id: item.id, p_approve: approve, p_decision: approve ? "Appeal approved." : "Appeal rejected." } : { p_action_id: item.id, p_approve: approve };
     const { error } = await AuthSystem.client.rpc(fn, args);
     if (error) window.alert(error.message); else await this.loadReviewQueue();
+  },
+  async loadAutomodStatus() {
+    const box = document.getElementById("chat-automod-status"); if (!box) return;
+    const { data, error } = await AuthSystem.client.rpc("chat_get_my_automod_status");
+    box.replaceChildren();
+    if (error) { box.textContent = "Moderation status unavailable: " + error.message; return; }
+    const heading = document.createElement("h3"); heading.textContent = "MY MODERATION STATUS"; box.appendChild(heading);
+    const summary = document.createElement("p"); summary.textContent = "Active formal warnings: " + data.formal_warnings + " · Next formal warning: " + data.next_warning_action; box.appendChild(summary);
+    const strikeLine = document.createElement("p");
+    const strikes = (data.strikes || []).map(x => x.category + ": " + x.count).join(" · ") || "No active strikes";
+    strikeLine.textContent = "Active AutoMod strikes: " + strikes; box.appendChild(strikeLine);
+    (data.next_strike_actions || []).forEach(item => {
+      const next = document.createElement("p");
+      next.textContent = "Next " + item.category + " strike (" + (item.count + 1) + "): " + item.next_action;
+      box.appendChild(next);
+    });
+    const activeMute = data.muted_until && new Date(data.muted_until) > new Date();
+    const activeSuspension = data.suspended_until && new Date(data.suspended_until) > new Date();
+    if (activeMute || activeSuspension || data.permanent) {
+      const restriction = document.createElement("p");
+      restriction.textContent = data.permanent ? "Current restriction: permanent chat suspension" : "Current restriction until " + new Date(activeSuspension ? data.suspended_until : data.muted_until).toLocaleString();
+      if (data.restriction_reason) restriction.textContent += " · Reason: " + data.restriction_reason;
+      box.appendChild(restriction);
+    }
+    const history = document.createElement("details"); const summaryEl = document.createElement("summary"); summaryEl.textContent = "Moderation history"; history.appendChild(summaryEl);
+    (data.recent || []).forEach(item => {
+      const line = document.createElement("p"); line.className = "chat-automod-history-row";
+      line.textContent = item.category + " · " + item.reason + " · " + new Date(item.created_at).toLocaleDateString() + " · " + (new Date(item.expires_at) > new Date() ? "Active" : "Expired") + " · " + item.outcome;
+      history.appendChild(line);
+    });
+    box.appendChild(history);
+    const warningHistory = document.createElement("details");
+    const warningSummary = document.createElement("summary"); warningSummary.textContent = "Formal warning history"; warningHistory.appendChild(warningSummary);
+    (data.warning_history || []).forEach(item => {
+      const line = document.createElement("p"); line.className = "chat-automod-history-row";
+      const state = item.reversed_at ? "Reversed" : (item.active ? "Active" : "Expired");
+      line.textContent = item.category + " · " + item.reason + " · Issued " + new Date(item.created_at).toLocaleDateString() + " · " + state + " · Expires " + new Date(item.expires_at).toLocaleDateString();
+      warningHistory.appendChild(line);
+    });
+    box.appendChild(warningHistory);
+  },
+  async loadAutomodConfig() {
+    const panel = document.getElementById("chat-automod-config"); if (!panel || !AuthSystem.canAdmin()) return;
+    const { data, error } = await AuthSystem.client.rpc("chat_admin_get_automod_config");
+    const status = document.getElementById("chat-automod-config-status");
+    if (error) { if (status) status.textContent = error.message; return; }
+    const fields = { enabled: "chat-automod-enabled", enforcement_enabled: "chat-automod-enforcement", spam_messages_10s: "chat-automod-spam10", spam_messages_60s: "chat-automod-spam60", new_spam_messages_10s: "chat-automod-newspam10", new_spam_messages_60s: "chat-automod-newspam60", mention_distinct_limit: "chat-automod-mentions", new_mention_distinct_limit: "chat-automod-newmentions", links_30s: "chat-automod-links", new_links_30s: "chat-automod-newlinks", links_10m: "chat-automod-links10m", new_links_10m: "chat-automod-newlinks10m" };
+    Object.entries(fields).forEach(([key,id]) => { const el=document.getElementById(id); if(el) { if(el.type === "checkbox") el.checked=!!data[key]; else el.value=data[key]; } });
+    if (status) status.textContent = "Configuration loaded.";
+  },
+  async loadAutomodStats() {
+    const box = document.getElementById("chat-automod-stats"); if (!box || !AuthSystem.canAdmin()) return;
+    const { data, error } = await AuthSystem.client.rpc("chat_admin_get_automod_stats");
+    box.replaceChildren();
+    if (error) { box.textContent = error.message; return; }
+    const items = [
+      ["Pending staff reviews", data.pending_review], ["Detections · 24h", data.detections_24h],
+      ["Applied · 7d", data.applied_7d], ["Overturned · 7d", data.overturned_7d],
+      ["Dismissed · 7d", data.dismissed_7d], ["User reports · 7d", data.reports_7d]
+    ];
+    items.forEach(([label,value]) => { const card=document.createElement("div"); card.className="chat-automod-stat"; const strong=document.createElement("strong"); strong.textContent=String(value); const small=document.createElement("span"); small.textContent=label; card.append(strong,small); box.appendChild(card); });
+    const audit = document.createElement("details");
+    const auditTitle = document.createElement("summary"); auditTitle.textContent = "Recent configuration audit"; audit.appendChild(auditTitle);
+    (data.config_changes || []).forEach(change => {
+      const line = document.createElement("p"); line.className = "chat-automod-history-row";
+      line.textContent = change.actor + " · " + new Date(change.created_at).toLocaleString() + " · Thresholds/configuration updated";
+      audit.appendChild(line);
+    });
+    if (!(data.config_changes || []).length) { const empty=document.createElement("p"); empty.textContent="No configuration changes recorded yet."; audit.appendChild(empty); }
+    box.appendChild(audit);
+  },
+  async saveAutomodConfig() {
+    const get = id => document.getElementById(id);
+    const values = [get("chat-automod-enabled").checked,get("chat-automod-enforcement").checked,
+      Number(get("chat-automod-spam10").value),Number(get("chat-automod-spam60").value),
+      Number(get("chat-automod-newspam10").value),Number(get("chat-automod-newspam60").value),
+      Number(get("chat-automod-mentions").value),Number(get("chat-automod-newmentions").value),
+      Number(get("chat-automod-links").value),Number(get("chat-automod-newlinks").value),
+      Number(get("chat-automod-links10m").value),Number(get("chat-automod-newlinks10m").value)];
+    const { error } = await AuthSystem.client.rpc("chat_admin_set_automod", {
+      p_enabled:values[0],p_enforcement:values[1],p_spam10:values[2],p_spam60:values[3],p_newspam10:values[4],p_newspam60:values[5],p_mentions:values[6],p_newmentions:values[7],p_links:values[8],p_newlinks:values[9],p_links10m:values[10],p_newlinks10m:values[11]
+    });
+    const status=get("chat-automod-config-status"); if(status) status.textContent=error ? error.message : "AutoMod settings saved.";
+    if (!error) await this.loadAutomodStats();
   },
   async submitAppeal() {
     const reason = document.getElementById("chat-appeal-reason").value.trim();
