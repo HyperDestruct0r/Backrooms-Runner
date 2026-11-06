@@ -118,8 +118,6 @@ This project is a personal development project.
 
 The main menu now includes **Community Chat**. The first release includes the `general`, `announcements`, `level-discussion`, and `feedback` channels; live messages; replies; editing and deletion of your own messages; reactions; online presence; and basic @mention highlighting. Direct messages, attachments, voice chat, and advanced search are intentionally not part of this release.
 
-The browser uses the existing Supabase anon/publishable key. Never put a service-role key in the game. Chat tables use row-level security; moderation and appeal actions use narrowly scoped database functions.
-
 ### Roles and moderation
 
 - Users and Testers can use ordinary channels.
@@ -128,3 +126,18 @@ The browser uses the existing Supabase anon/publishable key. Never put a service
 - Developers and the Owner can review permanent chat-ban requests and appeals. The announcements channel is staff-post-only.
 - Muted accounts retain read access but cannot send messages or react. Chat-suspended and chat-banned accounts cannot read normal chat and are shown the appeal interface.
 - Chat restrictions are separate from game access. This migration does not implement game suspensions or game bans.
+
+
+## AutoMod v1 (incremental migration)
+
+This build adds server-enforced AutoMod to community chat. It is intentionally separate from the original chat schema: for an existing installation, run **only** `supabase/automod-v1.sql` once, after the existing community-chat, offline-moderation, appeal-case, and per-ban-appeal migrations have been applied. Do not rerun the consolidated `community-chat.sql` or earlier migrations to install AutoMod. The migration does not apply itself to the hosted Supabase project.
+
+AutoMod v1 uses database RPCs for message sending and editing, so ordinary clients cannot bypass message-insert checks by writing directly to `chat_messages`. Established-account defaults are 5 messages/10 seconds, 20/minute, 3 identical messages/minute, 5 normalized-similar messages/2 minutes, and 30 repeated characters. During the first 7 account days, the corresponding limits are 3/10 seconds, 12/minute, 2 identical messages/minute, 3 similar messages/2 minutes, and 20 repeated characters.
+
+Mention defaults are 5 distinct users/message, 10 mentions/minute, and 5 mentions of the same user/minute; first-week accounts use 3 distinct users/message, 6 mentions/minute, and 3 mentions of the same user/minute. More than 5 links/30 seconds or 5/10 minutes triggers the established-account link limit; first-week accounts are limited to 1/30 seconds and 3/10 minutes. `@everyone` and `@here` are reserved for Developers and Owners. Unknown domains are allowed but flagged for staff review.
+
+Ordinary accounts receive the agreed category-specific strike progression and a separate 90-day formal-warning progression. The stronger resulting restriction wins; punishments are chat-only. Strike expirations are 7 days for spam, 14 days for mentions and links, 30 days for harassment/evasion reports, and 60 days for hate-speech reports. Users can view active counts, next consequences, and recent history in **My Moderation Status**. Formal warning history remains visible after expiry. If a permanent AutoMod suspension is successfully appealed, escalation returns to the pre-Strike-5 state: the four most recent active strikes in the triggering category and the three most recent active formal warnings remain; older records stay in history but no longer count toward escalation.
+
+Moderators, Developers, and Owners are not automatically punished. Detected staff violations are placed in the Developer/Owner review queue. A reviewer must outrank the target; a different Owner may review an Owner case. Users can report messages for harassment, hate speech, spam, links, or evasion; reports are review signals only and do not automatically create strikes. Authorized staff can inspect target history and reverse an applied AutoMod event, which also deactivates its associated formal warning. Configuration changes and enforcement events are recorded in audit tables. Developers and Owners can configure thresholds, view AutoMod statistics/overturn counts, and disable enforcement while leaving detection/logging active.
+
+**Conservative-scope note:** This first pass does not use an external threat-intelligence feed or an AI text classifier. It does not automatically decide that an unfamiliar link is malicious, nor does it automatically classify ambiguous harassment/hate-speech language. Those cases rely on user reports and staff review to avoid keyword-based false positives. The built-in trusted-domain list is in `chat_automod_allowed_domains`; it can be extended by an authorized database operator.
