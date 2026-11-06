@@ -8,7 +8,7 @@
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
-  <title>Backrooms Runner — Infinite Level 1</title>
+  <title>Backrooms Runner — Free Backrooms Game</title>
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/systems/transitions.css">
   <link rel="stylesheet" href="css/levels/level0.css">
@@ -350,6 +350,7 @@
             </div>
             <p id="chat-appeal-state" aria-live="polite"></p>
           </div>
+          <section id="chat-automod-status" class="chat-automod-panel" aria-live="polite"></section>
           <div id="chat-workspace" class="chat-workspace" hidden>
             <aside class="chat-sidebar">
               <h3>CHANNELS</h3>
@@ -379,6 +380,27 @@
             </div>
             <button id="chat-mod-submit" class="chat-primary" type="button">APPLY MODERATION ACTION</button>
             <p id="chat-mod-status" aria-live="polite"></p>
+            <div class="chat-mod-history-tools"><button id="chat-mod-history-load" class="chat-action" type="button">LOAD AUTOMOD HISTORY FOR SELECTED ACCOUNT</button><div id="chat-mod-automod-history"></div></div>
+          </section>
+          <section id="chat-automod-config" class="chat-moderation" hidden>
+            <div class="chat-review-head"><h3>AUTOMOD CONFIGURATION</h3><button id="chat-automod-config-refresh" type="button" class="chat-action">RELOAD</button></div>
+            <div id="chat-automod-stats" class="chat-automod-stats" aria-live="polite"></div>
+            <div class="chat-automod-config-grid">
+              <label><input id="chat-automod-enabled" type="checkbox" checked> Enable detection</label>
+              <label><input id="chat-automod-enforcement" type="checkbox" checked> Enable automatic enforcement</label>
+              <label>Messages / 10 seconds<input id="chat-automod-spam10" type="number" min="2" max="30" value="5"></label>
+              <label>Messages / minute<input id="chat-automod-spam60" type="number" min="5" max="120" value="20"></label>
+              <label>New accounts: messages / 10s<input id="chat-automod-newspam10" type="number" min="2" max="20" value="3"></label>
+              <label>New accounts: messages / minute<input id="chat-automod-newspam60" type="number" min="3" max="60" value="12"></label>
+              <label>Distinct mentions / message<input id="chat-automod-mentions" type="number" min="2" max="20" value="5"></label>
+              <label>New accounts: distinct mentions<input id="chat-automod-newmentions" type="number" min="2" max="10" value="3"></label>
+              <label>Links / message<input id="chat-automod-links" type="number" min="1" max="10" value="2"></label>
+              <label>New accounts: links / message<input id="chat-automod-newlinks" type="number" min="1" max="5" value="1"></label>
+              <label>Links / 10 minutes<input id="chat-automod-links10m" type="number" min="2" max="30" value="5"></label>
+              <label>New accounts: links / 10 minutes<input id="chat-automod-newlinks10m" type="number" min="1" max="15" value="3"></label>
+            </div>
+            <button id="chat-automod-save" class="chat-primary" type="button">SAVE AUTOMOD SETTINGS</button>
+            <p id="chat-automod-config-status" aria-live="polite"></p>
           </section>
           <section id="chat-review" class="chat-review" hidden>
             <div class="chat-review-head"><h3>DEVELOPER REVIEW QUEUE</h3><button id="chat-review-refresh" type="button" class="chat-action">REFRESH</button></div>
