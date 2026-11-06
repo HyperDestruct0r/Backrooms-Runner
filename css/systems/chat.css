@@ -84,3 +84,26 @@
 .chat-new-appeal { display:inline-flex; align-items:center; gap:9px; margin:14px 0 4px; padding:9px 13px; border:1px solid #756b43; background:rgba(216,201,105,.08); color:#e5dcb9; cursor:pointer; font-size:11px; font-weight:800; letter-spacing:.1em; }
 .chat-new-appeal:hover { background:rgba(216,201,105,.16); border-color:#b5a466; }
 .chat-new-appeal span { display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px; border:1px solid currentColor; border-radius:50%; font-size:19px; line-height:1; }
+
+
+/* AutoMod v1: user transparency and staff configuration. */
+.chat-automod-panel { margin:14px 0; padding:14px 16px; border:1px solid #49422f; background:rgba(255,255,255,.025); color:#c8c0a5; font-size:11px; }
+.chat-automod-panel h3 { margin:0 0 9px; color:#e5dcb9; font-size:12px; letter-spacing:.12em; }
+.chat-automod-panel p { margin:6px 0; line-height:1.5; }
+.chat-automod-panel details { margin-top:10px; border-top:1px solid #393425; padding-top:8px; }
+.chat-automod-panel summary { cursor:pointer; color:#d9ca8a; }
+.chat-automod-history-row { padding:6px 0; border-bottom:1px solid rgba(90,80,55,.35); overflow-wrap:anywhere; }
+.chat-automod-config-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:12px 0; }
+.chat-automod-config-grid label { display:flex; flex-direction:column; gap:6px; color:#bdb394; font-size:10px; }
+.chat-automod-config-grid input:not([type=checkbox]) { min-width:0; width:100%; box-sizing:border-box; border:1px solid #514a36; background:#15130d; color:#eee6c7; padding:8px; }
+.chat-automod-config-grid label:has(input[type=checkbox]) { flex-direction:row; align-items:center; }
+@media(max-width:760px) { .chat-automod-config-grid { grid-template-columns:1fr; } }
+
+.chat-mod-history-tools { margin-top:14px; padding-top:12px; border-top:1px solid #393425; }
+#chat-mod-automod-history { margin-top:8px; }
+
+.chat-automod-stats { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:7px; margin:10px 0 14px; }
+.chat-automod-stat { display:flex; flex-direction:column; gap:3px; padding:9px; border:1px solid #403a2b; background:rgba(0,0,0,.18); }
+.chat-automod-stat strong { color:#e5dcb9; font-size:18px; }
+.chat-automod-stat span { color:#a99f80; font-size:9px; }
+@media(max-width:760px) { .chat-automod-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
