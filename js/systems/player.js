@@ -28,17 +28,10 @@ const STEP_TOLERANCE = 0.05;
 // Every other level keeps STEP_TOLERANCE.
 function stepTolerance() { return (typeof Level9 !== "undefined" && Level9.active) ? Level9.stepTol : STEP_TOLERANCE; }
 
-function resolveAxis(pos, radius, height, axis) {
-  if (GameState.noclip || (GameState.creative && Player.flying)) return 0;
-  const min = new THREE.Vector3(pos.x - radius, pos.y, pos.z - radius);
-  const max = new THREE.Vector3(pos.x + radius, pos.y + height, pos.z + radius);
-  let pushed = 0;
-  const stepTol = stepTolerance();
-  // Level 8 only: a body resting flush against a wall is a float rounding error (about 1e-16) inside it, and the
-  // push-out then slides it to the far end of that wall box, which can carry it through a thin perpendicular wall.
-  // Ignoring overlaps under 0.1 mm there stops it. Every other level keeps the exact old test.
-  const EPS = (typeof Level8 !== "undefined" && Level8.active) ? 1e-4 : 0;
-  const boxes = (typeof Level10 !== "undefined" && Level10.active) ? Level10.colliders
+// The list of boxes the current level collides with. Chosen once per call instead of walking a ladder of
+// typeof checks per axis; the order is the original one.
+function activeColliders() {
+  return (typeof Level10 !== "undefined" && Level10.active) ? Level10.colliders
     : (typeof Level9 !== "undefined" && Level9.active) ? Level9.colliders
     : (typeof Level8 !== "undefined" && Level8.active) ? Level8.colliders
     : (typeof Level6 !== "undefined" && Level6.active) ? Level6.colliders
@@ -47,30 +40,45 @@ function resolveAxis(pos, radius, height, axis) {
     : (typeof Level3 !== "undefined" && Level3.active) ? Level3.colliders
     : (typeof Level2 !== "undefined" && Level2.active) ? Level2.colliders
     : (typeof Level1 !== "undefined" && Level1.active) ? Level1.colliders : Level.colliders;
+}
+
+// Same push-out as before, on plain numbers: this runs several times per frame for the player and for an
+// entity, and used to allocate two Vector3s on every call.
+function resolveAxis(pos, radius, height, axis) {
+  if (GameState.noclip || (GameState.creative && Player.flying)) return 0;
+  let minx = pos.x - radius, miny = pos.y, minz = pos.z - radius;
+  let maxx = pos.x + radius, maxy = pos.y + height, maxz = pos.z + radius;
+  let pushed = 0;
+  const stepTol = stepTolerance();
+  // Level 8 only: a body resting flush against a wall is a float rounding error (about 1e-16) inside it, and the
+  // push-out then slides it to the far end of that wall box, which can carry it through a thin perpendicular wall.
+  // Ignoring overlaps under 0.1 mm there stops it. Every other level keeps the exact old test.
+  const EPS = (typeof Level8 !== "undefined" && Level8.active) ? 1e-4 : 0;
+  const boxes = activeColliders();
   for (let i = 0; i < boxes.length; i++) {
-    const b = boxes[i];
-    if (axis === "x" && (b.max.x < min.x - 1 || b.min.x > max.x + 1)) continue;
-    if (axis === "z" && (b.max.z < min.z - 1 || b.min.z > max.z + 1)) continue;
+    const b = boxes[i], bmin = b.min, bmax = b.max;
+    if (axis === "x" && (bmax.x < minx - 1 || bmin.x > maxx + 1)) continue;
+    if (axis === "z" && (bmax.z < minz - 1 || bmin.z > maxz + 1)) continue;
     if (EPS) {
-      if (!(min.x < b.max.x - EPS && max.x > b.min.x + EPS && min.y < b.max.y - EPS && max.y > b.min.y + EPS &&
-            min.z < b.max.z - EPS && max.z > b.min.z + EPS)) continue;
-    } else if (!aabbOverlap(min, max, b.min, b.max)) continue;
-    if (axis !== "y" && b.max.y - min.y <= stepTol) continue;
+      if (!(minx < bmax.x - EPS && maxx > bmin.x + EPS && miny < bmax.y - EPS && maxy > bmin.y + EPS &&
+            minz < bmax.z - EPS && maxz > bmin.z + EPS)) continue;
+    } else if (!(minx < bmax.x && maxx > bmin.x && miny < bmax.y && maxy > bmin.y && minz < bmax.z && maxz > bmin.z)) continue;
+    if (axis !== "y" && bmax.y - miny <= stepTol) continue;
     if (axis === "x") {
-      const penL = max.x - b.min.x;
-      const penR = b.max.x - min.x;
-      if (penL < penR) { pos.x -= penL; max.x -= penL; min.x -= penL; pushed -= penL; }
-      else { pos.x += penR; max.x += penR; min.x += penR; pushed += penR; }
+      const penL = maxx - bmin.x;
+      const penR = bmax.x - minx;
+      if (penL < penR) { pos.x -= penL; maxx -= penL; minx -= penL; pushed -= penL; }
+      else { pos.x += penR; maxx += penR; minx += penR; pushed += penR; }
     } else if (axis === "z") {
-      const penL = max.z - b.min.z;
-      const penR = b.max.z - min.z;
-      if (penL < penR) { pos.z -= penL; max.z -= penL; min.z -= penL; pushed -= penL; }
-      else { pos.z += penR; max.z += penR; min.z += penR; pushed += penR; }
+      const penL = maxz - bmin.z;
+      const penR = bmax.z - minz;
+      if (penL < penR) { pos.z -= penL; maxz -= penL; minz -= penL; pushed -= penL; }
+      else { pos.z += penR; maxz += penR; minz += penR; pushed += penR; }
     } else {
-      const penD = max.y - b.min.y;
-      const penU = b.max.y - min.y;
-      if (penD < penU) { pos.y -= penD; max.y -= penD; min.y -= penD; pushed -= penD; }
-      else { pos.y += penU; max.y += penU; min.y += penU; pushed += penU; }
+      const penD = maxy - bmin.y;
+      const penU = bmax.y - miny;
+      if (penD < penU) { pos.y -= penD; maxy -= penD; miny -= penD; pushed -= penD; }
+      else { pos.y += penU; maxy += penU; miny += penU; pushed += penU; }
     }
   }
   return pushed;
@@ -296,9 +304,12 @@ const Player = {
 
   update(dt) {
     const P = CONFIG.player;
-    const wantCrouch = isActionDown("crouch");
-    const wantSprint = isActionDown("sprint");
-    const wantJump = isActionDown("jump");
+    // A maintenance terminal is open: the world keeps running but the player
+    // stands still (gravity and collision still apply).
+    const panel = typeof ActivitySystem !== "undefined" && ActivitySystem.interfaceOpen;
+    const wantCrouch = !panel && isActionDown("crouch");
+    const wantSprint = !panel && isActionDown("sprint");
+    const wantJump = !panel && isActionDown("jump");
 
     // Look: desktop uses pointer-lock mouse deltas; mobile uses the right
     // virtual stick. Horizontal input rotates yaw, vertical input rotates pitch.
@@ -349,7 +360,9 @@ const Player = {
 
     // Camera-relative wish on XZ. Three.js yaw: local forward is (-sin(y), -cos(y)).
     let fwd = 0, str = 0;
-    if (DeviceMode.mobile) {
+    if (panel) {
+      // no movement input while interacting
+    } else if (DeviceMode.mobile) {
       fwd = -MobileControls.moveY;
       str = MobileControls.moveX;
     } else {
@@ -521,6 +534,9 @@ const Player = {
       if (!inside) continue;
 
       if (t.type === "exit") {
+        // Planned elevators are powered and called from the Activity System (E at the doors),
+        // not by walking into them.
+        if (typeof ActivitySystem !== "undefined" && ActivitySystem.isManaged(0)) continue;
         if (!GameState.exitReached && GameState.level === 0) {
           GameState.exitReached = true;
           Stairwell.reached = true;
@@ -804,6 +820,8 @@ const PickupSystem = {
   regions: Object.create(null),
   used: Object.create(null),
   level1Regions: Object.create(null),
+  level0Regions: Object.create(null),
+  _mats: null,
   group: null,
   reset() {
     if (this.group && scene) scene.remove(this.group);
@@ -811,6 +829,7 @@ const PickupSystem = {
     this.regions = Object.create(null);
     this.used = Object.create(null);
     this.level1Regions = Object.create(null);
+    this.level0Regions = Object.create(null);
     this.group = null;
   },
   regionKey(x, z) {
@@ -831,16 +850,57 @@ const PickupSystem = {
     const t = Level.getTile(tx, tz);
     return t !== TILE.WALL && t !== TILE.COLUMN && t !== TILE.START && t !== TILE.EXIT && t !== TILE.CHECK;
   },
+  // One material per kind for the whole session (each pickup used to create its own).
+  _mat(kind) {
+    if (!this._mats) this._mats = {
+      energy: new THREE.MeshStandardMaterial({color:0xc7c7c7,roughness:0.48,metalness:0.18,emissive:0x2a312f,emissiveIntensity:0.18}),
+      almond: new THREE.MeshStandardMaterial({color:0xe8d8b0,roughness:0.35,metalness:0.08,emissive:0x332818,emissiveIntensity:0.15})
+    };
+    return kind === 'energy' ? this._mats.energy : this._mats.almond;
+  },
   _addMesh(kind, x, z) {
-    const mat = kind === 'energy'
-      ? new THREE.MeshStandardMaterial({color:0xc7c7c7,roughness:0.48,metalness:0.18,emissive:0x2a312f,emissiveIntensity:0.18})
-      : new THREE.MeshStandardMaterial({color:0xe8d8b0,roughness:0.35,metalness:0.08,emissive:0x332818,emissiveIntensity:0.15});
-    const mesh = new THREE.Mesh(Geometries.box, mat);
+    const mesh = new THREE.Mesh(Geometries.box, this._mat(kind));
     if (kind === 'energy') { mesh.scale.set(0.42,0.18,0.14); mesh.position.set(x,0.18,z); }
     else { mesh.scale.set(0.12,0.28,0.12); mesh.position.set(x,0.22,z); }
     this.group.add(mesh);
     const id = kind + ':' + x.toFixed(3) + ',' + z.toFixed(3);
     this.list.push({id:id,kind:kind,x:x,z:z,mesh:mesh,taken:false});
+  },
+  // Unbounded Level 0: items are rolled per 150 m square the first time a chunk is built next to it.
+  beginLevel0(seed) {
+    this.reset();
+    this.group = new THREE.Group();
+    this.l0Seed = seed >>> 0;
+    if (scene) scene.add(this.group);
+  },
+  ensureLevel0Around(wx, wz) {
+    if (!this.group || this.l0Seed === undefined) return;
+    const R = CONFIG.items.regionSize;
+    this.generateLevel0Region(Math.floor(wx / R), Math.floor(wz / R));
+  },
+  generateLevel0Region(rx, rz) {
+    const key = rx + ':' + rz;
+    if (this.level0Regions[key] || !this.group) return;
+    this.level0Regions[key] = true;
+    const T = CONFIG.tile, R = CONFIG.items.regionSize, baseX = rx * R, baseZ = rz * R;
+    const rng = mulberry32((this.l0Seed ^ Math.imul(rx, 0x45d9f3b) ^ Math.imul(rz, 0x27d4eb2d) ^ 0xA11D5) >>> 0);
+    const rec = this._regionRec('L0:' + key);
+    for (const [kind, attempts, chance, cap] of [['almond', CONFIG.items.almondAttempts, CONFIG.items.almondChance, CONFIG.items.almondMaxPerRegion],
+                                                  ['energy', CONFIG.items.energyAttempts, CONFIG.items.energyChance, CONFIG.items.energyMaxPerRegion]]) {
+      for (let a = 0; a < attempts && rec[kind] < cap; a++) {
+        if (rng() >= chance) continue;
+        let placed = false;
+        for (let tries = 0; tries < 8 && !placed; tries++) {
+          const x = baseX + 3 + rng() * Math.max(1, R - 6), z = baseZ + 3 + rng() * Math.max(1, R - 6);
+          const tx = Math.floor(x / T), tz = Math.floor(z / T);
+          if (!this._isOpenLevel0(tx, tz)) continue;
+          const w = Level.tileToWorld(tx, tz);
+          const uid = kind + ':' + tx + ',' + tz;
+          if (this.used[uid]) continue;
+          this.used[uid] = true; rec[kind]++; this._addMesh(kind, w.x, w.z); placed = true;
+        }
+      }
+    }
   },
   generate(seed) {
     this.reset();
@@ -996,12 +1056,19 @@ const HUD = {
     return "rgb(" + r + "," + g + "," + bl + ")";
   },
   setBar(fillId, labelEl, cur, max) {
-    const el = document.getElementById(fillId);
-    if (!el) return;
+    const cache = this._barCache || (this._barCache = Object.create(null));
+    let rec = cache[fillId];
+    if (!rec) { const el = document.getElementById(fillId); if (!el) return; rec = cache[fillId] = { el: el, pct: -1, label: "" }; }
     const pct = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0;
-    el.style.transform = "scaleX(" + pct + ")";
-    el.style.background = this.resourceColor(pct);
-    if (labelEl) labelEl.textContent = (cur | 0) + " / " + (max | 0);
+    if (pct !== rec.pct) {
+      rec.pct = pct;
+      rec.el.style.transform = "scaleX(" + pct + ")";
+      rec.el.style.background = this.resourceColor(pct);
+    }
+    if (labelEl) {
+      const txt = (cur | 0) + " / " + (max | 0);
+      if (txt !== rec.label) { rec.label = txt; labelEl.textContent = txt; }
+    }
   },
   formatTime(t) {
     const m = Math.floor(t / 60);
@@ -1009,7 +1076,9 @@ const HUD = {
     return String(m).padStart(2, "0") + ":" + s.toFixed(1).padStart(4, "0");
   },
   update() {
-    if (this.timeEl) this.timeEl.textContent = this.formatTime(GameState.elapsed);
+    // DOM writes only when the text/style would actually change: this runs every frame, and a style or text write
+    // forces layout work on phones even when the value is the same.
+    if (this.timeEl) { const t = this.formatTime(GameState.elapsed); if (t !== this._lastTime) { this._lastTime = t; this.timeEl.textContent = t; } }
     this.setBar("hp-fill", this.hpEl, Player.getPlayerHP(), Player.maxHp);
     this.setBar("stam-fill", this.stamEl, Player.stamina | 0, CONFIG.stamina.max);
     this.setBar("san-fill", this.sanEl, Player.getSanity(), CONFIG.sanity.max);
@@ -1024,8 +1093,11 @@ const HUD = {
         this.toastEl.style.opacity = "0.7";
       }
     }
-    const seedNode=document.getElementById("hud-seed");
-    if(seedNode && GameState.level===1) seedNode.innerHTML="LEVEL 1 · SEED <span id=\"hud-seed-val\">"+(GameState.seed>>>0)+"</span>";
+    if (GameState.level === 1) {
+      const seedNode = document.getElementById("hud-seed");
+      const html = "LEVEL 1 · SEED <span id=\"hud-seed-val\">" + (GameState.seed >>> 0) + "</span>";
+      if (seedNode && this._seedHtml !== html) { this._seedHtml = html; seedNode.innerHTML = html; }
+    } else this._seedHtml = null;
     if (GameState.debug) this.updateDebug();
   },
   updateDebug() {
@@ -1054,7 +1126,7 @@ const HUD = {
       "MODULE " + (mod ? (mod.id + " " + mod.type) : "none") + "\n" +
       "LIGHT ZONE " + (mod ? (mod.lightProfile || "NORMAL") : "none") + "\n" +
       "DARK FOG " + (DarknessSystem.active ? "ON" : "OFF") + "  FAR " + (scene && scene.fog ? scene.fog.far.toFixed(1) + "m" : "—") + "\n" +
-      "MODULES " + MapGraph.nodes.length + "\n" +
+      (Level.world ? "REGIONS " + Level.world.regions.size + " CHUNKS " + Level.chunks.size : "MODULES " + MapGraph.nodes.length) + "\n" +
       "PATH TO EXIT " + (Level.pathMeters ? Level.pathMeters.toFixed(0) + " m" : "—") + "\n" +
       "EUCLID EXIT " + (dist >= 0 ? dist.toFixed(1) + " m" : "—") + "\n" +
       "ENTITY " + (EncounterManager.entitySpawned ? "SPAWNED" : "NOT SPAWNED") + "\n" +
