@@ -425,6 +425,31 @@ const WorldAPI = {
   }
 };
 
+/* ------------------------------------------------------------------
+   NAV WINDOW
+   Breadth-first searches used to allocate one Int16Array and one Int32Array per ROW of the whole level
+   (about 770 KB for the old 384 x 336 map) on every repath, several times a second while chased; on an
+   unbounded level there is no such grid at all. Every search here is bounded (140 tiles for paths, 60 for
+   spawn picking), so they share one pre-allocated window around the start tile. Nothing is allocated
+   per search and nothing needs clearing: a cell is "unvisited" unless its stamp is the current search's.
+   ------------------------------------------------------------------ */
+const NavWindow = {
+  R: 142, N: 285,
+  dist: null, from: null, stamp: null, queue: null,
+  gen: 0, ox: 0, oz: 0,
+  init() {
+    if (this.dist) return;
+    const n = this.N * this.N;
+    this.dist = new Int16Array(n); this.from = new Int32Array(n); this.stamp = new Uint32Array(n); this.queue = new Int32Array(n);
+  },
+  begin(cx, cz) { this.init(); this.gen++; this.ox = cx - this.R; this.oz = cz - this.R; },
+  index(x, z) { const ix = x - this.ox, iz = z - this.oz; return (ix < 0 || iz < 0 || ix >= this.N || iz >= this.N) ? -1 : iz * this.N + ix; },
+  seen(i) { return this.stamp[i] === this.gen; },
+  set(i, d, prev) { this.stamp[i] = this.gen; this.dist[i] = d; this.from[i] = prev; },
+  x(i) { return (i % this.N) + this.ox; },
+  z(i) { return ((i / this.N) | 0) + this.oz; }
+};
+
 const EntitySystem = {
   entities: [],
   mesh: null,
@@ -673,51 +698,43 @@ const EntitySystem = {
   buildPath(tx, tz) {
     const start = this.tileOf(this.position);
     if (!Level.inBounds(start.x, start.z) || !Level.inBounds(tx, tz)) return [];
-    const cols = Level.cols, rows = Level.rows;
-    const dist = [];
-    const prev = [];
-    for (let z = 0; z < rows; z++) {
-      dist.push(new Int16Array(cols).fill(-1));
-      prev.push(new Int32Array(cols).fill(-1));
-    }
     if (!this.walkable(Level.getTile(start.x, start.z))) return [];
-    const q = [[start.x, start.z]];
-    dist[start.z][start.x] = 0;
-    let qi = 0, found = false;
+    const W = NavWindow;
+    W.begin(start.x, start.z);
+    const si = W.index(start.x, start.z), gi = W.index(tx, tz);
+    if (si < 0 || gi < 0) return [];                       // farther than the search is allowed to look
+    const q = W.queue;
+    let qh = 0, qt = 0, found = false;
     const cap = 140;
-    while (qi < q.length) {
-      const p = q[qi++];
-      if (p[0] === tx && p[1] === tz) { found = true; break; }
-      if (dist[p[1]][p[0]] > cap) continue;
-      for (let i = 0; i < 4; i++) {
-        const nx = p[0] + DIR4[i].x, nz = p[1] + DIR4[i].z;
-        if (nx < 0 || nz < 0 || nx >= cols || nz >= rows) continue;
-        if (dist[nz][nx] >= 0) continue;
+    W.set(si, 0, -1); q[qt++] = si;
+    while (qh < qt) {
+      const i = q[qh++];
+      if (i === gi) { found = true; break; }
+      const d = W.dist[i];
+      if (d > cap) continue;
+      const px = W.x(i), pz = W.z(i);
+      for (let k = 0; k < 4; k++) {
+        const nx = px + DIR4[k].x, nz = pz + DIR4[k].z;
+        const ni = W.index(nx, nz);
+        if (ni < 0 || W.seen(ni)) continue;
         if (!this.walkable(Level.getTile(nx, nz))) continue;
-        dist[nz][nx] = dist[p[1]][p[0]] + 1;
-        prev[nz][nx] = p[0] | (p[1] << 16);
-        q.push([nx, nz]);
+        W.set(ni, d + 1, i);
+        q[qt++] = ni;
       }
     }
     if (!found) return [];
     const tiles = [];
-    let cx = tx, cz = tz;
-    while (!(cx === start.x && cz === start.z)) {
-      tiles.push([cx, cz]);
-      const pr = prev[cz][cx];
-      if (pr < 0) break;
-      cx = pr & 65535;
-      cz = pr >>> 16;
-    }
+    let c = gi;
+    while (c !== si && c >= 0) { tiles.push(c); c = W.from[c]; }
     tiles.reverse();
     const pts = [];
     for (let i = 0; i < tiles.length; i += 2) {
-      const w = Level.tileToWorld(tiles[i][0], tiles[i][1]);
+      const w = Level.tileToWorld(W.x(tiles[i]), W.z(tiles[i]));
       pts.push(new THREE.Vector3(w.x, 0, w.z));
     }
     if (tiles.length) {
       const last = tiles[tiles.length - 1];
-      const w = Level.tileToWorld(last[0], last[1]);
+      const w = Level.tileToWorld(W.x(last), W.z(last));
       pts.push(new THREE.Vector3(w.x, 0, w.z));
     }
     return pts;
@@ -738,10 +755,10 @@ const EntitySystem = {
     const gz = Math.floor(here.z / LevelGenerator.CELL);
     const cur = MapGraph.nodeAt(gx, gz);
     let destGx = gx, destGz = gz;
-    if (cur && cur.connections && cur.connections.length) {
-      const nid = cur.connections[Math.floor(Math.random() * cur.connections.length)];
-      const n = MapGraph.nodes[nid];
-      if (n) { destGx = n.gx; destGz = n.gz; }
+    const links = cur ? MapGraph.connectedCells(cur) : [];
+    if (links.length) {
+      const n = links[Math.floor(Math.random() * links.length)];
+      destGx = n.gx; destGz = n.gz;
     } else {
       destGx = gx + (Math.random() < 0.5 ? -1 : 1);
       destGz = gz + (Math.random() < 0.5 ? -1 : 1);
@@ -1223,9 +1240,6 @@ const EncounterManager = {
   findSpawnTile(minM, maxM) {
     const start = this.playerTile();
     if (!Level.inBounds(start.x, start.z)) return null;
-    const cols = Level.cols, rows = Level.rows;
-    const dist = [];
-    for (let z = 0; z < rows; z++) dist.push(new Int16Array(cols).fill(-1));
     if (!this.walkable(Level.getTile(start.x, start.z))) {
       let found = false;
       for (let r = 1; r <= 3 && !found; r++) {
@@ -1240,31 +1254,35 @@ const EncounterManager = {
       }
       if (!found) return null;
     }
-    const q = [[start.x, start.z]];
-    dist[start.z][start.x] = 0;
-    let qi = 0;
     const tileMin = Math.floor(minM / CONFIG.tile);
     const tileMax = Math.ceil(maxM / CONFIG.tile);
+    const W = NavWindow;
+    W.begin(start.x, start.z);
+    const q = W.queue;
+    let qh = 0, qt = 0;
     const raw = [];
     const pgx = Math.floor(start.x / LevelGenerator.CELL);
     const pgz = Math.floor(start.z / LevelGenerator.CELL);
-    while (qi < q.length) {
-      const p = q[qi++];
-      const d = dist[p[1]][p[0]];
+    W.set(W.index(start.x, start.z), 0, -1); q[qt++] = W.index(start.x, start.z);
+    while (qh < qt) {
+      const i = q[qh++];
+      const d = W.dist[i];
       if (d > tileMax) continue;
-      if (d >= tileMin && d <= tileMax) raw.push(p);
+      const px = W.x(i), pz = W.z(i);
+      if (d >= tileMin && d <= tileMax) raw.push([px, pz]);
       if (d === tileMax) continue;
-      for (let i = 0; i < 4; i++) {
-        const nx = p[0] + DIR4[i].x, nz = p[1] + DIR4[i].z;
-        if (nx < 0 || nz < 0 || nx >= cols || nz >= rows) continue;
-        if (dist[nz][nx] >= 0) continue;
+      for (let k = 0; k < 4; k++) {
+        const nx = px + DIR4[k].x, nz = pz + DIR4[k].z;
+        const ni = W.index(nx, nz);
+        if (ni < 0 || W.seen(ni)) continue;
         const tt = Level.getTile(nx, nz);
         if (!this.walkable(tt) || tt === TILE.START || tt === TILE.EXIT) continue;
-        dist[nz][nx] = d + 1;
-        q.push([nx, nz]);
+        W.set(ni, d + 1, i);
+        q[qt++] = ni;
       }
     }
     if (!raw.length) return null;
+    const dist = { get: (x, z) => { const i = W.index(x, z); return i < 0 || !W.seen(i) ? -1 : W.dist[i]; } };
 
     function score(p) {
       const gx = Math.floor(p[0] / LevelGenerator.CELL);
@@ -1286,7 +1304,7 @@ const EncounterManager = {
     return {
       x: pick[0],
       z: pick[1],
-      pathM: dist[pick[1]][pick[0]] * CONFIG.tile
+      pathM: dist.get(pick[0], pick[1]) * CONFIG.tile
     };
   },
 
