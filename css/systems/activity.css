@@ -1,0 +1,81 @@
+/* Maintenance computer + interaction prompt (Activity System).
+   Aged beige-grey equipment, green phosphor screen, amber for faults.
+   No external fonts or images. */
+#activity-prompt{
+  position:fixed; left:50%; bottom:21%; transform:translateX(-50%); z-index:40;
+  display:none; max-width:min(86vw,560px); padding:7px 14px;
+  font:13px/1.35 "Courier New",Courier,monospace; letter-spacing:.06em; text-align:center;
+  color:#8dff98; background:rgba(3,10,4,.72); border:1px solid rgba(110,230,120,.45);
+  text-shadow:0 0 6px rgba(80,255,110,.55); pointer-events:none; white-space:pre-line;
+}
+#activity-prompt.warn{ color:#ffbd3a; border-color:rgba(255,176,0,.5); text-shadow:0 0 6px rgba(255,170,0,.5); }
+
+#activity-overlay{
+  position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
+  background:rgba(4,5,3,.80); padding:2vh 2vw; overflow:auto;
+  font-family:"Courier New",Courier,monospace;
+}
+.mu{
+  position:relative; width:min(96vw,760px); padding:14px 16px 16px; border-radius:9px; color:#2a2820;
+  background:
+    linear-gradient(100deg,rgba(255,255,255,.07) 0 8%,transparent 8% 60%,rgba(0,0,0,.06) 60% 62%,transparent 62%),
+    repeating-linear-gradient(0deg,rgba(0,0,0,.025) 0 2px,transparent 2px 5px),
+    linear-gradient(#a8a28b,#8d8771 55%,#7d7863);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.28),inset 0 -3px 0 rgba(0,0,0,.35),0 10px 40px rgba(0,0,0,.7);
+}
+.mu::before,.mu::after{ content:""; position:absolute; top:8px; width:7px; height:7px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#d6d1bd,#5e5a4a); box-shadow:0 1px 1px rgba(0,0,0,.5); }
+.mu::before{ left:8px; } .mu::after{ right:8px; }
+.mu-top{ display:flex; gap:10px; align-items:stretch; justify-content:space-between; margin:0 14px 10px; flex-wrap:wrap; }
+.mu-plate{ flex:1 1 220px; padding:4px 8px; background:#c7c1a8; border:1px solid #6d6850; border-radius:2px;
+  font-size:11px; letter-spacing:.08em; line-height:1.4; box-shadow:inset 0 0 0 1px rgba(255,255,255,.3); text-transform:uppercase; }
+.mu-plate b{ font-size:13px; letter-spacing:.14em; }
+.mu-warn{ flex:0 1 240px; padding:3px 8px; font-size:10px; font-weight:bold; letter-spacing:.07em; text-align:center; color:#111;
+  background:repeating-linear-gradient(-45deg,#e6bf22 0 9px,#1a1a14 9px 18px); border:1px solid #1a1a14; }
+.mu-warn span{ display:block; background:#e6bf22; padding:1px 4px; }
+.mu-bezel{ padding:14px; border-radius:20px / 24px; background:linear-gradient(#35342c,#1b1b16);
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.9),0 1px 0 rgba(255,255,255,.25); }
+.mu-screen{ position:relative; min-height:300px; border-radius:16px / 20px; overflow:hidden; color:#7dff8a;
+  background:radial-gradient(ellipse at 50% 42%,#06210c 0,#031307 62%,#010803 100%);
+  text-shadow:0 0 5px rgba(80,255,110,.6); box-shadow:inset 0 0 40px rgba(0,0,0,.9),inset 0 0 6px rgba(120,255,140,.25); }
+.mu-screen.fault{ color:#ffb020; text-shadow:0 0 5px rgba(255,170,0,.6); }
+.mu-screen-inner{ position:relative; z-index:1; padding:12px 16px 10px; font-size:13px; line-height:1.45; letter-spacing:.04em; }
+.mu-scan{ position:absolute; inset:0; z-index:2; pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.30) 0 1px,transparent 1px 3px),
+             radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%);
+  animation:mu-flicker 3.4s infinite steps(1); }
+@keyframes mu-flicker{ 0%{opacity:1} 41%{opacity:.93} 42%{opacity:1} 77%{opacity:.96} 79%{opacity:1} 100%{opacity:1} }
+.mu-hd{ display:flex; justify-content:space-between; gap:10px; border-bottom:1px solid rgba(125,255,138,.35); padding-bottom:4px; margin-bottom:8px; text-transform:uppercase; }
+.mu-hd span:last-child{ opacity:.75; }
+.mu-canvas-wrap{ display:flex; justify-content:center; }
+.mu-canvas-wrap canvas{ max-width:100%; height:auto; cursor:pointer; outline:none; touch-action:manipulation; }
+.mu-msg{ min-height:2.9em; margin-top:8px; text-transform:uppercase; }
+.mu-msg.bad{ color:#ffb020; text-shadow:0 0 5px rgba(255,170,0,.6); }
+.mu-legend{ margin-top:6px; font-size:11px; opacity:.7; text-transform:uppercase; }
+.mu-log{ margin:8px 0 0; padding:6px 8px; border:1px dashed rgba(125,255,138,.45); font-size:12px; }
+.mu-panel{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:12px 8px 0; }
+.mu-leds{ display:flex; gap:12px; }
+.mu-led{ display:flex; flex-direction:column; align-items:center; gap:3px; font-size:9px; letter-spacing:.1em; }
+.mu-led i{ width:13px; height:13px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#5b5a4e,#26251d); box-shadow:inset 0 1px 2px rgba(0,0,0,.7),0 0 0 2px #4b4838; }
+.mu-led.g.on i{ background:radial-gradient(circle at 35% 30%,#d4ffd8,#2fd24a); box-shadow:0 0 9px #3dff5c,0 0 0 2px #4b4838; }
+.mu-led.a.on i{ background:radial-gradient(circle at 35% 30%,#fff0c8,#f0a000); box-shadow:0 0 9px #ffb020,0 0 0 2px #4b4838; }
+.mu-led.r.on i{ background:radial-gradient(circle at 35% 30%,#ffd4cc,#d02a1a); box-shadow:0 0 9px #ff3a22,0 0 0 2px #4b4838; }
+.mu-led.blink.on i{ animation:mu-blink .5s infinite steps(1); } @keyframes mu-blink{ 50%{ opacity:.25 } }
+.mu-spacer{ flex:1; }
+.mu-btn{ font:bold 12px "Courier New",monospace; letter-spacing:.1em; padding:9px 14px; color:#2a2820; cursor:pointer;
+  background:linear-gradient(#d6d0b8,#b3ad94); border:1px solid #5b5742; border-bottom-width:4px; border-radius:4px; text-transform:uppercase; }
+.mu-btn:hover{ background:linear-gradient(#e0dac1,#bdb79e); } .mu-btn:active{ border-bottom-width:1px; transform:translateY(3px); }
+.mu-btn:focus-visible,.mu-breaker:focus-visible{ outline:2px solid #ffb020; outline-offset:2px; }
+.mu-breaker{ position:relative; width:86px; height:52px; padding:0; cursor:pointer; border:2px solid #3a372a; border-radius:5px;
+  background:linear-gradient(#5d1c14,#35100b); box-shadow:inset 0 2px 3px rgba(255,255,255,.15),0 2px 0 #1d1c14; }
+.mu-breaker::before{ content:"ENERGIZE"; position:absolute; left:0; right:0; bottom:2px; text-align:center; font:bold 8px "Courier New",monospace; color:#e8d9a0; letter-spacing:.12em; }
+.mu-breaker i{ position:absolute; left:50%; top:5px; width:14px; height:26px; margin-left:-7px; border-radius:3px; transform-origin:50% 100%;
+  background:linear-gradient(90deg,#9a9788,#e3dfcf 45%,#7d7a6b); box-shadow:0 2px 3px rgba(0,0,0,.6); transition:transform .12s; }
+.mu-breaker.armed i{ transform:rotate(0deg); } .mu-breaker:not(.armed) i{ transform:rotate(-24deg); }
+.mu-breaker.thrown i{ transform:rotate(24deg) scaleY(.9); }
+.mu-breaker[disabled]{ cursor:not-allowed; filter:saturate(.5) brightness(.85); }
+.mu-tape{ position:absolute; right:26px; bottom:-9px; padding:2px 10px; font:11px "Courier New",monospace; color:#3a3326; letter-spacing:.04em;
+  background:#d9d2a8; transform:rotate(-1.6deg); box-shadow:0 1px 2px rgba(0,0,0,.4); }
+.mu-shake{ animation:mu-shake .22s 1; } @keyframes mu-shake{ 25%{transform:translateX(-3px)} 75%{transform:translateX(3px)} }
+@media (prefers-reduced-motion:reduce){ .mu-scan,.mu-led.blink.on i,.mu-shake{ animation:none; } .mu-breaker i{ transition:none; } }
+@media (max-width:520px){ .mu{ padding:10px 8px 14px; } .mu-bezel{ padding:8px; } .mu-screen-inner{ padding:8px; font-size:12px; } .mu-top{ margin:0 8px 8px; } }
