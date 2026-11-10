@@ -32,11 +32,11 @@ const DevMap = {
     ctx.fillRect(0, 0, size, size);
     const toX = (x) => (x - px + span * 0.5) * scale;
     const toY = (z) => (z - pz + span * 0.5) * scale;
-    if (GameState.level === 0 && Level.tiles && Level.tiles.length) {
+    if (GameState.level === 0 && (Level.world || (Level.tiles && Level.tiles.length))) {
       const T = CONFIG.tile;
-      const x0 = Math.max(0, Math.floor((px - span * 0.5) / T));
+      const x0 = Math.max(Level.world ? -Infinity : 0, Math.floor((px - span * 0.5) / T));
       const x1 = Math.min(Level.cols, Math.ceil((px + span * 0.5) / T));
-      const z0 = Math.max(0, Math.floor((pz - span * 0.5) / T));
+      const z0 = Math.max(Level.world ? -Infinity : 0, Math.floor((pz - span * 0.5) / T));
       const z1 = Math.min(Level.rows, Math.ceil((pz + span * 0.5) / T));
       for (let z = z0; z < z1; z++) {
         for (let x = x0; x < x1; x++) {
