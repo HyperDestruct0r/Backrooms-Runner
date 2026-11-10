@@ -13,6 +13,7 @@ const PassC = {
   stats: { drawings: 0, chairs: 0, props: 0, crates: 0 },
 
   reset() {
+    this.resetWorld();
     if (this.group && scene) scene.remove(this.group);
     this.group = null;
     this.crates = [];
@@ -172,6 +173,7 @@ const PassC = {
     const c = this.nearestCrate();
     if (!c) return false;
     c.opened = true;
+    if (this.openedIds) this.openedIds.add(c.id);
     if (c.mesh) c.mesh.rotation.x = -0.18;
     const found = this.rollCrate(c);
     const applied = [];
@@ -211,6 +213,122 @@ const PassC = {
     if (GameState.phase === "playing" && !DeviceMode.mobile && renderer && renderer.domElement) renderer.domElement.requestPointerLock();
   },
 
+
+  /* ---------------- unbounded Level 0 ----------------
+     The same decorations, planned one world REGION at a time (a pure function of the seed and the region)
+     and instanced one streamed chunk at a time. A region's plan never reads tiles near its border, so it
+     does not depend on which neighbours happen to be loaded. Opened crates are remembered by id, so a chunk
+     that streams back in shows them open. */
+  openedIds: null,
+  worldMode: false,
+  beginWorld(seed) {
+    this.reset();
+    this.seed = seed >>> 0;
+    this.worldMode = true;
+    this.openedIds = new Set();
+  },
+  resetWorld() { this.worldMode = false; this.openedIds = null; },
+
+  planRegion(region) {
+    if (region.decor) return region.decor;
+    const L = Level0World, RT = L.RT, C = CONFIG.passC;
+    const rx = region.rx, rz = region.rz, bx = rx * RT, bz = rz * RT, t = region.tiles;
+    const rng = mulberry32(L.hash(this.seed, rx, rz, 0xC0FFEE));
+    const open = (lx, lz) => { const v = t[lz * RT + lx]; return v !== 1 && v !== 5; };
+    const wall = (lx, lz) => { const v = t[lz * RT + lx]; return v === 1 || v === 5; };
+    const score = (lx, lz) => {
+      let solid = 0, total = 0;
+      for (let z = lz - 3; z <= lz + 3; z++) for (let x = lx - 3; x <= lx + 3; x++) { total++; if (wall(x, z)) solid++; }
+      let adj = 0;
+      for (const d of DIR4) if (wall(lx + d.x, lz + d.z)) adj++;
+      return Math.min(1, (solid / total) * 1.25 + (adj / 4) * 0.35);
+    };
+    const drawings = [], chairs = [], props = [], crates = [];
+    let openCount = 0;
+    const dc = [], cc = [], pc = [], kc = [];
+    for (let lz = 4; lz < RT - 4; lz++) {
+      for (let lx = 4; lx < RT - 4; lx++) {
+        if (!open(lx, lz)) continue;
+        openCount++;
+        for (let d = 0; d < 4; d++) {
+          const wx = lx + DIR4[d].x, wz = lz + DIR4[d].z;
+          if (wall(wx, wz) && rng() < C.wallDrawingChance) dc.push([bx + wx, bz + wz, (d + 2) & 3]);
+        }
+        const rc = rng(), rp = rng(), rk = rng();
+        if (rc < C.chairChance || rp < C.propChance || rk < C.crateChance) {
+          const sc = score(lx, lz);
+          if (sc < 0.58 && rc < C.chairChance) cc.push([bx + lx, bz + lz]);
+          if (sc < 0.62 && rp < C.propChance) pc.push([bx + lx, bz + lz]);
+          if (sc >= C.mazeWallRatio && rk < C.crateChance) kc.push([bx + lx, bz + lz, sc]);
+        }
+      }
+    }
+    // caps scale with how much of the region is open floor (the old caps were for one 3600-tile map)
+    const k = Math.max(0.5, openCount / 3600);
+    const capD = Math.round(C.wallDrawingMax * k), capC = Math.round(C.chairMax * k), capP = Math.round(C.propMax * k), capK = Math.round(C.crateMax * k);
+    for (const c of dc) {
+      if (drawings.length >= capD) break;
+      if (rng() > 0.58) continue;
+      if (drawings.some(p => p[0] === c[0] && p[1] === c[1] && p[2] === c[2])) continue;
+      drawings.push([c[0], c[1], c[2], drawings.length % 3]);
+    }
+    for (const c of cc) {
+      if (chairs.length >= capC) break;
+      if (chairs.some(p => Math.hypot(p[0] - c[0], p[1] - c[1]) < 7)) continue;
+      const wd = [];
+      for (let d = 0; d < 4; d++) { const v = Level.getTile(c[0] + DIR4[d].x, c[1] + DIR4[d].z); if (v === TILE.WALL || v === TILE.COLUMN) wd.push(d); }
+      if (!wd.length) continue;
+      const d = wd[(rng() * wd.length) | 0];
+      chairs.push([c[0], c[1], Math.atan2(DIR4[(d + 2) & 3].x, DIR4[(d + 2) & 3].z)]);
+    }
+    for (const c of pc) {
+      if (props.length >= capP) break;
+      if (props.some(p => Math.hypot(p[0] - c[0], p[1] - c[1]) < 8)) continue;
+      props.push([c[0], c[1], rng() * Math.PI * 2]);
+    }
+    for (const c of kc) {
+      if (crates.length >= capK) break;
+      if (crates.some(p => Math.hypot(p[0] - c[0], p[1] - c[1]) < C.crateStep * 2.5)) continue;
+      crates.push([c[0], c[1], "crate-" + c[0] + "," + c[1]]);
+    }
+    region.decor = { drawings, chairs, props, crates };
+    // wall marks keep clear of these faces
+    if (typeof Level0Markings !== "undefined" && Level0Markings.addReservedFaces) Level0Markings.addReservedFaces(drawings);
+    return region.decor;
+  },
+  // Every region that can influence this chunk's wall marks (their spacing rule looks a few tiles past the chunk).
+  ensureAround(x0, z0, x1, z1) {
+    if (!this.worldMode || !CONFIG.passC.enabled) return;
+    const RT = Level0World.RT, w = Level.world, m = 6;
+    const ra = Math.floor((x0 - m) / RT), rb = Math.floor((x1 + m) / RT), rc = Math.floor((z0 - m) / RT), rd = Math.floor((z1 + m) / RT);
+    for (let rz = rc; rz <= rd; rz++) for (let rx = ra; rx <= rb; rx++) this.planRegion(w.region(rx, rz));
+  },
+  buildChunk(g, x0, z0, x1, z1) {
+    if (!this.worldMode || !CONFIG.passC.enabled) return null;
+    const RT = Level0World.RT, w = Level.world;
+    const rx = Math.floor(x0 / RT), rz = Math.floor(z0 / RT);
+    const plan = this.planRegion(w.region(rx, rz));
+    const inside = (x, z) => x >= x0 && x < x1 && z >= z0 && z < z1;
+    const made = [];
+    const root = new THREE.Group(); root.name = "L0_decor";
+    for (const d of plan.drawings) if (inside(d[0], d[1])) this.placeWallDrawing(root, d[0], d[1], d[2], d[3]);
+    for (const c of plan.chairs) if (inside(c[0], c[1])) { const p = Level.tileToWorld(c[0], c[1]); this.placeChair(root, p.x, p.z, c[2]); }
+    for (const c of plan.props) if (inside(c[0], c[1])) { const p = Level.tileToWorld(c[0], c[1]); this.placeTable(root, p.x, p.z, c[2]); }
+    for (const c of plan.crates) {
+      if (!inside(c[0], c[1])) continue;
+      this.placeCrate(root, c[0], c[1], c[2]);
+      const crate = this.crates[this.crates.length - 1];
+      if (this.openedIds && this.openedIds.has(c[2])) { crate.opened = true; crate.mesh.rotation.x = -0.18; }
+      made.push(crate);
+    }
+    if (root.children.length) g.add(root);
+    return { crates: made, root };
+  },
+  disposeChunk(rec) {
+    if (!rec) return;
+    for (const c of rec.crates) { const i = this.crates.indexOf(c); if (i >= 0) this.crates.splice(i, 1); }
+  },
+
   generate(seed) {
     this.reset();
     if (!CONFIG.passC.enabled || !Level.tiles || !Level.tiles.length) return;
@@ -247,6 +365,9 @@ const PassC = {
       this.placeWallDrawing(this.group, c[0], c[1], c[2], drawingCount % 3);
       placedDrawings.push(c); drawingCount++;
     }
+
+    // Tell the wall-marking system which faces these drawings occupy.
+    if (typeof Level0Markings !== "undefined") Level0Markings.reserveFaces(placedDrawings);
 
     const placedChairs = [];
     for (const c of chairCandidates) {
