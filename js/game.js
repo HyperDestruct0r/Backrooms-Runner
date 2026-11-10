@@ -190,6 +190,7 @@ const Game = {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.28;
     document.body.appendChild(renderer.domElement);
+    if (typeof Quality !== "undefined") Quality.init();   // graphics profile: pooled lights, Level 0 fog distance, render scale
 
     CameraRig.init();
     scene.add(CameraRig.camera);
@@ -548,9 +549,12 @@ const Game = {
   loop() {
     requestAnimationFrame(() => this.loop());
     const now = performance.now();
-    let dt = (now - GameState.lastTime) / 1000;
+    const rawMs = now - GameState.lastTime;
+    let dt = rawMs / 1000;
     GameState.lastTime = now;
+    if (typeof Quality !== "undefined") Quality.frame(rawMs);
     if (dt > 0.05) dt = 0.05;
+    GameState.dtLast = dt;
     const scale = (GameState.timeScale == null ? 1 : GameState.timeScale);
     if (scale !== 1) dt *= scale;
 
@@ -574,7 +578,8 @@ const Game = {
       if (typeof HoundSystem !== "undefined") HoundSystem.update(dt);
       // same for the Beast's death fade
       if (typeof BeastSystem !== "undefined") BeastSystem.update(dt);
-    } else if (GameState.phase === "playing" && Input.locked) {
+    } else if (GameState.phase === "playing" && (Input.locked || (typeof ActivitySystem !== "undefined" && ActivitySystem.interfaceOpen))) {
+      // (an open maintenance terminal releases the mouse but must not pause the world)
       GameState.elapsed += dt;
       if (GameState.level === 1 && Level1.active) {
         Level1.update(dt);
@@ -619,6 +624,7 @@ const Game = {
       } else if (GameState.level === 0) {
         GameState.levelTimes[0] += dt;
         if (typeof Level !== "undefined" && Level.stream) Level.stream(false);
+        if (typeof ActivitySystem !== "undefined") ActivitySystem.update(dt);
       }
       Player.update(dt);
       if (GameState.level === 1) {
@@ -654,6 +660,7 @@ const Game = {
       CameraRig.update(0);
     }
     if (GameState.tutorial && typeof TutorialSystem !== "undefined") TutorialSystem.update(dt);
+    if (typeof ActivitySystem !== "undefined" && ActivitySystem.interfaceOpen) ActivitySystem.guard();
     HUD.update();
     if (typeof DevMap !== "undefined") DevMap.update(dt);
     GameState._fpsN = (GameState._fpsN || 0) + 1;
