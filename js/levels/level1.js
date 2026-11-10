@@ -748,6 +748,7 @@ const Level1 = {
   enter(seed,elevatorState){
     if(Level.group&&scene)scene.remove(Level.group); LightingSystem.clear(scene);
     if(Stairwell&&Stairwell.exits)Stairwell.reset();
+    if(typeof ActivitySystem!=="undefined")ActivitySystem.endVisit(0); // leaving Level 0 ends its activity visit
     const origin=elevatorState?{x:elevatorState.origin.x,z:elevatorState.origin.z}:{x:0,z:0};
     PickupSystem.reset();
     this.build(seed,origin);
