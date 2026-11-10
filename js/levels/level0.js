@@ -31,754 +31,94 @@ const MapGraph = {
   nodes: [],
   edges: [],
   cellOwner: [],
+  provider: null,    // Level 0: the unbounded Level0World, which owns its modules region by region
   reset() {
     this.nodes = [];
     this.edges = [];
     this.cellOwner = [];
-  }
-
-,
+    this.provider = null;
+  },
   nodeAt(gx, gz) {
+    if (this.provider) return this.provider.nodeAt(Math.floor(gx), Math.floor(gz));
     if (!this.cellOwner[gz]) return null;
     const id = this.cellOwner[gz][gx];
     if (id == null) return null;
     return this.nodes[id] || null;
+  },
+  nodeById(id) {
+    if (this.provider) return this.provider.nodeById(id);
+    return this.nodes[id] || null;
+  },
+  // Cells (gx, gz) of the modules a module opens onto, including across a region border.
+  connectedCells(node) {
+    const out = [];
+    if (!node) return out;
+    for (const id of node.connections) { const n = this.nodeById(id); if (n) out.push({ gx: n.gx, gz: n.gz }); }
+    if (node.portLinks) for (const p of node.portLinks) out.push({ gx: p.gx, gz: p.gz });
+    return out;
   }
 };
 
+/* Level 0 is no longer one stored map. A "generated level" is now a deterministic WORLD (js/levels/level0-world.js)
+   plus the elevator plan for it (js/levels/level0-sites.js). Nothing here pre-generates the level: only the regions
+   the plan needs are built, the rest stream in as the player walks. */
 const LevelGenerator = {
   CELL: 6,
-  GRID_W: 64,
-  GRID_H: 56,
   last: null,
 
   generate(seed) {
-    const rng = mulberry32(seed >>> 0);
-    const C = this.CELL;
-    const W = this.GRID_W;
-    const H = this.GRID_H;
-    const cols = W * C;
-    const rows = H * C;
-    const tiles = [];
-    for (let z = 0; z < rows; z++) {
-      tiles.push(new Array(cols).fill(TILE.WALL));
-    }
-
-    MapGraph.reset();
-    MapGraph.cellOwner = [];
-    for (let z = 0; z < H; z++) MapGraph.cellOwner.push(new Array(W).fill(null));
-
-    const occupied = [];
-    for (let z = 0; z < H; z++) occupied.push(new Array(W).fill(false));
-
-    const self = this;
-    function inGrid(gx, gz) { return gx >= 0 && gz >= 0 && gx < W && gz < H; }
-    function footprintFree(gx, gz, w, h) {
-      if (gx < 0 || gz < 0 || gx + w > W || gz + h > H) return false;
-      for (let z = gz; z < gz + h; z++) {
-        for (let x = gx; x < gx + w; x++) {
-          if (occupied[z][x]) return false;
-        }
-      }
-      return true;
-    }
-    function markFoot(gx, gz, w, h, nodeId) {
-      for (let z = gz; z < gz + h; z++) {
-        for (let x = gx; x < gx + w; x++) {
-          occupied[z][x] = true;
-          MapGraph.cellOwner[z][x] = nodeId;
-        }
-      }
-    }
-    function localFloor(gx, gz, lx, lz, val) {
-      const tx = gx * C + lx;
-      const tz = gz * C + lz;
-      if (tz >= 0 && tz < rows && tx >= 0 && tx < cols) tiles[tz][tx] = val;
-    }
-    function carveArm(gx, gz, dir) {
-      // 2-tile-wide passage from cell center to an edge
-      if (dir === 0) { // N
-        for (let z = 0; z <= 3; z++) { localFloor(gx, gz, 2, z, TILE.FLOOR); localFloor(gx, gz, 3, z, TILE.FLOOR); }
-      } else if (dir === 2) { // S
-        for (let z = 2; z <= 5; z++) { localFloor(gx, gz, 2, z, TILE.FLOOR); localFloor(gx, gz, 3, z, TILE.FLOOR); }
-      } else if (dir === 1) { // E
-        for (let x = 2; x <= 5; x++) { localFloor(gx, gz, x, 2, TILE.FLOOR); localFloor(gx, gz, x, 3, TILE.FLOOR); }
-      } else { // W
-        for (let x = 0; x <= 3; x++) { localFloor(gx, gz, x, 2, TILE.FLOOR); localFloor(gx, gz, x, 3, TILE.FLOOR); }
-      }
-    }
-    function carveRoomCell(gx, gz) {
-      for (let z = 1; z <= 4; z++) {
-        for (let x = 1; x <= 4; x++) localFloor(gx, gz, x, z, TILE.FLOOR);
-      }
-    }
-    function openInternalEdge(gx0, gz0, gx1, gz1) {
-      if (gx0 === gx1 && gz1 === gz0 + 1) {
-        for (let x = 1; x <= 4; x++) {
-          localFloor(gx0, gz0, x, 5, TILE.FLOOR);
-          localFloor(gx1, gz1, x, 0, TILE.FLOOR);
-        }
-      } else if (gx0 === gx1 && gz0 === gz1 + 1) {
-        openInternalEdge(gx1, gz1, gx0, gz0);
-      } else if (gz0 === gz1 && gx1 === gx0 + 1) {
-        for (let z = 1; z <= 4; z++) {
-          localFloor(gx0, gz0, 5, z, TILE.FLOOR);
-          localFloor(gx1, gz1, 0, z, TILE.FLOOR);
-        }
-      } else if (gz0 === gz1 && gx0 === gx1 + 1) {
-        openInternalEdge(gx1, gz1, gx0, gz0);
-      }
-    }
-    function linkDoor(ax, az, dir) {
-      const bx = ax + DIR4[dir].x;
-      const bz = az + DIR4[dir].z;
-      if (!inGrid(bx, bz) || !occupied[bz][bx]) return false;
-      carveArm(ax, az, dir);
-      carveArm(bx, bz, oppDir(dir));
-      return true;
-    }
-
-    function addNode(type, gx, gz, w, h, extra) {
-      const node = {
-        id: MapGraph.nodes.length,
-        type: type,
-        gx: gx,
-        gz: gz,
-        w: w,
-        h: h,
-        connections: [],
-        deadEnd: type === "dead_end",
-        hasExit: false,
-        hasStart: type === "start",
-        // Persistent per-module lighting profile.
-        // Level 0 uses consistent fluorescent lighting. Darkness mechanics remain
-        // in the codebase, but are intentionally not used for this level's look.
-        lightProfile: "NORMAL",
-        dark: false,
-        skipLights: false,
-        anomaly: null,
-        extra: extra || null
-      };
-      MapGraph.nodes.push(node);
-      markFoot(gx, gz, w, h, node.id);
-      return node;
-    }
-    function addEdge(a, b, dir) {
-      if (a.connections.indexOf(b.id) < 0) a.connections.push(b.id);
-      if (b.connections.indexOf(a.id) < 0) b.connections.push(a.id);
-      MapGraph.edges.push({ a: a.id, b: b.id, dir: dir });
-    }
-
-    const sockets = []; // {gx,gz,dir,nodeId}
-
-    function pushSockets(node, dirs) {
-      for (let i = 0; i < dirs.length; i++) {
-        const d = dirs[i];
-        let cx = node.gx, cz = node.gz;
-        if (d === 1) cx = node.gx + node.w - 1;
-        if (d === 2) cz = node.gz + node.h - 1;
-        if (d === 0) cz = node.gz;
-        if (d === 3) cx = node.gx;
-        // pick a perimeter cell for this side
-        if (d === 0 || d === 2) cx = node.gx + ((node.w > 1 && rng() > 0.5) ? node.w - 1 : 0);
-        if (d === 1 || d === 3) cz = node.gz + ((node.h > 1 && rng() > 0.5) ? node.h - 1 : 0);
-        sockets.push({ gx: cx, gz: cz, dir: d, nodeId: node.id });
-      }
-    }
-
-    function carveModule(node, incomingDir) {
-      if (node.type === "room_small" || node.type === "room_large" || node.type === "room_pillar" || node.type === "start" || node.type === "exit_room") {
-        for (let z = 0; z < node.h; z++) {
-          for (let x = 0; x < node.w; x++) carveRoomCell(node.gx + x, node.gz + z);
-        }
-        for (let z = 0; z < node.h; z++) {
-          for (let x = 0; x < node.w; x++) {
-            if (x + 1 < node.w) openInternalEdge(node.gx + x, node.gz + z, node.gx + x + 1, node.gz + z);
-            if (z + 1 < node.h) openInternalEdge(node.gx + x, node.gz + z, node.gx + x, node.gz + z + 1);
-          }
-        }
-        if (node.type === "room_pillar" || (node.type === "room_large" && rng() > 0.35)) {
-          for (let z = 0; z < node.h; z++) {
-            for (let x = 0; x < node.w; x++) {
-              localFloor(node.gx + x, node.gz + z, 2, 2, TILE.COLUMN);
-              if (rng() > 0.45) localFloor(node.gx + x, node.gz + z, 3, 3, TILE.COLUMN);
-            }
-          }
-        }
-        if (node.type === "room_small" && rng() > 0.55) {
-          localFloor(node.gx, node.gz, 2, 2, TILE.DEAD);
-        }
-      } else {
-        // corridor family: plus-arms, start with incoming so the join exists
-        for (let z = 0; z < node.h; z++) {
-          for (let x = 0; x < node.w; x++) {
-            localFloor(node.gx + x, node.gz + z, 2, 2, TILE.FLOOR);
-            localFloor(node.gx + x, node.gz + z, 3, 2, TILE.FLOOR);
-            localFloor(node.gx + x, node.gz + z, 2, 3, TILE.FLOOR);
-            localFloor(node.gx + x, node.gz + z, 3, 3, TILE.FLOOR);
-          }
-        }
-        for (let z = 0; z < node.h; z++) {
-          for (let x = 0; x < node.w; x++) {
-            if (x + 1 < node.w) openInternalEdge(node.gx + x, node.gz + z, node.gx + x + 1, node.gz + z);
-            if (z + 1 < node.h) openInternalEdge(node.gx + x, node.gz + z, node.gx + x, node.gz + z + 1);
-          }
-        }
-        if (incomingDir != null) {
-          // incoming lands on the attachment cell
-        }
-      }
-    }
-
-    function tryPlace(type, attachGX, attachGZ, incomingDir) {
-      let w = 1, h = 1;
-      if (type === "hall_long") {
-        const len = 2 + (rng() < 0.45 ? 1 : 0) + (rng() < 0.2 ? 1 : 0);
-        if (incomingDir === 1 || incomingDir === 3) { w = len; h = 1; }
-        else { w = 1; h = len; }
-      } else if (type === "room_large" || type === "room_pillar") {
-        // Larger modules create the broad, open-room feel seen in the menu
-        // wallpaper instead of turning the entire level into narrow corridors.
-        const r = rng();
-        if (r < 0.42) { w = 3; h = 3; }
-        else if (r < 0.68) { w = 4; h = 3; }
-        else if (r < 0.86) { w = 3; h = 2; }
-        else { w = 2; h = 3; }
-      } else if (type === "room_small" && rng() < 0.2) {
-        w = 2; h = 1;
-      }
-
-      // origin so the attachment cell is on the incoming side of the footprint
-      let ox = attachGX, oz = attachGZ;
-      if (incomingDir === 1) ox = attachGX; // placed to the east, west cell is attach
-      if (incomingDir === 3) ox = attachGX - (w - 1);
-      if (incomingDir === 2) oz = attachGZ;
-      if (incomingDir === 0) oz = attachGZ - (h - 1);
-
-      if (!footprintFree(ox, oz, w, h)) {
-        // try 1x1 fallback
-        if (w !== 1 || h !== 1) return tryPlace("corridor", attachGX, attachGZ, incomingDir);
-        return null;
-      }
-
-      const node = addNode(type, ox, oz, w, h, null);
-      carveModule(node, incomingDir);
-      return node;
-    }
-
-    // --- spine first so shortest path can hit 500–1000m, then branches ---
-    const targetPath = CONFIG.gen.minPath + rng() * (CONFIG.gen.maxPath - CONFIG.gen.minPath);
-    const spineNeed = Math.ceil(targetPath / 11.5) + 3;
-
-    const startGZ = 4 + Math.floor(rng() * (H - 8));
-    const startNode = addNode("start", 2, startGZ, 1, 1, null);
-    carveModule(startNode, null);
-
-    const spine = [startNode];
-    let cgx = 2, cgz = startGZ, cdir = 1, straight = 0;
-    let spineGuard = 0;
-    while (spine.length < spineNeed && spineGuard++ < 800) {
-      const turnNow = straight >= 2 + Math.floor(rng() * 4);
-      const order = [];
-      if (turnNow) {
-        order.push((cdir + (rng() < 0.5 ? 1 : 3)) & 3);
-        order.push(cdir);
-        order.push((cdir + (rng() < 0.5 ? 3 : 1)) & 3);
-      } else {
-        order.push(cdir);
-        if (rng() < 0.2) order.push((cdir + 1) & 3);
-        if (rng() < 0.2) order.push((cdir + 3) & 3);
-      }
-      let placed = null, usedDir = -1;
-      for (let i = 0; i < order.length; i++) {
-        const d = order[i];
-        const nx = cgx + DIR4[d].x;
-        const nz = cgz + DIR4[d].z;
-        if (!inGrid(nx, nz) || occupied[nz][nx]) continue;
-        let typ = "corridor";
-        const layoutRoll = rng();
-        if (layoutRoll < 0.18) typ = "hall_long";
-        else if (layoutRoll < 0.29) typ = "junction";
-        else if (layoutRoll < 0.36) typ = "corner";
-        else if (layoutRoll < 0.43) typ = "room_small";
-        const node = tryPlace(typ === "hall_long" ? "corridor" : typ, nx, nz, d);
-        if (!node) continue;
-        if (linkDoor(cgx, cgz, d)) addEdge(spine[spine.length - 1], node, d);
-        placed = node;
-        usedDir = d;
-        cgx = d === 1 ? node.gx + node.w - 1 : d === 3 ? node.gx : node.gx;
-        cgz = d === 2 ? node.gz + node.h - 1 : d === 0 ? node.gz : node.gz;
-        if (d === 1 || d === 3) { cgx = nx; cgz = nz; }
-        else { cgx = nx; cgz = nz; }
-        break;
-      }
-      if (!placed) break;
-      spine.push(placed);
-      if (usedDir === cdir) straight++;
-      else { cdir = usedDir; straight = 0; }
-    }
-
-    if (spine.length < 20) return null;
-
-    sockets.length = 0;
-    for (let i = 1; i < spine.length - 1; i++) {
-      if (rng() < 0.55) {
-        const n = spine[i];
-        const dirs = [];
-        for (let d = 0; d < 4; d++) {
-          const nx = n.gx + DIR4[d].x, nz = n.gz + DIR4[d].z;
-          if (inGrid(nx, nz) && !occupied[nz][nx]) dirs.push(d);
-        }
-        if (dirs.length) pushSockets(n, [dirs[Math.floor(rng() * dirs.length)]]);
-      }
-    }
-    pushSockets(startNode, rng() < 0.5 ? [0] : [2]);
-
-    // Grow a large, persistent branching network instead of making the
-    // non-spine paths terminate after a handful of modules.
-    const branchTarget = Math.min(
-      W * H - 24,
-      spine.length + 105 + Math.floor(rng() * 75)
-    );
-    let guard = 0;
-    while (MapGraph.nodes.length < branchTarget && sockets.length && guard++ < 2600) {
-      const si = Math.floor(rng() * sockets.length);
-      const sock = sockets[si];
-      sockets.splice(si, 1);
-      const ngx = sock.gx + DIR4[sock.dir].x;
-      const ngz = sock.gz + DIR4[sock.dir].z;
-      if (!inGrid(ngx, ngz)) continue;
-
-      if (occupied[ngz][ngx]) {
-        continue;
-      }
-
-      const roll = rng();
-      // Level 0 is primarily a maze, not a collection of large open rooms.
-      // Long passages and tight turns dominate; small pockets are occasional.
-      let type = "corridor";
-      if (roll < 0.20) type = "hall_long";
-      else if (roll < 0.39) type = "corner";
-      else if (roll < 0.61) type = "junction";
-      else if (roll < 0.70) type = "room_small";
-
-      const node = tryPlace(type, ngx, ngz, sock.dir);
-      if (!node) continue;
-      if (!linkDoor(sock.gx, sock.gz, sock.dir)) {
-        // should not happen; keep growing anyway
-      }
-      addEdge(MapGraph.nodes[sock.nodeId], node, sock.dir);
-
-      // outgoing sockets except the incoming face
-      const out = [];
-      if (type === "corridor" || type === "hall_long") {
-        out.push(sock.dir);
-        if (rng() < 0.52) out.push((sock.dir + 1) & 3);
-        if (rng() < 0.42) out.push((sock.dir + 3) & 3);
-      } else if (type === "corner") {
-        out.push(rng() < 0.5 ? ((sock.dir + 1) & 3) : ((sock.dir + 3) & 3));
-        if (rng() < 0.32) out.push(sock.dir);
-      } else if (type === "junction") {
-        out.push(sock.dir);
-        out.push((sock.dir + 1) & 3);
-        out.push((sock.dir + 3) & 3);
-        if (rng() < 0.28) out.push(oppDir(sock.dir));
-      } else {
-        const cand = [0, 1, 2, 3].filter((d) => d !== oppDir(sock.dir));
-        const extra = 2 + (rng() < 0.38 ? 1 : 0);
-        for (let k = 0; k < extra && cand.length; k++) {
-          const pick = Math.floor(rng() * cand.length);
-          out.push(cand[pick]);
-          cand.splice(pick, 1);
-        }
-      }
-      pushSockets(node, out);
-    }
-
-    // Deliberately add many cross-connections between nearby occupied modules.
-    // This keeps the Level 0 layout maze-like but makes intersections and loops
-    // much more common than the old mostly-tree generation.
-    const seenLinks = new Set();
-    for (let gz = 0; gz < H; gz++) {
-      for (let gx = 0; gx < W; gx++) {
-        if (!occupied[gz][gx]) continue;
-        const a = MapGraph.cellOwner[gz][gx];
-        if (a == null) continue;
-        for (const d of [1, 2]) {
-          const nx = gx + DIR4[d].x, nz = gz + DIR4[d].z;
-          if (!inGrid(nx, nz) || !occupied[nz][nx]) continue;
-          const b = MapGraph.cellOwner[nz][nx];
-          if (b == null || a === b) continue;
-          const key = a < b ? a + ':' + b : b + ':' + a;
-          if (seenLinks.has(key)) continue;
-          seenLinks.add(key);
-          if (MapGraph.nodes[a].connections.indexOf(b) >= 0) continue;
-          // Higher chance at true junction candidates; still deterministic.
-          const chance = (MapGraph.nodes[a].type === 'junction' || MapGraph.nodes[b].type === 'junction') ? 0.82 : 0.48;
-          if (rng() < chance && linkDoor(gx, gz, d)) addEdge(MapGraph.nodes[a], MapGraph.nodes[b], d);
-        }
-      }
-    }
-
-    // A few extra branch sockets are opened from existing modules so the
-    // network grows sideways rather than terminating as often as before.
-    for (let i = 0; i < MapGraph.nodes.length; i++) {
-      const n = MapGraph.nodes[i];
-      if (!n || n.type === 'start') continue;
-      const free = [];
-      for (let d = 0; d < 4; d++) {
-        const nx = n.gx + DIR4[d].x, nz = n.gz + DIR4[d].z;
-        if (inGrid(nx, nz) && !occupied[nz][nx]) free.push(d);
-      }
-      if (free.length && rng() < 0.62) pushSockets(n, [free[Math.floor(rng() * free.length)]]);
-    }
-
-    // Graph distance from start
-    const dist = new Array(MapGraph.nodes.length).fill(9999);
-    dist[startNode.id] = 0;
-    const q = [startNode.id];
-    while (q.length) {
-      const id = q.shift();
-      const n = MapGraph.nodes[id];
-      for (let i = 0; i < n.connections.length; i++) {
-        const nid = n.connections[i];
-        if (dist[nid] > dist[id] + 1) {
-          dist[nid] = dist[id] + 1;
-          q.push(nid);
-        }
-      }
-    }
-
-    // The exit is selected by actual shortest walking distance, not by the
-    // length of the original generation spine. This is important now that
-    // Level 0 contains many loops: a 500m-looking route is not enough if a
-    // shortcut makes the true shortest path shorter than 500m.
-    let exitNode = spine[spine.length - 1];
-    if (!exitNode || exitNode.id === startNode.id || dist[exitNode.id] < 12) return null;
-    let farCandidates = spine.slice().reverse().filter(n => n && n.id !== startNode.id && dist[n.id] < 9000);
-    for (const candidate of farCandidates) {
-      if (dist[candidate.id] * C >= CONFIG.gen.minPath) {
-        exitNode = candidate;
-        // Prefer the original 500–1000m target when possible, but do not
-        // reject a valid >500m exit just because the new loop-heavy map
-        // made the shortest path longer.
-        if (dist[candidate.id] * C <= CONFIG.gen.maxPath) break;
-      }
-    }
-
-    function stampSpecial(node, kind) {
-      const cx = node.gx + Math.floor(node.w / 2);
-      const cz = node.gz + Math.floor(node.h / 2);
-      const lx = 2, lz = 2;
-      const tx = cx * C + lx;
-      const tz = cz * C + lz;
-      const tryFind = (x, z) => {
-        if (z < 0 || x < 0 || z >= rows || x >= cols) return null;
-        if (tiles[z][x] === TILE.WALL || tiles[z][x] === TILE.COLUMN) return null;
-        return { x: x, z: z };
-      };
-      const center = tryFind(tx, tz);
-      if (center) {
-        tiles[center.z][center.x] = kind;
-        return center;
-      }
-      for (let dz = -2; dz <= 2; dz++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          const p = tryFind(tx + dx, tz + dz);
-          if (p) {
-            tiles[p.z][p.x] = kind;
-            return p;
-          }
-        }
-      }
-      return null;
-    }
-
-    function findSpecialCell(node) {
-      const cx = node.gx + Math.floor(node.w / 2);
-      const cz = node.gz + Math.floor(node.h / 2);
-      const tx = cx * C + 2;
-      const tz = cz * C + 2;
-      const tryFind = (x, z) => {
-        if (z < 0 || x < 0 || z >= rows || x >= cols) return null;
-        const t = tiles[z][x];
-        if (t === TILE.WALL || t === TILE.COLUMN) return null;
-        return { x: x, z: z };
-      };
-      const center = tryFind(tx, tz);
-      if (center) return center;
-      for (let dz = -2; dz <= 2; dz++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          const p = tryFind(tx + dx, tz + dz);
-          if (p) return p;
-        }
-      }
-      return null;
-    }
-
-    const startStamp = stampSpecial(startNode, TILE.START);
+    const T = CONFIG.tile;
+    const world = Level0World.create(seed >>> 0);
+    const home = world.region(0, 0);
+    const startStamp = home.startTile;
     if (!startStamp) return null;
-
-    function walkable(t) { return t !== TILE.WALL && t !== TILE.COLUMN; }
-
-    // Exact tile walking distance from a point to every reachable floor tile.
-    // Int32 is used because the enlarged world can contain >32k tiles.
-    function distanceMap(from) {
-      const dm = [];
-      for (let z = 0; z < rows; z++) dm.push(new Int32Array(cols).fill(-1));
-      const tq = [[from.x, from.z]];
-      dm[from.z][from.x] = 0;
-      let qi = 0;
-      while (qi < tq.length) {
-        const p = tq[qi++];
-        const d0 = dm[p[1]][p[0]];
-        for (let d = 0; d < 4; d++) {
-          const nx = p[0] + DIR4[d].x, nz = p[1] + DIR4[d].z;
-          if (nx < 0 || nz < 0 || nx >= cols || nz >= rows) continue;
-          if (dm[nz][nx] >= 0 || !walkable(tiles[nz][nx])) continue;
-          dm[nz][nx] = d0 + 1;
-          tq.push([nx, nz]);
-        }
-      }
-      return dm;
+    let sitePlan;
+    try {
+      sitePlan = Level0Sites.planWorld({ world: world, start: startStamp, tileSize: T, seed: seed >>> 0 });
+    } catch (err) {
+      if (typeof console !== "undefined") console.warn("Level 0 plan rejected seed " + (seed >>> 0) + ": " + err.message);
+      return null;
     }
-
-    const startDistances = distanceMap(startStamp);
-
-    // First exit remains the original long-route exit, preserving the
-    // established 500–1000m objective. Additional exits are chosen from
-    // other reachable branches and are separated by real walking distance.
-    function hasElevatorHallway(cell) {
-      if (!cell) return false;
-      const floorCell = (x,z) => {
-        if (x < 0 || z < 0 || x >= cols || z >= rows) return false;
-        const t = tiles[z][x];
-        return t !== TILE.WALL && t !== TILE.COLUMN;
-      };
-      const dirs = [
-        {fx:0,fz:-1,rx:1,rz:0},
-        {fx:1,fz:0,rx:0,rz:1},
-        {fx:0,fz:1,rx:-1,rz:0},
-        {fx:-1,fz:0,rx:0,rz:-1}
-      ];
-      for (const d of dirs) {
-        let straight=0, ok=true;
-        for (let n=1;n<=4;n++) {
-          const tx=cell.x-d.fx*n, tz=cell.z-d.fz*n;
-          if (!floorCell(tx,tz)) { ok=false; break; }
-          straight++;
-          for (const side of [-1,1]) {
-            if (!floorCell(tx+d.rx*side,tz+d.rz*side)) ok=false;
-          }
-        }
-        if (ok && straight >= 3) return true;
-      }
-      return false;
+    const exitStamps = [], exitNodes = [], exitDistances = [];
+    for (let i = 0; i < sitePlan.elevators.length; i++) {
+      const e = sitePlan.elevators[i];
+      world.stamp(e.x, e.z, TILE.EXIT);          // survives the region being dropped and rebuilt
+      const owner = world.nodeAt(Math.floor(e.x / this.CELL), Math.floor(e.z / this.CELL)) || null;
+      if (owner) owner.hasExit = true;
+      exitStamps.push({ x: e.x, z: e.z });
+      exitNodes.push(owner);
+      exitDistances.push(e.walkStart == null ? null : e.walkStart);
     }
-
-    let firstExitCell = findSpecialCell(exitNode);
-    let firstPathMeters = firstExitCell ? startDistances[firstExitCell.z][firstExitCell.x] * CONFIG.tile : -1;
-    if (!firstExitCell || firstPathMeters < CONFIG.gen.minPath || !hasElevatorHallway(firstExitCell)) {
-      // The primary exit is required to be mounted in a real hallway. If the
-      // original spine endpoint is in a room, promote the nearest eligible
-      // spine node that still preserves the 500–1000m walking-distance goal.
-      let replacement=null;
-      // Prefer genuine corridor modules first. Their two-tile-wide passage is
-      // what the facade is designed to sit against.
-      const exitPool = spine.slice().reverse().concat(MapGraph.nodes.slice().reverse());
-      const seenExitIds=new Set();
-      for (const candidate of exitPool) {
-        if (!candidate || seenExitIds.has(candidate.id) || candidate.id===startNode.id || dist[candidate.id] < 0) continue;
-        seenExitIds.add(candidate.id);
-        if (candidate.type!=='corridor' && candidate.type!=='hall_long') continue;
-        const cell=findSpecialCell(candidate);
-        if (!cell || !hasElevatorHallway(cell)) continue;
-        const meters=startDistances[cell.z][cell.x] * CONFIG.tile;
-        if (meters >= CONFIG.gen.minPath && meters <= CONFIG.gen.maxPath) { replacement={candidate,cell,meters}; break; }
-      }
-      if (!replacement) {
-        // Last resort: any eligible module at or beyond the minimum distance.
-        for (const candidate of MapGraph.nodes.slice().reverse()) {
-          if (!candidate || candidate.id===startNode.id || dist[candidate.id] < 0) continue;
-          const cell=findSpecialCell(candidate);
-          if (!cell || !hasElevatorHallway(cell)) continue;
-          const meters=startDistances[cell.z][cell.x] * CONFIG.tile;
-          if (meters >= CONFIG.gen.minPath) { replacement={candidate,cell,meters}; break; }
-        }
-      }
-      if (!replacement) return null;
-      exitNode=replacement.candidate;
-      firstExitCell=replacement.cell;
-      firstPathMeters=replacement.meters;
-    }
-
-    const exitNodes = [exitNode];
-    const exitCandidates = [];
-    for (let i = 0; i < MapGraph.nodes.length; i++) {
-      const n = MapGraph.nodes[i];
-      if (!n || n.id === startNode.id || n.id === exitNode.id) continue;
-      if (n.deadEnd || n.type === "dead_end") continue;
-      const cell = findSpecialCell(n);
-      if (!cell) continue;
-      const d0 = startDistances[cell.z][cell.x];
-      if (d0 < 0 || d0 * CONFIG.tile < CONFIG.gen.exitSpacing) continue;
-      exitCandidates.push({
-        node: n,
-        cell: cell,
-        startM: d0 * CONFIG.tile,
-        score: Math.abs(d0 * CONFIG.tile - (firstPathMeters + 700))
-      });
-    }
-    exitCandidates.sort((a, b) => a.score - b.score);
-
-    // Exact tile BFS is expensive on a 288x240 tile field.  The old
-    // implementation ran one full BFS for nearly every candidate, which
-    // could make the browser appear frozen at the loading screen. Keep
-    // the exact validation, but only run it for a small, well-ranked set
-    // of candidates. The first candidate selection still uses the exact
-    // start-distance map above.
-    const candidateLimit = Math.min(exitCandidates.length, 12);
-    exitCandidates.length = candidateLimit;
-
-    function tileDistance(a, b, capTiles) {
-      const dm = new Int32Array(rows * cols);
-      dm.fill(-1);
-      const queue = new Int32Array(rows * cols);
-      let head = 0, tail = 0;
-      const startIdx = a.z * cols + a.x;
-      const targetIdx = b.z * cols + b.x;
-      dm[startIdx] = 0;
-      queue[tail++] = startIdx;
-      const cap = capTiles == null ? 1000000 : capTiles;
-      while (head < tail) {
-        const idx = queue[head++];
-        const x = idx % cols;
-        const z = (idx / cols) | 0;
-        const d0 = dm[idx];
-        if (idx === targetIdx) return d0;
-        if (d0 >= cap) continue;
-        for (let d = 0; d < 4; d++) {
-          const nx = x + DIR4[d].x, nz = z + DIR4[d].z;
-          if (nx < 0 || nz < 0 || nx >= cols || nz >= rows) continue;
-          const ni = nz * cols + nx;
-          if (dm[ni] >= 0 || !walkable(tiles[nz][nx])) continue;
-          dm[ni] = d0 + 1;
-          queue[tail++] = ni;
-        }
-      }
-      return -1;
-    }
-
-    const chosenCells = [firstExitCell];
-    const exitDistances = [firstPathMeters];
-    let previousCell = firstExitCell;
-
-    for (let i = 0; i < exitCandidates.length && exitNodes.length < CONFIG.gen.maxExits; i++) {
-      const c = exitCandidates[i];
-      let valid = true;
-      for (let j = 0; j < chosenCells.length; j++) {
-        const dTiles = tileDistance(chosenCells[j], c.cell, Math.ceil(CONFIG.gen.exitSpacing / CONFIG.tile));
-        if (dTiles >= 0 && dTiles * CONFIG.tile < CONFIG.gen.exitSpacing) {
-          valid = false;
-          break;
-        }
-      }
-      if (!valid) continue;
-
-      const fromPrevious = tileDistance(previousCell, c.cell, Math.ceil(CONFIG.gen.exitChainMax / CONFIG.tile) + 2);
-      if (fromPrevious < 0 || fromPrevious * CONFIG.tile > CONFIG.gen.exitChainMax) continue;
-
-      exitNodes.push(c.node);
-      chosenCells.push(c.cell);
-      exitDistances.push(c.startM);
-      previousCell = c.cell;
-    }
-
-    // Mark the chosen exits only after selection, so rejected candidates
-    // never become accidental exit tiles.
-    for (let i = 0; i < exitNodes.length; i++) {
-      exitNodes[i].hasExit = true;
-    }
-    const exitStamps = [];
-    for (let i = 0; i < exitNodes.length; i++) {
-      const stamp = stampSpecial(exitNodes[i], TILE.EXIT);
-      if (!stamp) return null;
-      exitStamps.push(stamp);
-    }
-
-
-    // The primary exit must remain hidden from the starting area.
-    function visibleLine(ax, az, bx, bz) {
-      const steps = Math.max(Math.abs(bx - ax), Math.abs(bz - az));
-      if (steps < 8) return true;
-      for (let i = 1; i < steps; i++) {
-        const x = Math.round(ax + (bx - ax) * (i / steps));
-        const z = Math.round(az + (bz - az) * (i / steps));
-        if (!walkable(tiles[z][x])) return false;
-      }
-      return true;
-    }
-    if (visibleLine(startStamp.x, startStamp.z, exitStamps[0].x, exitStamps[0].z)) return null;
-
-    // Preserve the legacy single-exit fields for compatibility, while
-    // exposing the full list to the multi-elevator renderer.
-    const pathMeters = exitDistances[0];
-    const exitStamp = exitStamps[0];
-
-    // Rare anomalies on non-start modules
-    if (rng() < 0.22 && MapGraph.nodes.length > 8) {
-      const an = MapGraph.nodes[2 + Math.floor(rng() * (MapGraph.nodes.length - 3))];
-      if (an && !an.hasStart && !an.hasExit) {
-        const rollA = rng();
-        if (rollA < 0.35) { an.anomaly = "object"; an.type = an.type; }
-        else if (rollA < 0.6) an.skipLights = true;
-        else if (rollA < 0.85) an.dark = true;
-        else an.anomaly = "odd_door";
-      }
-    }
-
-    // carpet speckle
-    for (let z = 0; z < rows; z++) {
-      for (let x = 0; x < cols; x++) {
-        if (tiles[z][x] === TILE.FLOOR && rng() < 0.03) tiles[z][x] = TILE.DEAD;
-      }
-    }
-
+    world.pin(0, 0);
     const result = {
       seed: seed >>> 0,
-      tiles: tiles,
-      rows: rows,
-      cols: cols,
-      modules: MapGraph.nodes,
-      startNode: startNode,
-      exitNode: exitNode,
+      world: world,
+      tiles: null, rows: Infinity, cols: Infinity,
+      modules: [],
+      startNode: world.nodeAt(Math.floor(startStamp.x / this.CELL), Math.floor(startStamp.z / this.CELL)),
+      exitNode: exitNodes[0],
       exitNodes: exitNodes,
       startStamp: startStamp,
-      exitStamp: exitStamp,
+      exitStamp: exitStamps[0],
       exitStamps: exitStamps,
       exitDistances: exitDistances,
-      pathMeters: pathMeters,
-      targetPath: targetPath
+      elevatorSites: sitePlan.elevators,   // one per exit, in the same order, each with its five station sites
+      siteReport: sitePlan.report,
+      pathMeters: exitDistances[0] || 0,
+      targetPath: 0
     };
     this.last = result;
     return result;
   },
 
   generateValid(seed, maxTries) {
-    let s = seed >>> 0;
-    // The validation rules are intentionally strict, so a small retry budget
-    // can reject a surprisingly large fraction of otherwise random seeds.
-    // Keep retries deterministic while making startup generation highly
-    // reliable. A valid map is returned as soon as one is found.
-    const tries = maxTries || 160;
+    const s = seed >>> 0, tries = maxTries || 24;
+    // The planner is built to succeed on every seed; this loop is only a safety net, and it stays deterministic.
     for (let i = 0; i < tries; i++) {
       const res = this.generate((s + i * 7919) >>> 0);
-      if (res) {
-        res.seed = (s + i * 7919) >>> 0;
-        return res;
-      }
+      if (res) return res;
     }
-    return this.generate(s) || null;
+    return null;
   }
 };
 
@@ -831,7 +171,7 @@ const DebugPath = {
       if (scene) scene.add(this.line);
       return;
     }
-    if (!Level.tiles) return;
+    if (!Level.world && !Level.tiles) return;
     const T = CONFIG.tile;
     const sx = Math.floor(Player.position.x / T);
     const sz = Math.floor(Player.position.z / T);
@@ -842,13 +182,8 @@ const DebugPath = {
     // The actual nearest exit is chosen by walking distance after BFS,
     // rather than by straight-line distance.
     ex = stamps[0].x; ez = stamps[0].z;
-    const cols = Level.cols, rows = Level.rows;
-    const dist = [];
-    const prev = [];
-    for (let z = 0; z < rows; z++) {
-      dist.push(new Int16Array(cols).fill(-1));
-      prev.push(new Int32Array(cols).fill(-1));
-    }
+    // Sparse breadth-first search: Level 0 is unbounded, so there is no grid to size an array by.
+    const key = (x, z) => (x + 32768) * 65536 + (z + 32768);
     let startX = sx, startZ = sz;
     if (!this.walkable(Level.getTile(startX, startZ))) {
       let found = false;
@@ -856,38 +191,29 @@ const DebugPath = {
         for (let dz = -r; dz <= r && !found; dz++) {
           for (let dx = -r; dx <= r && !found; dx++) {
             const x = sx + dx, z = sz + dz;
-            if (Level.inBounds(x, z) && this.walkable(Level.getTile(x, z))) {
-              startX = x; startZ = z; found = true;
-            }
+            if (Level.inBounds(x, z) && this.walkable(Level.getTile(x, z))) { startX = x; startZ = z; found = true; }
           }
         }
       }
       if (!found) return;
     }
+    const dist = new Map(), prev = new Map();
     const q = [[startX, startZ]];
-    dist[startZ][startX] = 0;
-    let qi = 0;
-    while (qi < q.length) {
-      const p = q[qi++];
+    dist.set(key(startX, startZ), 0);
+    let qi = 0, remaining = stamps.length, bestExitTiles = Infinity;
+    const want = new Map(stamps.map((st, i) => [key(st.x, st.z), i]));
+    while (qi < q.length && qi < 400000 && remaining > 0) {
+      const p = q[qi++], pd = dist.get(key(p[0], p[1]));
       for (let i = 0; i < 4; i++) {
-        const nx = p[0] + DIR4[i].x, nz = p[1] + DIR4[i].z;
-        if (nx < 0 || nz < 0 || nx >= cols || nz >= rows) continue;
-        if (dist[nz][nx] >= 0) continue;
-        if (!this.walkable(Level.getTile(nx, nz))) continue;
-        dist[nz][nx] = dist[p[1]][p[0]] + 1;
-        prev[nz][nx] = p[0] | (p[1] << 16);
+        const nx = p[0] + DIR4[i].x, nz = p[1] + DIR4[i].z, nk = key(nx, nz);
+        if (dist.has(nk)) continue;
+        if (!Level.inBounds(nx, nz)) continue;
+        const t = Level.getTile(nx, nz);
+        if (!this.walkable(t) && !want.has(nk)) continue;
+        dist.set(nk, pd + 1);
+        prev.set(nk, [p[0], p[1]]);
+        if (want.has(nk)) { remaining--; if (pd + 1 < bestExitTiles) { bestExitTiles = pd + 1; exitIndex = want.get(nk); ex = nx; ez = nz; } continue; }
         q.push([nx, nz]);
-      }
-    }
-    // Select the closest exit by actual navigable distance.
-    let bestExitTiles = Infinity;
-    for (let i = 0; i < stamps.length; i++) {
-      const dd = dist[stamps[i].z][stamps[i].x];
-      if (dd >= 0 && dd < bestExitTiles) {
-        bestExitTiles = dd;
-        exitIndex = i;
-        ex = stamps[i].x;
-        ez = stamps[i].z;
       }
     }
     if (bestExitTiles === Infinity) return;
@@ -897,10 +223,9 @@ const DebugPath = {
     let cx = ex, cz = ez;
     while (!(cx === startX && cz === startZ)) {
       tiles.push([cx, cz]);
-      const pr = prev[cz][cx];
-      if (pr < 0) break;
-      cx = pr & 65535;
-      cz = pr >>> 16;
+      const pr = prev.get(key(cx, cz));
+      if (!pr) break;
+      cx = pr[0]; cz = pr[1];
     }
     tiles.reverse();
     for (let i = 0; i < tiles.length; i += 2) {
@@ -1023,8 +348,9 @@ const Stairwell = {
     this.sequenceActive = false;
     this.sequenceT = 0;
     this.sequenceExitIndex = -1;
-    for (const g of this.cabGroups) { if (g && scene) scene.remove(g); }
+    for (const g of this.cabGroups) { if (g && g.parent) g.parent.remove(g); }
     this.cabGroups = [];
+    this.lightUnits = [];
     this.avatarGroups = [];
     this.doorPairs = [];
     GameState.exitReached = false;
@@ -1048,7 +374,7 @@ const Stairwell = {
     GameState.elevatorShake = 0;
   },
 
-  planOne(result, stamp, exitNode) {
+  planOne(result, stamp, exitNode, site) {
     const ex = stamp.x, ez = stamp.z;
     const w = Level.tileToWorld(ex, ez);
     // The elevator is deliberately a wall-mounted facade, not a room/cab.
@@ -1063,7 +389,10 @@ const Stairwell = {
     ];
     const floor = (tx,tz) => Level.getTile(tx,tz) !== TILE.WALL && Level.getTile(tx,tz) !== TILE.COLUMN;
     const scored = [];
-    for (const d of candidates) {
+    // A planned site (Level0Sites) already knows which way its wall faces, so
+    // it skips the hallway search below. The legacy search stays for the
+    // Test Beta generator, which has no planned sites.
+    for (const d of (site ? [] : candidates)) {
       const frontX = -d.fx, frontZ = -d.fz;
       let straight = 0;
       let widthOK = true;
@@ -1091,15 +420,21 @@ const Stairwell = {
       }
       scored.push({score,d});
     }
-    if (!scored.length) return null;
-    scored.sort((a,b)=>b.score-a.score);
-    const best=scored[0].d;
+    let best;
+    if (site) {
+      best = { fx: site.fx, fz: site.fz, rx: site.rx, rz: site.rz };
+    } else {
+      if (!scored.length) return null;
+      scored.sort((a,b)=>b.score-a.score);
+      best=scored[0].d;
+    }
 
     const elevator = {
       fx: best.fx, fz: best.fz, rx: best.rx, rz: best.rz,
       // Origin is the wall plane. The facade projects only a few inches into
       // the hallway; there is no walkable shaft or floor hole behind it.
-      origin: new THREE.Vector3(w.x, 0, w.z),
+      // A planned site puts the wall plane half a tile behind its floor tile.
+      origin: new THREE.Vector3(w.x + (site ? best.fx * CONFIG.tile * 0.5 : 0), 0, w.z + (site ? best.fz * CONFIG.tile * 0.5 : 0)),
       hole: null,
       minY: 0,
       width: 4.6,
@@ -1112,6 +447,7 @@ const Stairwell = {
       landingLen: 0,
       exitStamp: stamp,
       exitNode: exitNode,
+      siteIndex: site ? site.index : -1,   // index into LevelGenerator.last.elevatorSites; -1 = unplanned (Test Beta)
       local(side, along) {
         return { x: this.origin.x + this.rx * side + this.fx * along,
                  z: this.origin.z + this.rz * side + this.fz * along };
@@ -1126,7 +462,7 @@ const Stairwell = {
     const nodes = result.exitNodes || [];
     // Only promote exits that actually have a hallway-facing facade site.
     for (let i=0;i<result.exitStamps.length;i++) {
-      const st=this.planOne(result,result.exitStamps[i],nodes[i]||result.exitNode);
+      const st=this.planOne(result,result.exitStamps[i],nodes[i]||result.exitNode,result.elevatorSites?result.elevatorSites[i]:null);
       if(st) this.exits.push(st);
     }
     if(this.exits.length){
@@ -1164,22 +500,30 @@ const Stairwell = {
   span(st,along,across){return{x:Math.abs(st.rx)*across+Math.abs(st.fx)*along,z:Math.abs(st.rz)*across+Math.abs(st.fz)*along};},
   slab(group,st,mat,side,along,y,alongLen,across,thick){const p=st.local(side,along),sz=this.span(st,alongLen,across);this.addBox(group,mat,p.x,y,p.z,sz.x,thick,sz.z);return p;},
 
-  buildOne(sceneRef,st,index){
+  _facadeMats(){
+    // One set of materials for every facade, kept for the whole session: a facade is rebuilt each time its
+    // chunk streams back in, and these used to be created (and never disposed) on every rebuild.
+    if(this._fm) return this._fm;
+    const map=Materials.concrete.map||null;
+    this._fm={
+      concrete:Materials.concrete, concreteDark:Materials.concreteDark,
+      concreteLight:new THREE.MeshStandardMaterial({map:map,color:0xb7b8b3,emissive:0x111212,emissiveIntensity:0.16,roughness:0.92,metalness:0.02}),
+      steel:new THREE.MeshStandardMaterial({color:0x686b69,roughness:0.56,metalness:0.68}),
+      steelDark:new THREE.MeshStandardMaterial({color:0x292c2b,roughness:0.78,metalness:0.42}),
+      indicator:new THREE.MeshStandardMaterial({color:0xd2d7d2,emissive:0x8a958c,emissiveIntensity:0.55,roughness:0.3,metalness:0.15})
+    };
+    return this._fm;
+  },
+  lightUnits:[],
+
+  // parent: where the facade is attached (a streamed chunk group in the unbounded world; Level.group otherwise)
+  buildOne(parent,st,index){
     const g=new THREE.Group(); g.name='ConcreteElevatorFacade_'+index;
-    const concrete=Materials.concrete;
-    const concreteDark=Materials.concreteDark;
-    const concreteLight=new THREE.MeshStandardMaterial({
-      map:Materials.concrete.map||null,color:0xb7b8b3,emissive:0x111212,emissiveIntensity:0.16,roughness:0.92,metalness:0.02
-    });
-    const concreteEdge=new THREE.MeshStandardMaterial({
-      map:Materials.concrete.map||null,color:0x7e817e,emissive:0x080909,emissiveIntensity:0.08,roughness:0.96,metalness:0.02
-    });
-    const steel=new THREE.MeshStandardMaterial({color:0x686b69,roughness:0.56,metalness:0.68});
-    const steelDark=new THREE.MeshStandardMaterial({color:0x292c2b,roughness:0.78,metalness:0.42});
+    const fm=this._facadeMats();
+    const concrete=fm.concrete, concreteDark=fm.concreteDark, concreteLight=fm.concreteLight, steel=fm.steel, steelDark=fm.steelDark;
     const W=st.width,H=st.height,half=W/2;
     const p=st.origin;
     const L=(side,along)=>st.local(side,along);
-    const sref=sceneRef||scene;
     const front=-0.10;
     const doorH=2.42;
     const doorW=(W-0.18)/2;
@@ -1234,20 +578,25 @@ const Stairwell = {
     this.addBox(g,steelDark,top.x,doorH+0.03,top.z,topSz.x,0.06,topSz.z);
 
     // Small indicator and call button to sell the elevator as part of the wall.
-    const indicator=new THREE.MeshStandardMaterial({color:0xd2d7d2,emissive:0x8a958c,emissiveIntensity:0.55,roughness:0.3,metalness:0.15});
+    const indicator=fm.indicator;
     const sign=L(-half-0.24,front-0.02); const signSz=this.span(st,0.08,0.16);
     this.addBox(g,indicator,sign.x,2.02,sign.z,signSz.x,0.06,signSz.z);
     const button=L(half+0.22,front-0.02); const buttonSz=this.span(st,0.08,0.11);
     this.addBox(g,indicator,button.x,1.28,button.z,buttonSz.x,0.10,buttonSz.z);
 
+    // Power gauge: five lamps over the doors, one per restored station.
+    // Built here so it lives and dies with the facade; the Activity System
+    // owns what it shows.
+    if (typeof ActivitySystem !== 'undefined' && st.siteIndex >= 0) ActivitySystem.decorateElevator(g, st, index);
+
     // A very small pool of light makes the recess readable without creating a
     // bright room around the exit.
-    if(sref){
-      const Lg=new THREE.PointLight(0xe9eee8,0.72,4.5,1.8);
-      const lp=L(0,front-0.35); Lg.position.set(lp.x,1.75,lp.z); sref.add(Lg); LightingSystem.lights.push(Lg);
+    {
+      const lp=L(0,front-0.35);
+      this.lightUnits[index]=LightingSystem.addLocalLight(lp.x,1.75,lp.z,{intensity:0.72,distance:4.5,decay:1.8,color:0xe9eee8});
     }
 
-    sceneRef.add(g); this.cabGroups[index]=g;
+    parent.add(g); this.cabGroups[index]=g;
 
     // Solid rear collider; the cabin remains a visual box rather than a
     // walkable room until we add a real elevator ride.
@@ -1259,17 +608,30 @@ const Stairwell = {
     const center=L(0,-0.95);
     const trW=W*0.78, trD=1.0;
     const a=L(-trW/2,-1.55), b=L(trW/2,-0.55);
-    Level.triggers.push({type:'exit',exitIndex:index,minx:Math.min(a.x,b.x),maxx:Math.max(a.x,b.x),minz:Math.min(a.z,b.z),maxz:Math.max(a.z,b.z)});
+    Level.addTrigger({type:'exit',exitIndex:index,minx:Math.min(a.x,b.x),maxx:Math.max(a.x,b.x),minz:Math.min(a.z,b.z),maxz:Math.max(a.z,b.z)});
   },
 
+  // Chunks call these as they stream. `ci` lists the exit indices whose facade tile lies in the chunk.
+  buildForChunk(parent,exitIndices){
+    for(const i of exitIndices) if(this.exits[i]&&!this.cabGroups[i]) this.buildOne(parent,this.exits[i],i);
+  },
+  releaseOne(index){
+    const u=this.lightUnits[index]; if(u){ LightingSystem.removeUnit(u); this.lightUnits[index]=null; }
+    this.cabGroups[index]=null; this.doorPairs[index]=null;
+    if(typeof Level0Activities!=='undefined'&&Level0Activities.releaseElevator) Level0Activities.releaseElevator(index);
+  },
+  // Bounded legacy maps (Test Beta) build every facade up front.
   build(sceneRef){
     if(!this.exits.length||!Level.group)return;
-    for(let i=0;i<this.exits.length;i++)this.buildOne(sceneRef,this.exits[i],i);
+    for(let i=0;i<this.exits.length;i++)this.buildOne(Level.group,this.exits[i],i);
   },
 
   startSequence(index){
     // Level 1 may only begin from an actual Level 0 exit trigger.
     if(this.sequenceActive || GameState.phase!=='playing' || GameState.level!==0 || !this.reached) return;
+    // An elevator whose stations are not all restored must never start the ride,
+    // whatever path asked for it.
+    if(typeof ActivitySystem!=='undefined' && !ActivitySystem.canUseElevator(index|0)) { this.reached=false; GameState.exitReached=false; return; }
     const pair=this.doorPairs[index|0];
     if(!pair)return;
     this.transitionToken++;
@@ -1323,21 +685,25 @@ const Stairwell = {
     this.pendingTransitionTimer=setTimeout(()=>{
       this.pendingTransitionTimer=null;
       if (transitionToken !== this.transitionToken || GameState.phase !== 'playing' || runId !== GameState.runId) return;
-      try{
-        const go = () => {
-          if(typeof Level1!=='undefined') Level1.enter(exitSeed,exitState);
-          if(typeof Level1==='undefined' || !Level1.active) throw new Error('Level1.enter() completed without activating Level 1');
-        };
-        if (typeof VoidTransition !== 'undefined') {
-          const elev=document.getElementById('elevator-sequence'); if(elev) elev.style.display='none';
-          VoidTransition.then(go);
-        } else go();
-        if (GameState.phase !== 'playing' || transitionToken !== this.transitionToken || runId !== GameState.runId) return;
+      const go = async () => {
+        if(typeof Level1!=='undefined') await Level1.enter(exitSeed,exitState);
+        if(typeof Level1==='undefined' || !Level1.active) throw new Error('Level1.enter() completed without activating Level 1');
+        // Place the player at the destination while the shared transition
+        // curtain is still closed. The persistent cabin can then follow the
+        // destination spawn before its doors open.
         const level1Floor = (typeof Level1 !== 'undefined') ? Level1.baseY : 0;
         Player.position.set(exitState.origin.x-0.95*exitState.fx,level1Floor,exitState.origin.z-0.95*exitState.fz);
         Player.velocity.set(0,0,0); Player.onGround=true;
         Player.yaw=Math.atan2(-exitState.fx,-exitState.fz); Player.pitch=0;
         GameState.elapsed=elapsed; GameState.distance=0; GameState.exitReached=false;
+      };
+      const elev=document.getElementById('elevator-sequence'); if(elev) elev.style.display='none';
+      const transition = (typeof VoidTransition !== 'undefined')
+        ? VoidTransition.then(go, { from: 0, to: 1, physical: true })
+        : Promise.resolve().then(go).then(() => true);
+      transition.then((succeeded)=>{
+        if (!succeeded) throw new Error('The Level 0 → Level 1 transition did not complete');
+        if (GameState.phase !== 'playing' || transitionToken !== this.transitionToken || runId !== GameState.runId) return;
         const bar=document.getElementById('elevator-fill'); if(bar)bar.style.width='100%';
         const status=document.getElementById('elevator-status'); if(status)status.textContent='LEVEL 1 READY';
         const floor=document.getElementById('elevator-floor'); if(floor)floor.textContent='ENTERING LEVEL 1';
@@ -1347,16 +713,16 @@ const Stairwell = {
           const obj=document.getElementById('hud-obj'); if(obj)obj.textContent='Objective: explore Level 1';
           const lvl=document.getElementById('hud-level-label'); if(lvl)lvl.textContent='LEVEL 1';
           if(window.MobileControls&&window.MobileControls.isMobile) Input.locked=true;
-          else renderer.domElement.requestPointerLock();
+          else if (renderer && renderer.domElement) renderer.domElement.requestPointerLock();
         },80);
-      }catch(err){
+      }).catch((err)=>{
         console.error('LEVEL 1 TRANSITION FAILED',err);
         const status=document.getElementById('elevator-status'); if(status)status.textContent='LEVEL 1 LOAD FAILED';
         setTimeout(()=>{
           if (runId !== GameState.runId) return;
           const ov=document.getElementById('elevator-sequence');if(ov)ov.style.display='none';
         },900);
-      }
+      });
     },40);
   }
 };
@@ -1407,11 +773,74 @@ const MAP_STRINGS_UNUSED = [
   "################################################"
 ];
 
+/* ------------------------------------------------------------------
+   MERGED BOX GEOMETRY
+   Level 0 used to create one BoxGeometry (and one draw call) per wall run: hundreds per chunk. A chunk
+   now builds ONE geometry for all of its wall runs. Vertex order, normals and UVs are exactly those of
+   THREE.BoxGeometry + applyBoxUVs, so lighting and the wallpaper's tiling are unchanged; only side faces
+   that are completely buried against neighbouring wall (or that can never be seen: the top and bottom of
+   a wall that meets the ceiling and floor) are left out.
+   items: [cx, cy, cz, w, h, d, skipMask]   skipMask bits: 1 +x, 2 -x, 4 +y, 8 -y, 16 +z, 32 -z
+   wallUV: tilesPerMeter for wall-style UVs, or 0 for BoxGeometry's default 0..1 per face.
+   ------------------------------------------------------------------ */
+const MergedBoxes = {
+  build(items, wallUV) {
+    let faces = 0;
+    for (let i = 0; i < items.length; i++) { const m = items[i][6] | 0; for (let b = 0; b < 6; b++) if (!(m & (1 << b))) faces++; }
+    const pos = new Float32Array(faces * 12), nor = new Float32Array(faces * 12), uv = new Float32Array(faces * 8);
+    const IndexArray = faces * 4 > 65535 ? Uint32Array : Uint16Array;
+    const idx = new IndexArray(faces * 6);
+    let f = 0;
+    for (let n = 0; n < items.length; n++) {
+      const it = items[n], cx = it[0], cy = it[1], cz = it[2], w = it[3], h = it[4], d = it[5], mask = it[6] | 0;
+      const hw = w / 2, hh = h / 2, hd = d / 2, t = wallUV || 0;
+      // vertex tables: v0 (ix0,iy0), v1 (ix1,iy0), v2 (ix0,iy1), v3 (ix1,iy1) as THREE.BoxGeometry builds them
+      const F = [
+        [1, 0, 0, [[hw, hh, hd], [hw, hh, -hd], [hw, -hh, hd], [hw, -hh, -hd]], d * t, h * t],     // +x
+        [-1, 0, 0, [[-hw, hh, -hd], [-hw, hh, hd], [-hw, -hh, -hd], [-hw, -hh, hd]], d * t, h * t], // -x
+        [0, 1, 0, [[-hw, hh, -hd], [hw, hh, -hd], [-hw, hh, hd], [hw, hh, hd]], w * t, d * t],      // +y
+        [0, -1, 0, [[-hw, -hh, hd], [hw, -hh, hd], [-hw, -hh, -hd], [hw, -hh, -hd]], w * t, d * t], // -y
+        [0, 0, 1, [[-hw, hh, hd], [hw, hh, hd], [-hw, -hh, hd], [hw, -hh, hd]], w * t, h * t],      // +z
+        [0, 0, -1, [[hw, hh, -hd], [-hw, hh, -hd], [hw, -hh, -hd], [-hw, -hh, -hd]], w * t, h * t]  // -z
+      ];
+      for (let b = 0; b < 6; b++) {
+        if (mask & (1 << b)) continue;
+        const fc = F[b], v = fc[3], us = t ? fc[4] : 1, vs = t ? fc[5] : 1;
+        const p = f * 12, q = f * 8, base = f * 4;
+        for (let k = 0; k < 4; k++) {
+          pos[p + k * 3] = cx + v[k][0]; pos[p + k * 3 + 1] = cy + v[k][1]; pos[p + k * 3 + 2] = cz + v[k][2];
+          nor[p + k * 3] = fc[0]; nor[p + k * 3 + 1] = fc[1]; nor[p + k * 3 + 2] = fc[2];
+        }
+        uv[q] = 0; uv[q + 1] = vs; uv[q + 2] = us; uv[q + 3] = vs; uv[q + 4] = 0; uv[q + 5] = 0; uv[q + 6] = us; uv[q + 7] = 0;
+        const i = f * 6;
+        idx[i] = base; idx[i + 1] = base + 2; idx[i + 2] = base + 1; idx[i + 3] = base + 2; idx[i + 4] = base + 3; idx[i + 5] = base + 1;
+        f++;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    if (geo.computeBoundingSphere) geo.computeBoundingSphere();
+    return geo;
+  }
+};
+
+/* ------------------------------------------------------------------
+   LEVEL / MAP
+   Two kinds of map feed this object:
+     world   the unbounded Level0World (the normal game). Tiles are looked up region by region; nothing
+             is stored per level. Colliders, meshes, lights, elevator facades, stations, wall marks and
+             decorations all live in streamed 24 x 24 tile chunks.
+     tiles   a bounded array (the Test Beta generator). Built whole, as before.
+   ------------------------------------------------------------------ */
 const Level = {
   cols: 0,
   rows: 0,
   tiles: [],
-  colliders: [], // axis-aligned boxes {min,max} THREE.Vector3
+  world: null,
+  colliders: [], // axis-aligned boxes {min,max} THREE.Vector3: in world mode, the chunks around the player
   triggers: [],
   startPos: new THREE.Vector3(2, 0, 2),
   group: null,
@@ -1422,12 +851,32 @@ const Level = {
   lastChunk: "",
   worldMin: new THREE.Vector3(),
   worldMax: new THREE.Vector3(),
+  physRadius: 2,          // chunks (each way) whose terrain colliders exist; the 3 x 3 around the player is always meshed too
+  keepSeconds: 5,         // a chunk that leaves the view stays loaded this long (turning on the spot used to rebuild chunks)
+  meshBudgetMs: 6,        // chunk-mesh work per frame outside the near ring (set from Quality)
+  _ctx: null,
+  _collChunks: new Map(),
+  _queue: [],
+  _wantedAt: new Map(),
+  _centerKey: "",
+  _exitChunks: new Map(),
+  _shared: null,
+  _prefetchT: 0,
+  stats: { chunksBuilt: 0, chunkMs: 0, maxChunkMs: 0, chunksUnloaded: 0, queueMax: 0 },
 
+  // Fog for Level 0 at the distance the graphics profile allows (High is the original 58..175 m).
+  fogFar() { return (typeof Quality !== "undefined") ? Quality.profile.fogFar : (CONFIG.fogFar || 175); },
+  makeFog() {
+    const q = (typeof Quality !== "undefined") ? Quality.level0Fog() : { near: CONFIG.fogNear, far: CONFIG.fogFar };
+    return new THREE.Fog(CONFIG.fogColor, q.near, q.far);
+  },
   inBounds(tx, tz) {
+    if (this.world) return true;
     tx = tx | 0; tz = tz | 0;
     return tz >= 0 && tz < this.rows && tx >= 0 && tx < this.cols;
   },
   getTile(tx, tz) {
+    if (this.world) return this.world.tile(tx, tz);
     tx = tx | 0; tz = tz | 0;
     if (!this.inBounds(tx, tz)) return TILE.WALL;
     return this.tiles[tz][tx];
@@ -1443,14 +892,26 @@ const Level = {
   },
 
   loadGenerated(result) {
-    this.tiles = result.tiles;
-    this.rows = result.rows;
-    this.cols = result.cols;
-    this.worldMin.set(0, -1, 0);
-    this.worldMax.set(this.cols * CONFIG.tile, CONFIG.wallH + 2, this.rows * CONFIG.tile);
     this.triggers.length = 0;
     this.pathMeters = result.pathMeters || 0;
     this.targetPath = result.targetPath || 0;
+    if (result.world) {
+      this.world = result.world;
+      this.tiles = [];
+      this.rows = Infinity; this.cols = Infinity;
+      this.worldMin.set(-Infinity, -2, -Infinity);
+      this.worldMax.set(Infinity, CONFIG.wallH + 2, Infinity);
+      MapGraph.reset();
+      MapGraph.provider = result.world;
+    } else {
+      this.world = null;
+      MapGraph.provider = null;
+      this.tiles = result.tiles;
+      this.rows = result.rows;
+      this.cols = result.cols;
+      this.worldMin.set(0, -1, 0);
+      this.worldMax.set(this.cols * CONFIG.tile, CONFIG.wallH + 2, this.rows * CONFIG.tile);
+    }
   },
 
   clear(sceneRef) {
@@ -1466,18 +927,13 @@ const Level = {
       mat.dispose();
     };
     const protectedMaterials = new Set(Object.values(Materials).filter(v => v && v.isMaterial));
+    if (this._shared) { for (const m of this._shared.materials) protectedMaterials.add(m); }
+    const sharedGeos = new Set([Geometries.box, Geometries.lightPanel, Geometries.lightHousing, Geometries.floorTile, Geometries.column, Geometries.beam]);
+    if (this._shared) { sharedGeos.add(this._shared.floorGeo); sharedGeos.add(this._shared.ceilGeo); }
     const disposeObjectResources = (root) => {
       if (!root) return;
       root.traverse((obj) => {
-        if (obj.geometry && obj.geometry.dispose) {
-          const shared = obj.geometry === Geometries.box ||
-            obj.geometry === Geometries.lightPanel ||
-            obj.geometry === Geometries.lightHousing ||
-            obj.geometry === Geometries.floorTile ||
-            obj.geometry === Geometries.column ||
-            obj.geometry === Geometries.beam;
-          if (!shared) obj.geometry.dispose();
-        }
+        if (obj.geometry && obj.geometry.dispose && !sharedGeos.has(obj.geometry)) obj.geometry.dispose();
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
         for (const mat of mats) {
           if (mat && mat.isMaterial && !protectedMaterials.has(mat)) disposeMaterial(mat);
@@ -1498,200 +954,246 @@ const Level = {
     this.lastChunk = "";
     this.colliders.length = 0;
     this.triggers.length = 0;
+    this._collChunks = new Map();
+    this._queue.length = 0;
+    this._wantedAt = new Map();
+    this._centerKey = "";
+    this._exitChunks = new Map();
+    this._ctx = null; this._job = null; this._planNext = null;
+    if (this._shared) { this._shared.floorMat.map && this._shared.floorMat.map.dispose && this._shared.floorMat.map.dispose(); this._shared.ceilMat.map && this._shared.ceilMat.map.dispose && this._shared.ceilMat.map.dispose(); this._shared.floorMat.dispose(); this._shared.ceilMat.dispose(); this._shared.floorGeo.dispose(); this._shared.ceilGeo.dispose(); this._shared = null; }
+    this.world = null;
+    if (MapGraph) MapGraph.provider = null;
     Stairwell.reset();
+    // Leaving Level 0 ends the visit: activity progress is per visit, never saved.
+    if (typeof ActivitySystem !== "undefined") ActivitySystem.endVisit(0);
+    if (typeof Level0Markings !== "undefined") Level0Markings.resetShared();
+    if (typeof PassC !== "undefined" && PassC.resetWorld) PassC.resetWorld();
     if (typeof DebugPath !== "undefined") DebugPath.hide();
   },
 
-  /* Greedy horizontal merge of wall runs, then emit box colliders.
-     Corners stay closed because adjacent runs meet at tile edges. */
-  buildColliders() {
-    this.colliders.length = 0;
-    const T = CONFIG.tile;
-    const H = CONFIG.wallH;
+  addBoxCollider(minx, miny, minz, maxx, maxy, maxz) {
+    const c = { min: new THREE.Vector3(minx, miny, minz), max: new THREE.Vector3(maxx, maxy, maxz) };
+    if (this._ctx) this._ctx.colliders.push(c); else this.colliders.push(c);
+  },
+  addTrigger(t) {
+    if (this._ctx) this._ctx.triggers.push(t);
+    this.triggers.push(t);
+  },
 
-    const used = [];
-    for (let z = 0; z < this.rows; z++) used.push(new Array(this.cols).fill(false));
-
-    for (let z = 0; z < this.rows; z++) {
-      for (let x = 0; x < this.cols; x++) {
-        if (used[z][x] || !this.isSolidTile(this.getTile(x, z))) continue;
+  /* ---- wall runs: greedy rectangles of solid tiles inside one chunk (used for meshes AND colliders) ---- */
+  wallRuns(x0, z0, x1, z1) {
+    const out = [], w = x1 - x0, used = new Uint8Array(w * (z1 - z0));
+    const solid = (x, z) => this.getTile(x, z) === TILE.WALL;
+    // read the chunk's tiles once
+    const sol = new Uint8Array(w * (z1 - z0));
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) sol[(z - z0) * w + (x - x0)] = solid(x, z) ? 1 : 0;
+    for (let z = z0; z < z1; z++) {
+      for (let x = x0; x < x1; x++) {
+        const i = (z - z0) * w + (x - x0);
+        if (used[i] || !sol[i]) continue;
         let x2 = x;
-        while (x2 + 1 < this.cols && this.isSolidTile(this.getTile(x2 + 1, z)) && !used[z][x2 + 1]) x2++;
-        let z2 = z;
-        let canGrow = true;
-        while (canGrow && z2 + 1 < this.rows) {
-          for (let xx = x; xx <= x2; xx++) {
-            if (!this.isSolidTile(this.getTile(xx, z2 + 1)) || used[z2 + 1][xx]) { canGrow = false; break; }
-          }
+        while (x2 + 1 < x1 && sol[(z - z0) * w + (x2 + 1 - x0)] && !used[(z - z0) * w + (x2 + 1 - x0)]) x2++;
+        let z2 = z, canGrow = true;
+        while (canGrow && z2 + 1 < z1) {
+          for (let xx = x; xx <= x2; xx++) { const j = (z2 + 1 - z0) * w + (xx - x0); if (!sol[j] || used[j]) { canGrow = false; break; } }
           if (canGrow) z2++;
         }
-        for (let zz = z; zz <= z2; zz++) {
-          for (let xx = x; xx <= x2; xx++) used[zz][xx] = true;
-        }
-        this.addBoxCollider(x * T, 0, z * T, (x2 + 1) * T, H, (z2 + 1) * T);
+        for (let zz = z; zz <= z2; zz++) for (let xx = x; xx <= x2; xx++) used[(zz - z0) * w + (xx - x0)] = 1;
+        out.push([x, z, x2, z2]);
       }
     }
+    return out;
+  },
 
-    // Invisible world envelope so the player cannot leave the map
-    const W = this.cols * T;
-    const D = this.rows * T;
-    const thick = 2;
-    const holes = Stairwell.exits.map((st) => st.hole).filter(Boolean);
-
-    // Keep the world boundary solid everywhere except the actual elevator
-    // openings. Multiple exits are handled by horizontal strips so one
-    // opening can never accidentally seal another.
-    const zCuts = [0, D];
-    for (let i = 0; i < holes.length; i++) {
-      zCuts.push(Math.max(0, holes[i].minz), Math.min(D, holes[i].maxz));
-    }
-    zCuts.sort((a, b) => a - b);
-    const uniqueZ = [];
-    for (let i = 0; i < zCuts.length; i++) {
-      if (!uniqueZ.length || Math.abs(uniqueZ[uniqueZ.length - 1] - zCuts[i]) > 0.001) uniqueZ.push(zCuts[i]);
-    }
-    for (let zi = 0; zi < uniqueZ.length - 1; zi++) {
-      const z0 = uniqueZ[zi], z1 = uniqueZ[zi + 1];
-      if (z1 - z0 < 0.01) continue;
-      const midZ = (z0 + z1) * 0.5;
-      const active = holes.filter((h) => midZ >= h.minz && midZ <= h.maxz);
-      const xCuts = [0, W];
-      for (let i = 0; i < active.length; i++) {
-        xCuts.push(Math.max(0, active[i].minx), Math.min(W, active[i].maxx));
-      }
-      xCuts.sort((a, b) => a - b);
-      const uniqueX = [];
-      for (let i = 0; i < xCuts.length; i++) {
-        if (!uniqueX.length || Math.abs(uniqueX[uniqueX.length - 1] - xCuts[i]) > 0.001) uniqueX.push(xCuts[i]);
-      }
-      for (let xi = 0; xi < uniqueX.length - 1; xi++) {
-        const x0 = uniqueX[xi], x1 = uniqueX[xi + 1];
-        const midX = (x0 + x1) * 0.5;
-        const insideHole = active.some((h) => midX >= h.minx && midX <= h.maxx);
-        if (!insideHole && x1 - x0 > 0.01) {
-          this.addBoxCollider(x0, -2, z0, x1, 0.0, z1);
-        }
-      }
-    }
-
-    // Slightly oversized side/top boundary walls.
+  /* Legacy bounded map: one set of colliders for the whole thing. */
+  buildColliders() {
+    this.colliders.length = 0;
+    const T = CONFIG.tile, H = CONFIG.wallH;
+    for (const r of this.wallRuns(0, 0, this.cols, this.rows)) this.addBoxCollider(r[0] * T, 0, r[1] * T, (r[2] + 1) * T, H, (r[3] + 1) * T);
+    const W = this.cols * T, D = this.rows * T, thick = 2;
+    this.addBoxCollider(0, -2, 0, W, 0.0, D);                      // floor slab
     this.addBoxCollider(-thick, -2, -thick, 0, H + 2, D + thick);
     this.addBoxCollider(W, -2, -thick, W + thick, H + 2, D + thick);
     this.addBoxCollider(-thick, -2, -thick, W + thick, H + 2, 0);
     this.addBoxCollider(-thick, -2, D, W + thick, H + 2, D + thick);
     this.addBoxCollider(-thick, H, -thick, W + thick, H + 2, D + thick); // ceiling slab
-
-    // Column colliders
-    for (let z = 0; z < this.rows; z++) {
-      for (let x = 0; x < this.cols; x++) {
-        if (this.getTile(x, z) !== TILE.COLUMN) continue;
-        const w = this.tileToWorld(x, z);
-        const r = 0.32;
-        this.addBoxCollider(w.x - r, 0, w.z - r, w.x + r, H, w.z + r);
-      }
+    for (let z = 0; z < this.rows; z++) for (let x = 0; x < this.cols; x++) {
+      if (this.getTile(x, z) !== TILE.COLUMN) continue;
+      const w = this.tileToWorld(x, z), r = 0.32;
+      this.addBoxCollider(w.x - r, 0, w.z - r, w.x + r, H, w.z + r);
     }
   },
 
-  addBoxCollider(minx, miny, minz, maxx, maxy, maxz) {
-    this.colliders.push({
-      min: new THREE.Vector3(minx, miny, minz),
-      max: new THREE.Vector3(maxx, maxy, maxz)
-    });
+  /* ---- chunk terrain colliders (world mode) ---- */
+  _collFor(cx, cz) {
+    const key = cx + "," + cz;
+    let rec = this._collChunks.get(key);
+    if (rec) return rec;
+    const S = this.chunkTiles, T = CONFIG.tile, H = CONFIG.wallH;
+    const x0 = cx * S, z0 = cz * S, x1 = x0 + S, z1 = z0 + S;
+    const boxes = [];
+    const mk = (a, b, c, d, e, f) => boxes.push({ min: new THREE.Vector3(a, b, c), max: new THREE.Vector3(d, e, f) });
+    for (const r of this.wallRuns(x0, z0, x1, z1)) mk(r[0] * T, 0, r[1] * T, (r[2] + 1) * T, H, (r[3] + 1) * T);
+    mk(x0 * T, -2, z0 * T, x1 * T, 0, z1 * T);          // floor slab
+    mk(x0 * T, H, z0 * T, x1 * T, H + 2, z1 * T);       // ceiling slab: nothing climbs over the walls
+    rec = { cx, cz, boxes };
+    this._collChunks.set(key, rec);
+    return rec;
+  },
+  _syncColliders(pcx, pcz) {
+    const R = this.physRadius;
+    for (const [k, rec] of this._collChunks) if (Math.abs(rec.cx - pcx) > R + 1 || Math.abs(rec.cz - pcz) > R + 1) this._collChunks.delete(k);
+    const out = this.colliders;
+    out.length = 0;
+    for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+      const rec = this._collFor(pcx + dx, pcz + dz);
+      for (let i = 0; i < rec.boxes.length; i++) out.push(rec.boxes[i]);
+    }
+    for (const [, c] of this.chunks) {
+      if (!c.colliders || !c.colliders.length) continue;
+      if (Math.abs(c.cx - pcx) > R || Math.abs(c.cz - pcz) > R) continue;
+      for (let i = 0; i < c.colliders.length; i++) out.push(c.colliders[i]);
+    }
   },
 
+  /* ---- meshes ---- */
   buildMeshes(scene) {
     this.group = new THREE.Group();
     this.group.name = "LevelMeshes";
     this.chunks = new Map();
     this.lastChunk = "";
-    for (let z = 0; z < this.rows; z++) {
-      for (let x = 0; x < this.cols; x++) {
-        if (this.getTile(x, z) === TILE.START) {
-          const w = this.tileToWorld(x, z);
-          this.startPos.set(w.x, 0, w.z);
-        }
+    this._queue.length = 0;
+    if (this.world) {
+      const st = LevelGenerator.last && LevelGenerator.last.startStamp;
+      if (st) { const w = this.tileToWorld(st.x, st.z); this.startPos.set(w.x, 0, w.z); }
+      this._indexExits();
+    } else {
+      for (let z = 0; z < this.rows; z++) for (let x = 0; x < this.cols; x++) {
+        if (this.getTile(x, z) === TILE.START) { const w = this.tileToWorld(x, z); this.startPos.set(w.x, 0, w.z); }
       }
     }
+    LightingSystem.ensurePool(scene);
+    if (typeof CameraRig !== "undefined" && CameraRig.camera && typeof Quality !== "undefined") { CameraRig.camera.far = Quality.profile.cameraFar; CameraRig.camera.updateProjectionMatrix(); }
     scene.add(this.group);
     this.stream(true);
+  },
+  _indexExits() {
+    this._exitChunks = new Map();
+    const S = this.chunkTiles;
+    Stairwell.exits.forEach((st, i) => {
+      const es = st.exitStamp; if (!es) return;
+      const key = Math.floor(es.x / S) + "," + Math.floor(es.z / S);
+      if (!this._exitChunks.has(key)) this._exitChunks.set(key, []);
+      this._exitChunks.get(key).push(i);
+    });
+  },
+  _sharedRes() {
+    if (this._shared) return this._shared;
+    const T = CONFIG.tile, S = this.chunkTiles, fw = S * T;
+    const floorMap = Materials.carpet.map.clone();
+    floorMap.wrapS = floorMap.wrapT = THREE.RepeatWrapping;
+    floorMap.repeat.set(fw / 2.2, fw / 2.2); floorMap.needsUpdate = true;
+    const floorMat = Materials.carpet.clone(); floorMat.map = floorMap;
+    const ceilMap = Materials.ceiling.map.clone();
+    ceilMap.wrapS = ceilMap.wrapT = THREE.RepeatWrapping;
+    ceilMap.repeat.set(fw / 2.4, fw / 2.4); ceilMap.needsUpdate = true;
+    const ceilMat = Materials.ceiling.clone(); ceilMat.map = ceilMap;
+    // one floor plane and one ceiling plane, shared by every chunk
+    this._shared = { floorGeo: new THREE.PlaneGeometry(fw, fw), ceilGeo: new THREE.PlaneGeometry(fw, fw), floorMat, ceilMat, materials: [floorMat, ceilMat] };
+    return this._shared;
   },
   buildChunk(cx, cz) {
     const key = cx + "," + cz;
     if (this.chunks.has(key) || !this.group) return;
+    const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
     const T = CONFIG.tile, H = CONFIG.wallH, S = this.chunkTiles;
     const x0 = cx * S, z0 = cz * S;
-    const x1 = Math.min(this.cols, x0 + S), z1 = Math.min(this.rows, z0 + S);
-    if (x0 >= this.cols || z0 >= this.rows) return;
+    const x1 = this.world ? x0 + S : Math.min(this.cols, x0 + S), z1 = this.world ? z0 + S : Math.min(this.rows, z0 + S);
+    if (!this.world && (x0 >= this.cols || z0 >= this.rows)) return;
     const g = new THREE.Group();
     g.name = "L0_" + key;
+    const rec = { group: g, cx, cz, lights: [], markings: null, colliders: [], triggers: [], exits: [], crates: null, own: [], housing: null };
+    this._ctx = rec;
     const minx = x0 * T, minz = z0 * T, maxx = x1 * T, maxz = z1 * T;
     const fw = maxx - minx, fd = maxz - minz;
+    if (this.world) { try { if (typeof PassC !== "undefined" && PassC.ensureAround) PassC.ensureAround(x0, z0, x1, z1); } catch (e) { console.error(e); } }
     if (fw > 0.05 && fd > 0.05) {
-      const floorMap = Materials.carpet.map.clone();
-      floorMap.wrapS = floorMap.wrapT = THREE.RepeatWrapping;
-      floorMap.repeat.set(Math.max(1, fw / 2.2), Math.max(1, fd / 2.2));
-      floorMap.needsUpdate = true;
-      const floorMat = Materials.carpet.clone();
-      floorMat.map = floorMap;
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), floorMat);
-      floor.rotation.x = -Math.PI / 2;
-      floor.position.set((minx + maxx) * 0.5, 0, (minz + maxz) * 0.5);
-      g.add(floor);
-      const ceilMap = Materials.ceiling.map.clone();
-      ceilMap.wrapS = ceilMap.wrapT = THREE.RepeatWrapping;
-      ceilMap.repeat.set(Math.max(1, fw / 2.4), Math.max(1, fd / 2.4));
-      ceilMap.needsUpdate = true;
-      const ceilMat = Materials.ceiling.clone();
-      ceilMat.map = ceilMap;
-      const ceil = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), ceilMat);
-      ceil.rotation.x = Math.PI / 2;
-      ceil.position.set((minx + maxx) * 0.5, H, (minz + maxz) * 0.5);
-      g.add(ceil);
-    }
-    const used = [];
-    for (let z = z0; z < z1; z++) used.push(new Array(x1 - x0).fill(false));
-    for (let z = z0; z < z1; z++) {
-      for (let x = x0; x < x1; x++) {
-        if (used[z - z0][x - x0] || !this.isSolidTile(this.getTile(x, z))) continue;
-        let x2 = x;
-        while (x2 + 1 < x1 && this.isSolidTile(this.getTile(x2 + 1, z)) && !used[z - z0][x2 + 1 - x0]) x2++;
-        let z2 = z, canGrow = true;
-        while (canGrow && z2 + 1 < z1) {
-          for (let xx = x; xx <= x2; xx++) {
-            if (!this.isSolidTile(this.getTile(xx, z2 + 1)) || used[z2 + 1 - z0][xx - x0]) { canGrow = false; break; }
-          }
-          if (canGrow) z2++;
-        }
-        for (let zz = z; zz <= z2; zz++) for (let xx = x; xx <= x2; xx++) used[zz - z0][xx - x0] = true;
-        const sx = (x2 - x + 1) * T, sz = (z2 - z + 1) * T;
-        const mesh = new THREE.Mesh(makeWorldBox(sx, H, sz, 0.5), Materials.wall);
-        mesh.position.set((x + x2 + 1) * T * 0.5, H * 0.5, (z + z2 + 1) * T * 0.5);
-        g.add(mesh);
+      if (fw === S * T && fd === S * T) {
+        const sh = this._sharedRes();
+        const floor = new THREE.Mesh(sh.floorGeo, sh.floorMat);
+        floor.rotation.x = -Math.PI / 2; floor.position.set((minx + maxx) * 0.5, 0, (minz + maxz) * 0.5);
+        g.add(floor);
+        const ceil = new THREE.Mesh(sh.ceilGeo, sh.ceilMat);
+        ceil.rotation.x = Math.PI / 2; ceil.position.set((minx + maxx) * 0.5, H, (minz + maxz) * 0.5);
+        g.add(ceil);
+      } else {
+        // a partial chunk at the edge of a bounded map
+        const floorMap = Materials.carpet.map.clone();
+        floorMap.wrapS = floorMap.wrapT = THREE.RepeatWrapping;
+        floorMap.repeat.set(Math.max(1, fw / 2.2), Math.max(1, fd / 2.2)); floorMap.needsUpdate = true;
+        const floorMat = Materials.carpet.clone(); floorMat.map = floorMap;
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), floorMat);
+        floor.rotation.x = -Math.PI / 2; floor.position.set((minx + maxx) * 0.5, 0, (minz + maxz) * 0.5);
+        g.add(floor);
+        const ceilMap = Materials.ceiling.map.clone();
+        ceilMap.wrapS = ceilMap.wrapT = THREE.RepeatWrapping;
+        ceilMap.repeat.set(Math.max(1, fw / 2.4), Math.max(1, fd / 2.4)); ceilMap.needsUpdate = true;
+        const ceilMat = Materials.ceiling.clone(); ceilMat.map = ceilMap;
+        const ceil = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), ceilMat);
+        ceil.rotation.x = Math.PI / 2; ceil.position.set((minx + maxx) * 0.5, H, (minz + maxz) * 0.5);
+        g.add(ceil);
       }
     }
-    const lights = [];
-    for (let z = z0; z < z1; z++) {
-      for (let x = x0; x < x1; x++) {
-        if (this.getTile(x, z) === TILE.COLUMN) {
-          const w = this.tileToWorld(x, z);
-          const col = new THREE.Mesh(Geometries.column, Materials.column);
-          col.position.set(w.x, H * 0.5, w.z);
-          g.add(col);
-        }
+    // walls: every run of this chunk in ONE mesh (one draw call)
+    const runs = this.wallRuns(x0, z0, x1, z1);
+    if (runs.length) {
+      const allSolid = (xa, xb, zz) => { for (let x = xa; x <= xb; x++) if (this.getTile(x, zz) !== TILE.WALL) return false; return true; };
+      const allSolidZ = (za, zb, xx) => { for (let z = za; z <= zb; z++) if (this.getTile(xx, z) !== TILE.WALL) return false; return true; };
+      const items = [];
+      for (const r of runs) {
+        const sx = (r[2] - r[0] + 1) * T, sz = (r[3] - r[1] + 1) * T;
+        let mask = 4 | 8;                                   // top meets the ceiling, bottom the floor
+        if (allSolidZ(r[1], r[3], r[2] + 1)) mask |= 1;     // +x face buried
+        if (allSolidZ(r[1], r[3], r[0] - 1)) mask |= 2;     // -x
+        if (allSolid(r[0], r[2], r[3] + 1)) mask |= 16;     // +z
+        if (allSolid(r[0], r[2], r[1] - 1)) mask |= 32;     // -z
+        items.push([(r[0] + r[2] + 1) * T * 0.5, H * 0.5, (r[1] + r[3] + 1) * T * 0.5, sx, H, sz, mask]);
+      }
+      const geo = MergedBoxes.build(items, 0.5);
+      const mesh = new THREE.Mesh(geo, Materials.wall);
+      mesh.name = "L0_walls";
+      g.add(mesh);
+    }
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+      if (this.getTile(x, z) === TILE.COLUMN) {
+        const w = this.tileToWorld(x, z);
+        const col = new THREE.Mesh(Geometries.column, Materials.column);
+        col.position.set(w.x, H * 0.5, w.z);
+        g.add(col);
+        if (this.world) { const r = 0.32; this.addBoxCollider(w.x - r, 0, w.z - r, w.x + r, H, w.z + r); }
       }
     }
+    // fixtures. Their state is a function of the fixture's position, so a chunk always comes back as it was.
+    const housing = [];
+    const fixture = (tx, tz, withPoint, scale) => {
+      const w = this.tileToWorld(tx, tz);
+      const roll = (typeof Level0World !== "undefined" ? Level0World.hash((GameState.seed | 0), tx, tz, 0xF1C7) : 0) / 4294967296;
+      const state = roll < 0.012 ? "BROKEN" : roll < 0.05 ? "FLICKERING" : roll < 0.14 ? "DIM" : "NORMAL";
+      const unit = LightingSystem.addFluorescent(g, w.x, H - 0.06, w.z, withPoint, scale, state, housing);
+      if (unit) rec.lights.push(unit);
+    };
     if (LevelGenerator.last && LevelGenerator.last.beta) {
-      let points = 0;
-      for (let z = z0 + 3; z < z1 - 1; z += 6) {
-        for (let x = x0 + 3; x < x1 - 1; x += 6) {
-          if (this.getTile(x, z) === TILE.WALL || this.getTile(x, z) === TILE.COLUMN) continue;
-          const w = this.tileToWorld(x, z);
-          const withPoint = points < 3 && LightingSystem.lights.length < 28;
-          if (withPoint) points++;
-          const unit = LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, withPoint, 1.16);
-          if (unit) lights.push(unit);
-        }
+      for (let z = z0 + 3; z < z1 - 1; z += 6) for (let x = x0 + 3; x < x1 - 1; x += 6) {
+        if (this.getTile(x, z) === TILE.WALL || this.getTile(x, z) === TILE.COLUMN) continue;
+        // a bounded beta field has few lights; a handful of them carry real lights (the pool hands them out)
+        fixture(x, z, ((x - x0 - 3) / 6 + (z - z0 - 3) / 6) % 3 === 0, 1.16);
       }
+    } else if (this.world) {
+      const RT = Level0World.RT, rx = Math.floor(x0 / RT), rz = Math.floor(z0 / RT);
+      const reg = this.world.region(rx, rz);
+      const per = RT / S, lk = Math.floor((x0 - rx * RT) / S) + per * Math.floor((z0 - rz * RT) / S);
+      const list = reg.lightsByChunk[lk];
+      if (list) for (const l of list) fixture(l.tx, l.tz, true, l.profile === "BRIGHT" ? 1.42 : 1.16);
     } else if (typeof MapGraph !== "undefined") {
       for (let ni = 0; ni < MapGraph.nodes.length; ni++) {
         const mod = MapGraph.nodes[ni];
@@ -1700,35 +1202,63 @@ const Level = {
         const tz = Math.floor(mod.gz + mod.h * 0.5) * LevelGenerator.CELL + 2;
         if (tx < x0 || tx >= x1 || tz < z0 || tz >= z1) continue;
         if (!this.inBounds(tx, tz) || this.getTile(tx, tz) === TILE.WALL) continue;
-        const w = this.tileToWorld(tx, tz);
-        const unit = LightingSystem.addFluorescent(scene, w.x, H - 0.06, w.z, true, mod.lightProfile === "BRIGHT" ? 1.42 : 1.16);
-        if (unit) lights.push(unit);
+        fixture(tx, tz, true, mod.lightProfile === "BRIGHT" ? 1.42 : 1.16);
       }
     }
+    if (housing.length) {
+      const items = housing.map((p) => [p[0], p[1], p[2], 1.72, 0.08, 0.58, 0]);
+      const hm = new THREE.Mesh(MergedBoxes.build(items, 0), Materials.lightHousing);
+      hm.name = "L0_housings";
+      g.add(hm);
+    }
+    // elevator facades whose wall tile lies in this chunk
+    const ex = this._exitChunks.get(key);
+    if (ex && this.world) { rec.exits = ex.slice(); Stairwell.buildForChunk(g, ex); }
+    if (this.world) {
+      // terrain colliders for this chunk's surroundings exist already (see stream()); the extras (facades,
+      // station panels) are added to rec.colliders by the pieces above and below
+    }
+    if (typeof ActivitySystem !== "undefined") ActivitySystem.onChunkBuilt(0, key, g, minx, minz, maxx, maxz);
+    if (typeof PassC !== "undefined" && PassC.buildChunk && this.world) rec.crates = PassC.buildChunk(g, x0, z0, x1, z1);
+    const markings = (typeof Level0Markings !== "undefined") ? Level0Markings.buildChunk(g, x0, z0, x1, z1) : null;
+    rec.markings = markings;
+    if (this.world && typeof PickupSystem !== "undefined" && PickupSystem.ensureLevel0Around) PickupSystem.ensureLevel0Around((x0 + x1) * 0.5 * T, (z0 + z1) * 0.5 * T);
+    this._ctx = null;
     this.group.add(g);
-    this.chunks.set(key, { group: g, lights });
+    this.chunks.set(key, rec);
+    const dt = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
+    this.stats.chunksBuilt++; this.stats.chunkMs += dt; if (dt > this.stats.maxChunkMs) this.stats.maxChunkMs = dt;
   },
   unloadChunk(key) {
     const rec = this.chunks.get(key);
     if (!rec) return;
     if (rec.group && rec.group.parent) rec.group.parent.remove(rec.group);
-    if (rec.lights) {
-      for (const u of rec.lights) {
-        if (u.panel && u.panel.parent) u.panel.parent.remove(u.panel);
-        if (u.light && u.light.parent) u.light.parent.remove(u.light);
-        const li = LightingSystem.lights.indexOf(u.light);
-        if (li >= 0) LightingSystem.lights.splice(li, 1);
-        const ui = LightingSystem.units.indexOf(u);
-        if (ui >= 0) LightingSystem.units.splice(ui, 1);
-      }
+    if (typeof ActivitySystem !== "undefined") ActivitySystem.onChunkUnloaded(0, key);
+    if (rec.markings && typeof Level0Markings !== "undefined") Level0Markings.disposeChunk(rec);
+    if (rec.crates && typeof PassC !== "undefined") PassC.disposeChunk(rec.crates);
+    for (const i of rec.exits || []) Stairwell.releaseOne(i);
+    for (const u of rec.lights) LightingSystem.removeUnit(u);
+    if (rec.triggers && rec.triggers.length) {
+      const dead = new Set(rec.triggers);
+      this.triggers = this.triggers.filter((t) => !dead.has(t));
     }
+    // geometry owned by this chunk (the merged walls and housings); materials and the shared planes stay
+    const sh = this._shared;
+    rec.group.traverse((o) => {
+      if (o.geometry && o.geometry.dispose && !(sh && (o.geometry === sh.floorGeo || o.geometry === sh.ceilGeo)) &&
+          o.geometry !== Geometries.box && o.geometry !== Geometries.column && o.geometry !== Geometries.lightPanel &&
+          o.geometry !== Geometries.lightHousing && !o.userData.keepGeometry) o.geometry.dispose();
+      if (o.userData && o.userData.ownMaterial && o.material && o.material.dispose) o.material.dispose();
+    });
     this.chunks.delete(key);
+    this._wantedAt.delete(key);
+    this.stats.chunksUnloaded++;
   },
   // Standing chunk, its neighbours, and whatever the view hits out to the fog.
   // A circle shows its edge in an open room. A cone does not.
   wantedChunks(cx, cz, px, pz) {
     const S = this.chunkTiles, T = CONFIG.tile, CS = S * T;
-    const reach = (CONFIG.fogFar || 175) + CS;
+    const reach = this.fogFar() + CS;
     const half = ((CONFIG.fovDeg || 84) * 0.5 + 12) * Math.PI / 180;
     const cosH = Math.cos(half);
     const yaw = (Player && Player.yaw != null) ? Player.yaw : 0;
@@ -1749,25 +1279,92 @@ const Level = {
     return out;
   },
   stream(force) {
-    if (!this.group || !this.tiles || !this.tiles.length) return;
+    if (!this.group || (!this.world && (!this.tiles || !this.tiles.length))) return;
     if (!force && GameState.level !== 0) return;
     const S = this.chunkTiles, T = CONFIG.tile;
     const px = (Player && Player.position) ? Player.position.x : this.startPos.x;
     const pz = (Player && Player.position) ? Player.position.z : this.startPos.z;
     const cx = Math.floor(px / (S * T));
     const cz = Math.floor(pz / (S * T));
+    const now = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
+    if (this.world) {
+      // terrain colliders around the player, built before anything can walk into them
+      const ck = cx + "," + cz;
+      if (force || ck !== this._centerKey) { this._centerKey = ck; this._syncColliders(cx, cz); this._collDirty = false; }
+    }
     const yawKey = Math.round(((Player && Player.yaw) || 0) * 4);
     const key = cx + "," + cz + "," + yawKey;
-    if (!force && key === this.lastChunk) return;
-    this.lastChunk = key;
-    const keep = new Set();
-    for (const [dx, dz] of this.wantedChunks(cx, cz, px, pz)) {
-      this.buildChunk(cx + dx, cz + dz);
-      keep.add((cx + dx) + "," + (cz + dz));
+    if (force || key !== this.lastChunk) {
+      this.lastChunk = key;
+      const wanted = this.wantedChunks(cx, cz, px, pz);
+      const queue = [];
+      for (const [dx, dz] of wanted) {
+        const k = (cx + dx) + "," + (cz + dz);
+        this._wantedAt.set(k, now);
+        if (this.chunks.has(k)) continue;
+        if (Math.max(Math.abs(dx), Math.abs(dz)) <= 1 || force) this.buildChunk(cx + dx, cz + dz);   // the ring around the player is never late
+        else queue.push({ cx: cx + dx, cz: cz + dz, d: dx * dx + dz * dz, k });
+      }
+      queue.sort((a, b) => a.d - b.d);
+      this._queue = queue;
+      if (queue.length > this.stats.queueMax) this.stats.queueMax = queue.length;
+      if (this.world) this._syncColliders(cx, cz);
     }
+    // chunks that have been out of view for a while, and are not next to the player, are dropped
+    if (force || (this._queue.length === 0 && now - (this._sweptAt || 0) >= 0.5)) { this._sweptAt = now; this._sweep(cx, cz, now); }
+    if (this.world && !force) this._work(this.meshBudgetMs, cx, cz);
+  },
+  _sweep(cx, cz, now) {
     for (const k of Array.from(this.chunks.keys())) {
-      if (!keep.has(k)) this.unloadChunk(k);
+      const rec = this.chunks.get(k);
+      if (Math.max(Math.abs(rec.cx - cx), Math.abs(rec.cz - cz)) <= 2) continue;
+      const at = this._wantedAt.get(k);
+      if (at !== undefined && now - at < this.keepSeconds) continue;
+      this.unloadChunk(k);
     }
+  },
+  // Spend at most `ms` building queued chunks (always at least one), then look ahead for regions.
+  _work(ms, cx, cz) {
+    if (this._queue.length) {
+      const t0 = performance.now();
+      let built = 0;
+      while (this._queue.length) {
+        const j = this._queue.shift();
+        if (!this.chunks.has(j.k)) { this.buildChunk(j.cx, j.cz); built++; }
+        if (performance.now() - t0 >= ms) break;
+      }
+      if (built) this._syncColliders(cx, cz);
+      return;
+    }
+    // idle: build the region the player is walking toward, a slice per frame. First the tiles (about 10-50 ms of work in
+    // all), then the region's decoration plan, each on its own frames, so nothing here is ever one big block.
+    const RT = Level0World.RT, T = CONFIG.tile, w = this.world;
+    const budget = Math.max(1, ms * 0.4);
+    if (this._job) {
+      if (w.stepRegion(this._job, budget)) { const j = this._job; this._job = null; this._planNext = [j.rx, j.rz]; }
+      return;
+    }
+    if (this._planNext) {
+      const p = this._planNext; this._planNext = null;
+      if (typeof PassC !== "undefined" && PassC.planRegion && PassC.worldMode && w.has(p[0], p[1])) PassC.planRegion(w.region(p[0], p[1]));
+      return;
+    }
+    this._prefetchT -= (GameState.dtLast || 0.016);
+    if (this._prefetchT > 0) return;
+    this._prefetchT = 0.1;
+    const tx = Math.floor(Player.position.x / T), tz = Math.floor(Player.position.z / T);
+    const rx = Math.floor(tx / RT), rz = Math.floor(tz / RT);
+    const look = Math.ceil((this.fogFar() + 140) / T);          // tiles
+    const lx = tx - rx * RT, lz = tz - rz * RT;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const nearX = dx > 0 ? RT - lx <= look : dx < 0 ? lx < look : true;
+      const nearZ = dz > 0 ? RT - lz <= look : dz < 0 ? lz < look : true;
+      if (!nearX || !nearZ) continue;
+      if (w.has(rx + dx, rz + dz)) continue;
+      this._job = w.beginRegion(rx + dx, rz + dz);
+      return;
+    }
+    w.trim(rx, rz, 2);
   },
   buildHandcrafted(sceneRef) {
     this.buildProcedural(sceneRef, GameState.seed || 483921);
@@ -1788,7 +1385,7 @@ const Level = {
       GameState.seed = beta.seed;
       this.clear(sceneRef);
       if (sceneRef) {
-        sceneRef.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
+        sceneRef.fog = Level.makeFog();
         sceneRef.background = new THREE.Color(CONFIG.fogColor);
       }
       this.loadGenerated(beta);
@@ -1796,6 +1393,8 @@ const Level = {
       Stairwell.planFrom(beta);
       this.buildColliders();
       if (!this.colliders.length) throw new Error("Test Beta built without collision geometry.");
+      // Test Beta has no planned elevator sites, so it keeps the legacy walk-in elevators.
+      if (typeof ActivitySystem !== "undefined") ActivitySystem.beginVisit(0, beta);
       this.buildMeshes(sceneRef);
       Stairwell.build(sceneRef);
       SpawnManager.apply(beta);
@@ -1809,7 +1408,7 @@ const Level = {
     // Both modes use the same deterministic validity checks. For Custom Seed,
     // the entered number is the starting point of the deterministic search;
     // the game never silently switches to an unrelated random seed.
-    const result = LevelGenerator.generateValid(seed >>> 0, 160);
+    const result = LevelGenerator.generateValid(seed >>> 0, 24);
 
     if (!result) {
       if (strictSeed) {
@@ -1817,10 +1416,9 @@ const Level = {
         if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — TRY ANOTHER SEED";
         return false;
       }
-
       console.warn("Procedural generation failed; retrying with a fresh random seed");
       const retrySeed = ((seed ^ 0x9e3779b9) >>> 0);
-      const retry = LevelGenerator.generateValid(retrySeed, 160);
+      const retry = LevelGenerator.generateValid(retrySeed, 24);
       if (!retry) {
         const startSeed = document.getElementById("start-seed");
         if (startSeed) startSeed.textContent = "LEVEL 0 GENERATION FAILED — CHOOSE ANOTHER RANDOM SEED";
@@ -1834,20 +1432,19 @@ const Level = {
     // before loading meshes so DARK/NORMAL/BRIGHT modules work again after
     // returning from Level 1 or pressing G to regenerate.
     if (sceneRef) {
-      sceneRef.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
+      sceneRef.fog = Level.makeFog();
       sceneRef.background = new THREE.Color(CONFIG.fogColor);
     }
     this.loadGenerated(result);
+    LevelGenerator.last = result;
     Stairwell.planFrom(result);
-    this.buildColliders();
-    if (!this.colliders.length) {
-      throw new Error("Level 0 built without collision geometry.");
-    }
+    // A fresh visit: every station and elevator starts unpowered. Must precede
+    // buildMeshes so the first streamed chunks already know their stations.
+    if (typeof ActivitySystem !== "undefined") ActivitySystem.beginVisit(0, result);
+    if (typeof PassC !== "undefined" && PassC.beginWorld) PassC.beginWorld(result.seed);
+    if (typeof PickupSystem !== "undefined" && PickupSystem.beginLevel0) PickupSystem.beginLevel0(result.seed);
     this.buildMeshes(sceneRef);
-    Stairwell.build(sceneRef);
     SpawnManager.apply(result);
-    PickupSystem.generate(result.seed);
-    if (typeof PassC !== "undefined") PassC.generate(result.seed);
     const seedEl = document.getElementById("hud-seed-val");
     if (seedEl) seedEl.textContent = String(result.seed);
     const startSeed = document.getElementById("start-seed");
