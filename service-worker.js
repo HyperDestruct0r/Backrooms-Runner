@@ -1,5 +1,5 @@
 /* Backrooms Runner PWA cache. Bump CACHE_VERSION when publishing future updates. */
-const CACHE_VERSION = 'backrooms-runner-v41';
+const CACHE_VERSION = 'backrooms-runner-v44';
 const APP_CACHE = `${CACHE_VERSION}-app`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const APP_SHELL = [
@@ -33,6 +33,7 @@ const APP_SHELL = [
   "./css/systems/auth.css",
   "./css/systems/chat.css",
   "./css/systems/menu.css",
+  "./css/systems/activity.css",
   "./css/systems/transitions.css",
   "./css/systems/tutorial.css",
   "./icons/icon-192.png",
@@ -45,6 +46,15 @@ const APP_SHELL = [
   "./js/entities/smiler.js",
   "./js/game.js",
   "./js/levels/level0.js",
+  "./js/levels/level0-sites.js",
+  "./js/levels/level0-world.js",
+  "./js/systems/quality.js",
+  "./js/levels/level0-activities.js",
+  "./js/levels/level0-markings.js",
+  "./js/systems/activity-system.js",
+  "./js/systems/activity-ui.js",
+  "./js/activities/electrical-puzzle.js",
+  "./js/activities/electrical.js",
   "./js/levels/level1.js",
   "./js/levels/level2.js",
   "./js/levels/level3.js",
