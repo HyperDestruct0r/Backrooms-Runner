@@ -1126,7 +1126,7 @@ const Level3 = {
     this._arrived = true;
     if (typeof Level4 !== "undefined") {
       const sd = this.seed;
-      setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => Level4.enter(sd, 3)); else Level4.enter(sd, 3); }, 0);
+      setTimeout(() => { if (typeof VoidTransition !== "undefined") VoidTransition.then(() => Level4.enter(sd, 3), { from: 3, to: 4, physical: true }); else Level4.enter(sd, 3); }, 0);
       return;
     }
     GameState.exitReached = true;
