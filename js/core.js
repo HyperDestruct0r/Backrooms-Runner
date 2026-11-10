@@ -557,7 +557,7 @@ const MobileControls = {
           if (GameState.phase !== 'playing') return;
           if (action === 'flashlight') Flashlight.toggle();
           else if (action === 'inventory') Inventory.toggle();
-          else if (action === 'use' && !GameState.inventoryOpen) PickupSystem.tryPickup();
+          else if (action === 'use' && !GameState.inventoryOpen) { if (!(typeof ActivitySystem !== "undefined" && ActivitySystem.tryUse())) PickupSystem.tryPickup(); }
         };
         btn.addEventListener('pointerup', activate, {passive:false});
         if (!window.PointerEvent) btn.addEventListener('touchend', e => activate(e), {passive:false});
@@ -646,8 +646,11 @@ function isAuthModalOpen() {
     Number(style.opacity || 1) > 0;
 }
 
+// While a maintenance terminal is open it owns the keyboard: no game binding may fire through it.
+function isActivityPanelOpen() { return typeof ActivitySystem !== "undefined" && ActivitySystem.interfaceOpen; }
+
 window.addEventListener("keydown", (e) => {
-  if (isTextEntryTarget(e.target) || isAuthModalOpen()) {
+  if (isTextEntryTarget(e.target) || isAuthModalOpen() || isActivityPanelOpen()) {
     // Prevent a movement key held just before opening the modal from sticking.
     clearInput();
     return;
@@ -741,6 +744,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === CONFIG.keys.use && GameState.ready && GameState.phase === "playing" && !GameState.inventoryOpen && !e.repeat) {
     e.preventDefault();
+    if (typeof ActivitySystem !== "undefined" && ActivitySystem.tryUse()) return;
     if (typeof Level2 !== "undefined" && Level2.tryUse && Level2.tryUse()) return;
     if (typeof Level3 !== "undefined" && Level3.tryUse && Level3.tryUse()) return;
     if (typeof Level4 !== "undefined" && Level4.tryUse && Level4.tryUse()) return;
@@ -753,7 +757,7 @@ window.addEventListener("keydown", (e) => {
   }
 }, true);
 window.addEventListener("keyup", (e) => {
-  if (isTextEntryTarget(e.target) || isAuthModalOpen()) {
+  if (isTextEntryTarget(e.target) || isAuthModalOpen() || isActivityPanelOpen()) {
     clearInput();
     return;
   }
@@ -774,7 +778,26 @@ function setPauseOverlay(show) {
 }
 window.addEventListener("blur", clearInput);
 window.addEventListener("focus", clearInput);
-document.addEventListener("visibilitychange", () => { if (document.hidden) clearInput(); });
+// Leaving the tab or app: drop held input, pause a touch-device run (it has no pointer lock to do it for us), and
+// suspend audio so nothing keeps mixing in the background. Coming back resumes only what we suspended.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    clearInput();
+    if (typeof GameState !== "undefined" && GameState.phase === "playing" && typeof DeviceMode !== "undefined" && DeviceMode.mobile &&
+        !GameState.inventoryOpen && !(typeof Stairwell !== "undefined" && Stairwell.sequenceActive) && !GameState.cutscene) {
+      setPauseOverlay(true);
+      Input.locked = false;
+      if (typeof MobileControls !== "undefined" && MobileControls.resetToggles) MobileControls.resetToggles();
+    }
+    if (typeof AudioSystem !== "undefined" && AudioSystem.ctx && AudioSystem.ctx.state === "running") {
+      AudioSystem._suspendedByHide = true;
+      try { AudioSystem.ctx.suspend(); } catch (_) {}
+    }
+  } else if (typeof AudioSystem !== "undefined" && AudioSystem._suspendedByHide) {
+    AudioSystem._suspendedByHide = false;
+    try { AudioSystem.ctx.resume(); } catch (_) {}
+  }
+});
 
 document.addEventListener("mousemove", (e) => {
   if (!Input.locked) return;
@@ -907,6 +930,14 @@ const AudioSystem = {
 
   setListener(pos, yaw) {
     if (!this.ctx || !this.ctx.listener) return;
+    this._lx = pos.x; this._ly = pos.y + 1.5; this._lz = pos.z;
+    // Nine automation events per frame piled up on the audio thread; send one set only when something moved.
+    const now = this.ctx.currentTime;
+    if (this._lastListenT !== undefined && now - this._lastListenT < 0.033 &&
+        Math.abs(pos.x - this._pX) < 0.3 && Math.abs(pos.z - this._pZ) < 0.3 && Math.abs(yaw - this._pYaw) < 0.05) return;
+    if (this._pX !== undefined && Math.abs(pos.x - this._pX) < 0.001 && Math.abs(pos.z - this._pZ) < 0.001 &&
+        Math.abs(pos.y - this._pY) < 0.001 && Math.abs(yaw - this._pYaw) < 0.0005) return;
+    this._lastListenT = now; this._pX = pos.x; this._pY = pos.y; this._pZ = pos.z; this._pYaw = yaw;
     const l = this.ctx.listener;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     if (l.positionX) {
@@ -976,8 +1007,14 @@ const AudioSystem = {
   playPositional(kind, x, y, z, opts) {
     if (!this.ctx) return;
     opts = opts || {};
+    // Far beyond its own audible range a one-shot only costs a panner, a buffer and filters: skip it.
+    if (this._lx !== undefined) {
+      const dx = x - this._lx, dz = z - this._lz, lim = (opts.max || 90) * 1.6;
+      if (dx * dx + dz * dz > lim * lim) return;
+    }
     const panner = this.ctx.createPanner();
-    panner.panningModel = "HRTF";
+    // HRTF convolves every source; on a phone that is real CPU. Equal-power panning is the cheap stand-in.
+    panner.panningModel = (typeof Quality !== "undefined" && Quality.name !== "high") ? "equalpower" : "HRTF";
     panner.distanceModel = "inverse";
     panner.refDistance = opts.ref || 6;
     panner.maxDistance = opts.max || 90;
@@ -1068,13 +1105,19 @@ const AudioSystem = {
    LIGHTING — basic now. VERSION 3 should replace internals.
    ------------------------------------------------------------------ */
 const LightingSystem = {
-  lights: [],
+  lights: [],        // the pooled point lights currently in the scene: a FIXED count (see below)
   fixtures: [],
-  units: [],
+  units: [],         // fluorescent fixtures (panel + optional light)
+  localUnits: [],    // small local lights (elevator doorways); no panel
   hemi: null,
   ambient: null,
   eventTimer: 0,
   clusterUntil: 0,
+  poolSize: 24,      // set from Quality; 0 disables point lights entirely
+  poolGain: 1.07,    // compensates the light that the dropped far fixtures used to add (measured: tests/perf/lightpool-fidelity.js)
+  _scene: null,
+  _assignT: 0,
+  _frame: 0,
   intensityMultiplier() {
     const value = Number(CONFIG.level0LightingPercent);
     return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 100)) / 100;
@@ -1083,7 +1126,7 @@ const LightingSystem = {
     CONFIG.level0LightingPercent = Math.max(0, Math.min(100, Number(value) || 0));
     const mult = this.intensityMultiplier();
     for (const u of this.units) {
-      if (u.light) u.light.intensity = u.state === "BROKEN" ? 0 : u.baseIntensity * (u.state === "DIM" ? 0.42 : 1) * mult;
+      this._setI(u, u.state === "BROKEN" ? 0 : u.baseIntensity * (u.state === "DIM" ? 0.42 : 1) * mult);
       if (u.panelMat) u.panelMat.emissiveIntensity = (u.state === "BROKEN" ? 0.04 : u.state === "DIM" ? 0.4 : 1.35) * mult;
     }
   },
@@ -1096,18 +1139,97 @@ const LightingSystem = {
     scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
     scene.background = new THREE.Color(CONFIG.fogColor);
   },
-  addFluorescent(scene, x, y, z, withPoint, intensityScale, forcedState) {
-    const housing = new THREE.Mesh(Geometries.lightHousing, Materials.lightHousing);
-    housing.position.set(x, y + 0.02, z);
-    scene.add(housing);
-    this.fixtures.push(housing);
 
+  /* ---- light pool ----
+     three.js compiles a different shader whenever the NUMBER of point lights in a scene changes, and
+     every fragment loops over every point light. Level 0 used to add one PointLight per module as its
+     chunks streamed in and drop it as they streamed out: tens of lights, a different count every few
+     seconds, i.e. a shader recompile (a visible hitch, worst on phones) at each chunk change.
+     Now a fixed number of lights is created once per Level 0 run and handed to the fixtures nearest the
+     player, so the count never changes. Fixtures without a light still glow (their panel is emissive). */
+  ensurePool(scene) {
+    this._scene = scene || this._scene;
+    const s = this._scene; if (!s) return;
+    while (this.lights.length < this.poolSize) {
+      const l = new THREE.PointLight(0xfff1c4, 0, 100, 1.0);
+      l.position.set(0, -50, 0);
+      l._unit = null;
+      s.add(l); this.lights.push(l);
+    }
+    while (this.lights.length > this.poolSize) {
+      const l = this.lights.pop();
+      if (l._unit) { l._unit.light = null; l._unit = null; }
+      s.remove(l);
+    }
+    this._assignT = 0;
+  },
+  setPoolSize(n) {
+    this.poolSize = Math.max(0, n | 0);
+    if (this.lights.length && this._scene) this.ensurePool(this._scene);
+  },
+  releasePool(sceneRef) {
+    const s = sceneRef || this._scene;
+    for (const l of this.lights) { if (l._unit) { l._unit.light = null; l._unit = null; } if (s) s.remove(l); }
+    this.lights.length = 0;
+  },
+  _setI(u, v) { u.curI = v; if (u.light) u.light.intensity = u.local ? v : v * this.poolGain; },
+  // Give the pool to the fixtures nearest (px, pz). A fixture that already holds a light keeps it unless
+  // another is clearly closer, so lights do not trade places back and forth at a boundary.
+  assign(px, pz) {
+    const K = this.lights.length;
+    if (!K) return;
+    const best = this._best || (this._best = []);
+    best.length = 0;
+    const consider = (u) => {
+      if (!u.wantsLight || u.state === "BROKEN") return;
+      const dx = u.x - px, dz = u.z - pz;
+      let d2 = dx * dx + dz * dz;
+      if (u.light) d2 *= 0.55;
+      if (best.length === K && d2 >= best[K - 1].d2) return;
+      let i = best.length < K ? best.length : K - 1;
+      if (best.length < K) best.push(null);
+      while (i > 0 && best[i - 1].d2 > d2) { best[i] = best[i - 1]; i--; }
+      best[i] = { u, d2 };
+    };
+    for (let i = 0; i < this.units.length; i++) consider(this.units[i]);
+    for (let i = 0; i < this.localUnits.length; i++) consider(this.localUnits[i]);
+    for (let i = 0; i < best.length; i++) best[i].u._chosen = true;
+    // free lights whose unit lost
+    const free = this._free || (this._free = []);
+    free.length = 0;
+    for (let i = 0; i < K; i++) {
+      const l = this.lights[i], u = l._unit;
+      if (!u) { free.push(l); continue; }
+      if (!u._chosen) { u.light = null; l._unit = null; l.intensity = 0; free.push(l); }
+    }
+    for (let i = 0; i < best.length; i++) {
+      const u = best[i].u;
+      if (!u.light && free.length) {
+        const l = free.pop();
+        l._unit = u; u.light = l;
+        l.position.set(u.x, u.ly, u.z);
+        l.color.setHex(u.color); l.distance = u.lightDistance; l.decay = u.decay;
+        l.intensity = u.local ? u.curI : u.curI * this.poolGain;
+      }
+    }
+    for (let i = 0; i < best.length; i++) best[i].u._chosen = false;
+    for (let i = 0; i < free.length; i++) free[i].intensity = 0;
+  },
+
+  addFluorescent(parent, x, y, z, withPoint, intensityScale, forcedState, housingSink) {
     const panelMat = Materials.light.clone();
     const panel = new THREE.Mesh(Geometries.lightPanel, panelMat);
     panel.position.set(x, y - 0.04, z);
     panel.rotation.x = Math.PI / 2;
-    scene.add(panel);
+    parent.add(panel);
     this.fixtures.push(panel);
+    if (housingSink) housingSink.push([x, y + 0.02, z]);
+    else {
+      const housing = new THREE.Mesh(Geometries.lightHousing, Materials.lightHousing);
+      housing.position.set(x, y + 0.02, z);
+      parent.add(housing);
+      this.fixtures.push(housing);
+    }
 
     const roll = Math.random();
     let state = forcedState || "NORMAL";
@@ -1116,30 +1238,21 @@ const LightingSystem = {
       else if (roll < 0.05) state = "FLICKERING";
       else if (roll < 0.14) state = "DIM";
     }
-
-    let light = null;
     const base = (intensityScale == null ? 1 : intensityScale) * 3.3;
-    if (withPoint && state !== "BROKEN") {
-      // A longer inverse-square falloff avoids the hard-looking 25m light
-      // cutoff visible on walls. The fixture should fade into neighboring
-      // pools of light rather than changing wall color abruptly.
-      light = new THREE.PointLight(0xfff1c4, (state === "DIM" ? base * 0.42 : base) * this.intensityMultiplier(), 100, 1.0);
-      light.position.set(x, y - 0.28, z);
-      scene.add(light);
-      this.lights.push(light);
-    }
     if (state === "BROKEN") {
       panelMat.emissiveIntensity = 0.05;
       panelMat.color.setHex(0x9a9070);
     } else if (state === "DIM") {
       panelMat.emissiveIntensity = 0.45;
     }
-
     const unit = {
       state: state,
       homeState: state,
-      x: x, y: y, z: z,
-      light: light,
+      x: x, y: y, z: z, ly: y - 0.28,
+      wantsLight: !!withPoint,
+      light: null,
+      curI: state === "BROKEN" ? 0 : (state === "DIM" ? base * 0.42 : base) * this.intensityMultiplier(),
+      color: 0xfff1c4, lightDistance: 100, decay: 1.0,
       panel: panel,
       panelMat: panelMat,
       baseIntensity: base,
@@ -1147,24 +1260,51 @@ const LightingSystem = {
       flickerPhase: Math.random() * Math.PI * 2,
       burstLeft: 0,
       ambientFlickerT: 2 + Math.random() * 9,
-      ambientFlickerLeft: 0
+      ambientFlickerLeft: 0,
+      _chosen: false
     };
     this.units.push(unit);
+    this._assignT = 0;
     return unit;
+  },
+  // A small local light with no fixture (the glow in front of an elevator). It uses the same pool.
+  addLocalLight(x, y, z, o) {
+    const u = {
+      state: "NORMAL", homeState: "NORMAL", x: x, y: y, z: z, ly: y, wantsLight: true, light: null,
+      curI: o.intensity * this.intensityMultiplier(), baseIntensity: o.intensity, color: o.color, lightDistance: o.distance, decay: o.decay,
+      panel: null, panelMat: null, local: true, _chosen: false
+    };
+    this.localUnits.push(u);
+    this._assignT = 0;
+    return u;
+  },
+  // Remove a fixture or local light and release its resources. The caller removes its meshes from the scene
+  // (they live in the chunk group, which is dropped as a whole).
+  removeUnit(u) {
+    if (!u) return;
+    if (u.light) { u.light.intensity = 0; u.light._unit = null; u.light = null; }
+    const arr = u.local ? this.localUnits : this.units;
+    const i = arr.indexOf(u);
+    if (i >= 0) { arr[i] = arr[arr.length - 1]; arr.pop(); }
+    if (u.panel) { const f = this.fixtures.indexOf(u.panel); if (f >= 0) { this.fixtures[f] = this.fixtures[this.fixtures.length - 1]; this.fixtures.pop(); } }
+    if (u.panelMat && u.panelMat.dispose) u.panelMat.dispose();
+    this._assignT = 0;
   },
   setFixtureState(unit, state) {
     if (!unit) return;
     unit.state = state;
+    const m = this.intensityMultiplier();
     if (state === "BROKEN") {
-      if (unit.light) unit.light.intensity = 0;
-      unit.panelMat.emissiveIntensity = 0.04 * this.intensityMultiplier();
+      this._setI(unit, 0);
+      if (unit.panelMat) unit.panelMat.emissiveIntensity = 0.04 * m;
     } else if (state === "DIM") {
-      if (unit.light) unit.light.intensity = unit.baseIntensity * 0.42 * this.intensityMultiplier();
-      unit.panelMat.emissiveIntensity = 0.4 * this.intensityMultiplier();
+      this._setI(unit, unit.baseIntensity * 0.42 * m);
+      if (unit.panelMat) unit.panelMat.emissiveIntensity = 0.4 * m;
     } else if (state === "NORMAL") {
-      if (unit.light) unit.light.intensity = unit.baseIntensity * this.intensityMultiplier();
-      unit.panelMat.emissiveIntensity = 1.35 * this.intensityMultiplier();
+      this._setI(unit, unit.baseIntensity * m);
+      if (unit.panelMat) unit.panelMat.emissiveIntensity = 1.35 * m;
     }
+    this._assignT = 0;
   },
   triggerClusterEvent(cx, cz, radius) {
     const r2 = (radius || 18) * (radius || 18);
@@ -1184,6 +1324,13 @@ const LightingSystem = {
     AudioSystem.playPositional("pop", cx, 2.6, cz, { gain: 0.07, bus: "electrical" });
   },
   update(dt) {
+    this._frame++;
+    // keep the pool on the fixtures nearest the player (about 8 times a second)
+    this._assignT -= dt;
+    if (this._assignT <= 0) {
+      this._assignT = 0.12;
+      if (typeof Player !== "undefined" && Player.position) this.assign(Player.position.x, Player.position.z);
+    }
     if (this.clusterUntil > 0) {
       this.clusterUntil -= dt;
       if (this.clusterUntil <= 0) {
@@ -1192,32 +1339,45 @@ const LightingSystem = {
         }
       }
     }
+    const m = this.intensityMultiplier();
+    const px = Player.position.x, pz = Player.position.z;
+    const frame = this._frame;
+    const now = performance.now();
     for (let i = 0; i < this.units.length; i++) {
       const u = this.units[i];
+      // Fixtures far from the player are updated every fourth frame, with the time they missed: nobody can
+      // see a distant panel's individual flicker, and this loop used to touch every loaded fixture each frame.
+      let step = dt;
+      const dx = u.x - px, dz = u.z - pz;
+      if (dx * dx + dz * dz > 3600) { if ((frame + i) & 3) continue; step = dt * 4; }
       // Healthy and dim fixtures occasionally flicker independently. Each
       // fixture has its own randomized timer, so the whole maze never blacks
       // out in synchronized unison.
       if (u.state === "NORMAL" || u.state === "DIM") {
-        u.ambientFlickerT -= dt;
+        u.ambientFlickerT -= step;
+        const dim = u.state === "DIM";
+        const stateMult = dim ? 0.42 : 1;
         if (u.ambientFlickerT <= 0) {
           u.ambientFlickerLeft = 0.08 + Math.random() * 0.22;
           u.ambientFlickerT = 4 + Math.random() * 10;
         }
         if (u.ambientFlickerLeft > 0) {
-          u.ambientFlickerLeft -= dt;
+          u.ambientFlickerLeft -= step;
           const dip = Math.random() < 0.72 ? 0.48 + Math.random() * 0.32 : 0.9 + Math.random() * 0.1;
-          const stateMult = u.state === "DIM" ? 0.42 : 1;
-          if (u.light) u.light.intensity = u.baseIntensity * stateMult * dip * this.intensityMultiplier();
-          u.panelMat.emissiveIntensity = (u.state === "DIM" ? 0.4 : 1.35) * dip * this.intensityMultiplier();
-        } else {
-          const stateMult = u.state === "DIM" ? 0.42 : 1;
-          if (u.light) u.light.intensity = u.baseIntensity * stateMult * this.intensityMultiplier();
-          u.panelMat.emissiveIntensity = (u.state === "DIM" ? 0.4 : 1.35) * this.intensityMultiplier();
+          this._setI(u, u.baseIntensity * stateMult * dip * m);
+          u.panelMat.emissiveIntensity = (dim ? 0.4 : 1.35) * dip * m;
+          u._steady = false;
+        } else if (!u._steady) {
+          // back to steady: write once, not every frame
+          this._setI(u, u.baseIntensity * stateMult * m);
+          u.panelMat.emissiveIntensity = (dim ? 0.4 : 1.35) * m;
+          u._steady = true;
         }
         continue;
       }
       if (u.state !== "FLICKERING") continue;
-      u.flickerT -= dt;
+      u._steady = false;
+      u.flickerT -= step;
       if (u.flickerT <= 0) {
         u.burstLeft = 0.12 + Math.random() * 0.55;
         u.flickerT = 0.4 + Math.random() * 2.8;
@@ -1227,13 +1387,13 @@ const LightingSystem = {
       }
       let amp = 0.72;
       if (u.burstLeft > 0) {
-        u.burstLeft -= dt;
+        u.burstLeft -= step;
         amp = Math.random() < 0.55 ? (0.15 + Math.random() * 0.5) : (0.7 + Math.random() * 0.5);
       } else {
-        amp = 0.55 + Math.sin(performance.now() * 0.012 + u.flickerPhase) * 0.2;
+        amp = 0.55 + Math.sin(now * 0.012 + u.flickerPhase) * 0.2;
       }
-      if (u.light) u.light.intensity = u.baseIntensity * amp * this.intensityMultiplier();
-      u.panelMat.emissiveIntensity = (0.35 + amp * 0.9) * this.intensityMultiplier();
+      this._setI(u, u.baseIntensity * amp * m);
+      u.panelMat.emissiveIntensity = (0.35 + amp * 0.9) * m;
     }
   },
   triggerNearPlayer(pos) {
@@ -1241,13 +1401,15 @@ const LightingSystem = {
   },
   snapshot(unit) {
     if (!unit) return null;
-    return { state: unit.state, inten: unit.light ? unit.light.intensity : 0, em: unit.panelMat.emissiveIntensity };
+    return { state: unit.state, inten: unit.curI, em: unit.panelMat ? unit.panelMat.emissiveIntensity : 0 };
   },
   applySnapshot(unit, snap) {
     if (!unit || !snap) return;
     unit.state = snap.state;
-    if (unit.light) unit.light.intensity = snap.inten;
-    unit.panelMat.emissiveIntensity = snap.em;
+    this._setI(unit, snap.inten);
+    if (unit.panelMat) unit.panelMat.emissiveIntensity = snap.em;
+    unit._steady = false;
+    this._assignT = 0;
   },
   unitsNear(x, z, maxDist, limit) {
     const out = [];
@@ -1272,11 +1434,8 @@ const LightingSystem = {
   clear(sceneRef) {
     const s = sceneRef || scene;
     if (!s) return;
-    for (let i = 0; i < this.lights.length; i++) {
-      const light = this.lights[i];
-      if (light && light.shadow && light.shadow.dispose) light.shadow.dispose();
-      s.remove(light);
-    }
+    // The pool leaves the scene with Level 0 so other levels do not pay for its lights.
+    this.releasePool(s);
     for (let i = 0; i < this.fixtures.length; i++) {
       const fixture = this.fixtures[i];
       // Fixture panel materials are cloned per generated run. Their texture
@@ -1286,9 +1445,9 @@ const LightingSystem = {
       }
       s.remove(fixture);
     }
-    this.lights.length = 0;
     this.fixtures.length = 0;
     this.units.length = 0;
+    this.localUnits.length = 0;
     this.clusterUntil = 0;
   },
   // VERSION 3 hooks
@@ -1304,4 +1463,3 @@ const LightingSystem = {
     }
   }
 };
-
