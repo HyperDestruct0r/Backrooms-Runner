@@ -1,0 +1,11 @@
+/* Achievement unlock banner (Pass 7B). Placeholder styling; final badge treatment is Pass 7D. Never intercepts input. */
+.ach-toast-root { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 50%; transform: translateX(-50%); z-index: 9000; width: min(92vw, 360px); pointer-events: none; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.ach-toast { display: flex; gap: 10px; align-items: center; padding: 10px 14px; background: rgba(12, 12, 10, 0.88); border: 1px solid rgba(220, 210, 150, 0.45); color: #ece6c4; font-family: inherit; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5); opacity: 0; transform: translateY(-8px); transition: opacity 0.25s ease, transform 0.25s ease; pointer-events: none; }
+.ach-toast.show { opacity: 1; transform: none; }
+.ach-toast-icon { font-size: 26px; line-height: 1; color: #d9c96a; flex: 0 0 auto; }
+.ach-toast-body { min-width: 0; }
+.ach-toast-head { font-size: 10px; letter-spacing: 0.16em; opacity: 0.7; }
+.ach-toast-name { font-size: 15px; font-weight: 700; margin-top: 2px; }
+.ach-toast-desc { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+.ach-toast-rarity { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.6; margin-top: 3px; }
+@media (prefers-reduced-motion: reduce) { .ach-toast { transition: none; transform: none; } }
