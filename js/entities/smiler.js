@@ -429,7 +429,7 @@ const SmilerSystem = {
           s.x += (-dx / (d || 1)) * 12.5 * dt;
           s.z += (-dz / (d || 1)) * 12.5 * dt;
           s.mesh.position.set(s.x, 0.15, s.z);
-          if (s.exposureT >= CONFIG.flashlight.smilerExposureTime) this.deactivate(s);
+          if (s.exposureT >= CONFIG.flashlight.smilerExposureTime) { if (typeof Progression !== "undefined") Progression.entityEvent("defeated", "smiler", s, "flashlight_repulsion"); this.deactivate(s); }
         } else {
           s.exposureT = 0;
           s.mesh.traverse(o => { if (o.material && o.material.transparent) o.material.opacity = 1; });
@@ -473,7 +473,7 @@ const SmilerSystem = {
         s.z += awayZ*12.5*dt;
         s.mesh.position.set(s.x,0.15,s.z);
         s.mesh.lookAt(Player.position.x,Player.position.y+1.25,Player.position.z);
-        if(s.exposureT>=CONFIG.flashlight.smilerExposureTime) this.deactivate(s);
+        if(s.exposureT>=CONFIG.flashlight.smilerExposureTime){ if (typeof Progression !== "undefined") Progression.entityEvent("defeated","smiler",s,"flashlight_repulsion"); this.deactivate(s); }
         continue;
       }
       s.exposureT=0;
@@ -481,6 +481,7 @@ const SmilerSystem = {
 
       if(s.visibleToPlayer){
         visibleCount++;
+        if(!s._enc){ s._enc=true; if (typeof Progression !== "undefined") Progression.entityEvent("encountered","smiler",s); }
         // Quickly close distance, then orbit/hover around the 5m mark.
         const desired=Math.max(4.2,Math.min(5.0,d));
         if(d>desired){
