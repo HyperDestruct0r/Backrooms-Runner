@@ -190,6 +190,7 @@ const Game = {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.28;
     document.body.appendChild(renderer.domElement);
+    if (typeof Progression !== "undefined") Progression.init();   // statistics: loads local progression, recovers a run that was never finalized
     if (typeof Quality !== "undefined") Quality.init();   // graphics profile: pooled lights, Level 0 fog distance, render scale
 
     CameraRig.init();
@@ -350,6 +351,8 @@ const Game = {
     GameState.level = 0;
     GameState.testBeta = testBeta;
     if (tutorial) GameState.tutorial = true;
+    // Tutorial runs are excluded from progression. Test Beta and Classic runs count normally (generator choice never decides eligibility).
+    if (typeof Progression !== "undefined") Progression.startRun({ test: tutorial, seed: GameState.seed });
     const betaBanner = document.getElementById("beta-run-warning");
     if (betaBanner) betaBanner.style.display = testBeta ? "block" : "none";
     if (typeof HUD !== "undefined" && HUD.setFpsVisible) HUD.setFpsVisible(testBeta || !!(typeof MenuSystem !== "undefined" && MenuSystem.settings && MenuSystem.settings.showFps));
@@ -373,6 +376,7 @@ const Game = {
 
   leaveRun() {
     if (GameState.phase !== "playing") return;
+    if (typeof Progression !== "undefined") Progression.endRun("abandonment");
     this._stopRunRecording(false);
 
     // Abandoning a run deliberately does not call AuthSystem.recordRun().
@@ -484,6 +488,7 @@ const Game = {
     GameState.level = 0;
     GameState.cinematicCamera = false;
     GameState.cutscene = false;
+    if (typeof Progression !== "undefined") Progression.startRun({ test: !!GameState.tutorial, seed: GameState.seed });   // regenerating restarts the run; the one it replaces ends as abandoned
     AudioSystem.resume();
     AudioSystem.setLevel(GameState.level);
     GameState.regenerating = false;
@@ -493,6 +498,7 @@ const Game = {
 
   complete() {
     if (GameState.phase !== "playing") return;
+    if (typeof Progression !== "undefined") Progression.endRun("escape");
   
     GameState.phase = "complete";
     setPauseOverlay(false);
@@ -519,6 +525,7 @@ const Game = {
   
   gameOver() {
     if (GameState.phase !== "playing") return;
+    if (typeof Progression !== "undefined") Progression.endRun("death");
   
     GameState.phase = "complete";
     setPauseOverlay(false);
