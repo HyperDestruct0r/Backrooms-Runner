@@ -3,8 +3,7 @@
 /* ------------------------------------------------------------------
    ACHIEVEMENT NOTIFICATIONS  (Pass 7 / Checkpoint 7B)
 
-   A small, temporary "achievement unlocked" banner. Placeholder presentation only: the final badge art, animation and sound
-   belong to Pass 7D.
+   A small, temporary "achievement unlocked" banner. Pass 7D: shows the real badge artwork; no sound, no description.
 
    - Shown only for a real unlock (AchievementSystem.onUnlock fires once per unlock; duplicates never reach here).
    - pointer-events: none and no focus handling, so it can never block controls or input.
@@ -32,12 +31,17 @@ const AchievementNotifier = (() => {
         if (!ensure()) return;
         el = make("div", "ach-toast");
         el.setAttribute("data-rarity", n.rarity);
-        el.appendChild(make("div", "ach-toast-icon", "\u2605"));                 // placeholder icon (final badge art is Pass 7D)
+        // Pass 7D: the real artwork (the same file the achievement browser uses) on a rarity-coloured badge, then "Achievement unlocked!" and the name.
+        const icon = make("div", "ach-toast-icon"); icon.setAttribute("data-rarity", n.rarity);
+        if (n.art) {
+          const im = make("img"); im.alt = ""; im.width = 96; im.height = 96; im.decoding = "async";
+          im.onerror = () => { if (typeof AchievementArt !== "undefined" && im.getAttribute("src") !== AchievementArt.FALLBACK) im.setAttribute("src", AchievementArt.FALLBACK); };   // a missing icon file falls back to the generic medal (a load handler, not an input handler)
+          im.setAttribute("src", n.art); icon.appendChild(im);
+        }
+        el.appendChild(icon);
         const body = make("div", "ach-toast-body");
-        body.appendChild(make("div", "ach-toast-head", n.summary ? "ACHIEVEMENTS UNLOCKED" : "ACHIEVEMENT UNLOCKED"));
+        body.appendChild(make("div", "ach-toast-head", n.summary ? "Achievements unlocked!" : "Achievement unlocked!"));
         body.appendChild(make("div", "ach-toast-name", n.name));
-        if (n.description) body.appendChild(make("div", "ach-toast-desc", n.description));
-        if (n.rarityLabel) body.appendChild(make("div", "ach-toast-rarity", n.rarityLabel));
         el.appendChild(body); root.appendChild(el);
         requestAnimationFrameSafe(() => { if (el) el.classList.add("show"); });
       },
@@ -55,13 +59,13 @@ const AchievementNotifier = (() => {
     const diag = { shown: 0, queued: 0, summarized: 0 };
 
     function toView(u) {
-      return { id: u.id, name: u.name, description: u.description, rarity: u.rarity, rarityLabel: RARITY_LABEL[u.rarity] || "", rewards: (u.rewards || []).map(r => r.name) };
+      return { id: u.id, name: u.name, description: u.description, rarity: u.rarity, rarityLabel: RARITY_LABEL[u.rarity] || "", rewards: (u.rewards || []).map(r => r.name), art: (typeof AchievementArt !== "undefined" && u.id) ? AchievementArt.urlFor(u) : null };
     }
     function next() {
       timer = null; current = null;
       let n = null;
       if (queue.length) n = queue.shift();
-      else if (overflow > 0) { n = { id: null, summary: true, name: "+" + overflow + " more", description: "", rarity: "common", rarityLabel: "", rewards: [] }; diag.summarized += overflow; overflow = 0; }
+      else if (overflow > 0) { n = { id: null, summary: true, name: "+" + overflow + " more", description: "", rarity: "common", rarityLabel: "", rewards: [], art: (typeof AchievementArt !== "undefined") ? AchievementArt.FALLBACK : null }; diag.summarized += overflow; overflow = 0; }
       if (!n) return;
       current = n; diag.shown++;
       try { adapter.show(n); } catch (_) { /* a rendering problem must never reach gameplay */ }
