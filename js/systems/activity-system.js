@@ -162,6 +162,7 @@ const ActivitySystem = {
     if (inst.completed) return false;
     inst.completed = true;
     inst.completedAt = (typeof GameState !== "undefined" && GameState.elapsed) || 0;
+    if (typeof Progression !== "undefined") Progression.activityCompleted(inst);
     this.grantRewards(inst);
     const v = this._visuals.get(inst.siteId);
     if (v && v.setCompleted) v.setCompleted(true);
