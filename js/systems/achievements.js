@@ -29,6 +29,7 @@ const AchievementSystem = (() => {
   const TS_MAX = 1e14;
   const num = (x, max) => (isNum(x) && x >= 0) ? Math.min(x, max == null ? 1e12 : max) : 0;
   const str = (v, n) => (typeof v === "string" ? v.slice(0, n || 96) : "");
+  const rewardTypeOf = (id, defs) => (defs && defs[id] ? defs[id].type : (typeof id === "string" ? id.split(".")[0] : null));
 
   /* ---------------- metrics ----------------
      Each metric: deps = bus events after which its value can change; get(snap, arg) -> number | null (null = not available).
@@ -100,7 +101,10 @@ const AchievementSystem = (() => {
   const progressCond = (c) => c.t === "threshold" && "gte" in c ? c : null;
 
   /* ---------------- persistence model ---------------- */
-  const blank = (now) => ({ schema: SCHEMA, createdAt: now, updatedAt: now, unlocked: {}, progress: {}, rewards: {}, showcase: [], selected: { title: null, emblem: null } });
+  // Pass 7C: `selectedAt` / `showcaseAt` are the times of the player's last intentional choice. They exist only so two devices can
+  // tell which choice is newer. They are additive: an older build ignores them, and a file without them loads with 0 (never chosen).
+  const SLOTS = ["title", "emblem", "nameplate", "decoration"];
+  const blank = (now) => ({ schema: SCHEMA, createdAt: now, updatedAt: now, unlocked: {}, progress: {}, rewards: {}, showcase: [], showcaseAt: 0, selected: { title: null, emblem: null, nameplate: null, decoration: null }, selectedAt: {} });
 
   /* ---------------- module state ---------------- */
   let catalog = null, rewardDefs = null, byId = new Map(), index = new Map(), bus = null, stats = null, store = null, unsubscribeBus = null;
@@ -122,7 +126,13 @@ const AchievementSystem = (() => {
     if (s.rewards && typeof s.rewards === "object") for (const id of Object.keys(s.rewards)) { const r = s.rewards[id]; if (r && typeof r === "object") d.rewards[str(id)] = { at: num(r.at, TS_MAX), by: str(r.by) }; }
     if (Array.isArray(s.showcase)) d.showcase = s.showcase.filter(x => typeof x === "string" && d.unlocked[x]).slice(0, MAX_SHOWCASE);
     const sel = s.selected && typeof s.selected === "object" ? s.selected : {};
-    d.selected = { title: typeof sel.title === "string" && d.rewards[sel.title] ? sel.title : null, emblem: typeof sel.emblem === "string" && d.rewards[sel.emblem] ? sel.emblem : null };
+    const selAt = s.selectedAt && typeof s.selectedAt === "object" ? s.selectedAt : {};
+    for (const slot of SLOTS) {      // only an OWNED reward of the right type can be equipped
+      const id = sel[slot];
+      d.selected[slot] = (typeof id === "string" && d.rewards[id] && rewardTypeOf(id, rewards) === slot) ? id : null;
+      if (isNum(selAt[slot]) && selAt[slot] > 0) d.selectedAt[slot] = num(selAt[slot], TS_MAX);
+    }
+    d.showcaseAt = num(s.showcaseAt, TS_MAX);
     return d;
   }
 
@@ -278,6 +288,54 @@ const AchievementSystem = (() => {
   function flush() { return dirty ? persistNow() : { ok: true, skipped: true }; }
   function onUnlock(fn) { listeners.push(fn); return () => { listeners = listeners.filter(f => f !== fn); }; }
 
+  /* ---------------- Pass 7C: choices and synchronization support ---------------- */
+  // Equip a cosmetic reward (or null to unequip). Only a reward the player OWNS, in the slot of its own type, is accepted.
+  // There is no interface for this yet; the profile screen of a later pass will call it. Stamps the time of the choice.
+  function select(slot, rewardId) {
+    if (SLOTS.indexOf(slot) < 0) return { ok: false, reason: "bad_slot" };
+    if (rewardId !== null) {
+      if (typeof rewardId !== "string" || !data.rewards[rewardId]) return { ok: false, reason: "not_owned" };
+      if (rewardTypeOf(rewardId, rewardDefs) !== slot) return { ok: false, reason: "wrong_slot" };
+    }
+    data.selected[slot] = rewardId; data.selectedAt[slot] = Math.max(now(), (data.selectedAt[slot] || 0) + 1);
+    persistNow(); touchChange();
+    return { ok: true };
+  }
+  // The showcase: up to 5 UNLOCKED achievements, in the player's order.
+  function setShowcase(ids) {
+    if (!Array.isArray(ids) || ids.length > MAX_SHOWCASE) return { ok: false, reason: "too_many" };
+    for (const id of ids) if (typeof id !== "string" || !data.unlocked[id]) return { ok: false, reason: "not_unlocked" };
+    data.showcase = ids.slice(); data.showcaseAt = Math.max(now(), data.showcaseAt + 1);
+    persistNow(); touchChange();
+    return { ok: true };
+  }
+  const getSelected = () => ({ selected: clone(data.selected), at: clone(data.selectedAt), showcase: clone({ ids: data.showcase, at: data.showcaseAt }) });
+  let changeListeners = [];       // told when something synchronization cares about changed without an unlock (a selection)
+  function onChange(fn) { changeListeners.push(fn); return () => { changeListeners = changeListeners.filter(f => f !== fn); }; }
+  function touchChange() { for (const fn of changeListeners.slice()) { try { fn(); } catch (_) { diag.listenerErrors++; } } }
+
+  // Everything synchronization needs, and nothing it must not alter.
+  function getSyncSnapshot() { return { unlocked: clone(data.unlocked), rewards: clone(data.rewards), selected: clone(data.selected), selectedAt: clone(data.selectedAt), showcase: data.showcase.slice(), showcaseAt: data.showcaseAt, progress: clone(data.progress), createdAt: data.createdAt }; }
+  function rewardType(id) { return rewardTypeOf(id, rewardDefs); }
+  // Applies a merge result. Adds unlocks/rewards (never removes), sets choices. Silent: a remote unlock shows no banner. Persists at once.
+  function applyMerged(m) {
+    const next = sanitize({ unlocked: Object.assign({}, data.unlocked, m.unlocked || {}), rewards: Object.assign({}, data.rewards, m.rewards || {}), progress: data.progress,
+      selected: m.selected || data.selected, selectedAt: m.selectedAt || data.selectedAt, showcase: m.showcase || data.showcase, showcaseAt: m.showcaseAt == null ? data.showcaseAt : m.showcaseAt, createdAt: data.createdAt }, byId, rewardDefs, now());
+    // sanitize keeps unknown ids but would drop a progress entry's unlocked twin; progress for newly unlocked ids is not needed
+    for (const id of Object.keys(next.unlocked)) delete next.progress[id];
+    const before = Object.keys(data.unlocked).length;
+    for (const id of Object.keys(data.unlocked)) if (!next.unlocked[id]) return { ok: false, reason: "would_remove_unlock" };   // permanent: refuse rather than lose one
+    data = next; data.updatedAt = now();
+    const out = persistNow();
+    return { ok: true, persisted: !!out.ok, unlockedNow: Object.keys(data.unlocked).length, added: Object.keys(data.unlocked).length - before };
+  }
+  // Account switch: replace everything with an archived snapshot, or with nothing. The caller archived the previous data first.
+  function restoreSnapshot(snap) {
+    const next = sanitize(snap || {}, byId, rewardDefs, now());
+    data = next; dirty = false; const out = persistNow();
+    return { ok: true, persisted: !!out.ok, unlocked: Object.keys(data.unlocked).length };
+  }
+
   const isUnlocked = (id) => !!data.unlocked[id];
   const getUnlocked = () => clone(data.unlocked);
   const getOwnedRewards = () => clone(data.rewards);
@@ -324,5 +382,5 @@ const AchievementSystem = (() => {
     return Object.assign({ initialized, schema: SCHEMA, catalogSize: catalog ? catalog.length : 0, unlocked: Object.keys(data.unlocked).length, rewardsOwned: Object.keys(data.rewards).length, persistence: store ? store.diagnostics() : null }, diag);
   }
 
-  return { SCHEMA, KEY, METRICS, initialize, shutdown, flush, onUnlock, isUnlocked, getUnlocked, getOwnedRewards, hasReward, getProgress, getViews, getCompletion, getDiagnostics };
+  return { SCHEMA, KEY, SLOTS, METRICS, select, setShowcase, getSelected, onChange, getSyncSnapshot, rewardType, applyMerged, restoreSnapshot, initialize, shutdown, flush, onUnlock, isUnlocked, getUnlocked, getOwnedRewards, hasReward, getProgress, getViews, getCompletion, getDiagnostics };
 })();
