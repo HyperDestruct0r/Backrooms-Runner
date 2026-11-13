@@ -112,6 +112,7 @@ const StatsSystem = (() => {
   /* ---------------- module state ---------------- */
   let bus = null, store = null, now = () => Date.now(), setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (t) => clearTimeout(t);
   let data = blankData(Date.now()), unsubscribe = null, initialized = false, dirty = false, timer = null, applied = new Set();
+  let finalizeListeners = [];       // Pass 7C: told once per finalized run (see onRunFinalized). Survives re-initialization, like AchievementSystem's unlock listeners.
   const diag = { loadStatus: "none", recoveredRun: null, duplicates: 0, staleEvents: 0, handlerErrors: 0, saves: 0, saveFailures: 0, lastSave: null, flagOverflow: 0, ignored: 0 };
 
   function persistNow() {
@@ -181,7 +182,19 @@ const StatsSystem = (() => {
     if (data.recentRuns.length > MAX_RECENT) data.recentRuns.length = MAX_RECENT;
     data.activeRun = null;
     if (bus) bus.forgetRun(run.id);
+    announceFinalized(run, rec, outcome, durationSec, score);
     return rec;
+  }
+
+  // Pass 7C. What one finalized run added to the totals, as its own object: the same numbers applyRunToCounters just added to
+  // lifetime and to the run's mode. Synchronization sends this, keyed by the run id, so a run can be counted exactly once anywhere.
+  function announceFinalized(run, rec, outcome, durationSec, score) {
+    if (!finalizeListeners.length) return;
+    let delta;
+    try { delta = blankCounters(); applyRunToCounters(delta, run, outcome, durationSec, score); delta.runsStarted = 1; }
+    catch (err) { diag.handlerErrors++; return; }
+    const contribution = { runId: rec.id, mode: rec.mode, record: clone(rec), delta };
+    for (const fn of finalizeListeners.slice()) { try { fn(contribution); } catch (err) { diag.handlerErrors++; diag.lastHandlerError = String(err && err.message || err); } }
   }
 
   /* ---------------- event handling ---------------- */
@@ -383,9 +396,33 @@ const StatsSystem = (() => {
     return { ok: true };
   }
 
+  /* ---------------- Pass 7C: synchronization support ----------------
+     None of this is used by gameplay. ProgressionSync reads a snapshot, and applies remote totals only between runs. */
+  function onRunFinalized(fn) { finalizeListeners.push(fn); return () => { finalizeListeners = finalizeListeners.filter(f => f !== fn); }; }
+  const hasActiveRun = () => !!data.activeRun;
+  // Totals and history only; never the run in progress, never the event-id memory.
+  function getSyncSnapshot() { return { lifetime: clone(data.lifetime), byMode: clone(data.byMode), recentRuns: clone(data.recentRuns), createdAt: data.createdAt }; }
+  // Replaces totals/history from a snapshot (account switch) or from a merge result. Refused while a run is live.
+  function restoreSnapshot(snap) {
+    if (data.activeRun) return { ok: false, reason: "run_active" };
+    if (!snap || typeof snap !== "object") return { ok: false, reason: "bad_snapshot" };
+    const next = hydrate({ createdAt: snap.createdAt, lifetime: snap.lifetime, byMode: snap.byMode, recentRuns: snap.recentRuns, runsVoided: data.runsVoided, appliedIds: data.appliedIds }, now());
+    data = next; applied = new Set(data.appliedIds); markDirty();
+    const out = persistNow();
+    return { ok: true, persisted: !!out.ok, runs: data.lifetime.runsFinalized };
+  }
+  // A blank slate for another account. The caller has already archived the previous data.
+  function clearForAccountSwitch() {
+    if (data.activeRun) return { ok: false, reason: "run_active" };
+    const keep = data.appliedIds;
+    data = blankData(now()); data.appliedIds = keep; applied = new Set(keep);
+    const out = persistNow();
+    return { ok: true, persisted: !!out.ok };
+  }
+
   function getDiagnostics() {
     return Object.assign({ initialized, schema: SCHEMA, runActive: !!data.activeRun, runsVoided: data.runsVoided, recentRuns: data.recentRuns.length, persistence: store ? store.diagnostics() : null }, diag);
   }
 
-  return { SCHEMA, MAX_RECENT, initialize, shutdown, flush, getLifetimeStats, getRunStats, getRecords, getRecentRuns, finalizeRun, exportData, importData, resetAll, getDiagnostics };
+  return { SCHEMA, MAX_RECENT, initialize, shutdown, flush, onRunFinalized, hasActiveRun, getSyncSnapshot, restoreSnapshot, clearForAccountSwitch, getLifetimeStats, getRunStats, getRecords, getRecentRuns, finalizeRun, exportData, importData, resetAll, getDiagnostics };
 })();
