@@ -182,9 +182,15 @@ const Progression = (() => {
     flushDistance();
     if (typeof StatsSystem !== "undefined") StatsSystem.flush();
     if (typeof AchievementSystem !== "undefined") AchievementSystem.flush();
+    if (typeof ProgressionSync !== "undefined") { try { ProgressionSync.flush(); } catch (_) { /* local persistence only */ } }
   }
   function init() {
     try { if (typeof location !== "undefined" && /[?&]progression=test(?:&|$)/.test(location.search || "")) st.forceTest = true; } catch (_) { /* no location */ }
+    // Pass 7C: synchronization starts listening BEFORE statistics load, so a run recovered during that start-up is not missed.
+    let syncAttached = false;
+    if (typeof ProgressionSync !== "undefined") {
+      try { syncAttached = !!ProgressionSync.attach().ok; } catch (err) { console.warn("Progression: synchronization unavailable", err); }
+    }
     if (typeof StatsSystem !== "undefined") {
       try { StatsSystem.initialize(); } catch (err) { console.warn("Progression: statistics unavailable", err); }
     }
@@ -193,6 +199,8 @@ const Progression = (() => {
       try { AchievementSystem.initialize(); } catch (err) { console.warn("Progression: achievements unavailable", err); }
       if (typeof AchievementNotifier !== "undefined") { try { AchievementNotifier.init(); } catch (err) { console.warn("Progression: achievement notifications unavailable", err); } }
     }
+    // Local progression is fully loaded; from here the (optional, asynchronous, never blocking) account synchronization may run.
+    if (syncAttached) { try { ProgressionSync.init(); } catch (err) { console.warn("Progression: synchronization unavailable", err); } }
     if (!st.wired && typeof window !== "undefined" && window.addEventListener) {
       st.wired = true;
       window.addEventListener("pagehide", flush);
