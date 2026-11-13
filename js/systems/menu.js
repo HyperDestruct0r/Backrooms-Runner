@@ -19,7 +19,7 @@ const MenuSystem = {
     ["unlockMouse", "Unlock mouse"]
   ],
   menuIndex: 0,
-  menuItems: ["play", "tutorial", "settings", "controls", "chat", "credits"],
+  menuItems: ["play", "tutorial", "achievements", "profile", "settings", "controls", "chat", "credits"],
   playPage: "play-select",
   rebinding: null,
   settingsKey: "backroomsRunner.settings.v1",
@@ -220,6 +220,11 @@ const MenuSystem = {
     if (action === "tutorial") {
       if (typeof TutorialSystem !== "undefined") TutorialSystem.openHub();
       else this.showPage("tutorial");
+      return;
+    }
+    if (action === "achievements" || action === "profile") {
+      if (typeof AchievementUI !== "undefined") { if (action === "profile") AchievementUI.openProfile(); else AchievementUI.openBrowser(); }
+      else this.showPage(action);
       return;
     }
     if (action === "chat") {
