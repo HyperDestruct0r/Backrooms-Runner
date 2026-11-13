@@ -464,6 +464,7 @@ const Player = {
     const dx = this.position.x - before.x;
     const dz = this.position.z - before.z;
     GameState.distance += Math.hypot(dx, dz);
+    if (typeof Progression !== "undefined") Progression.addDistance(dx, dz, dt);
 
     const spd = Math.hypot(this.velocity.x, this.velocity.z);
     const moving = spd > CONFIG.stamina.moveThreshold;
@@ -752,6 +753,7 @@ const Inventory = {
       return false;
     }
     this.removeItem(id, 1);
+    if (typeof Progression !== "undefined") Progression.itemConsumed(id, 1);
     if (def.use === "sanity") {
       Player.addSanity(CONFIG.sanity.restoreDrink);
       HUD.toast("+" + CONFIG.sanity.restoreDrink + " SANITY");
