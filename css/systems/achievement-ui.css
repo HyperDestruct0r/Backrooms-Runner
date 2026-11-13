@@ -1,0 +1,106 @@
+/* Achievement browser, detail popup and profile (Pass 7D). Same palette and type as menu.css. */
+:root {
+  --ach-common: #f2f0ea; --ach-uncommon: #3f9d4a; --ach-rare: #1d3a8a; --ach-epic: #7b3fb3; --ach-legendary: #e8841a; --ach-mythic: #5fd8e8;
+}
+
+/* ---- badge: rarity background + artwork ---- */
+.ach-badge { position: relative; display: block; aspect-ratio: 1 / 1; width: 100%; border-radius: 14%; background: var(--ach-bg, #444); border: 2px solid rgba(0,0,0,.45); box-shadow: inset 0 0 0 2px rgba(255,255,255,.22), 0 2px 6px rgba(0,0,0,.45); overflow: hidden; }
+.ach-badge[data-rarity="common"]    { --ach-bg: radial-gradient(circle at 35% 28%, #fff, var(--ach-common)); }
+.ach-badge[data-rarity="uncommon"]  { --ach-bg: radial-gradient(circle at 35% 28%, #62c06c, var(--ach-uncommon)); }
+.ach-badge[data-rarity="rare"]      { --ach-bg: radial-gradient(circle at 35% 28%, #3558c0, var(--ach-rare)); }
+.ach-badge[data-rarity="epic"]      { --ach-bg: radial-gradient(circle at 35% 28%, #a063d6, var(--ach-epic)); }
+.ach-badge[data-rarity="legendary"] { --ach-bg: radial-gradient(circle at 35% 28%, #ffa545, var(--ach-legendary)); }
+.ach-badge[data-rarity="mythic"]    { --ach-bg: radial-gradient(circle at 35% 28%, #aaf3fb, var(--ach-mythic)); }
+.ach-art { position: absolute; inset: 9%; width: 82%; height: 82%; object-fit: contain; filter: drop-shadow(0 0 1.5px rgba(255,255,255,.6)); user-select: none; -webkit-user-drag: none; }
+/* locked, visible: muted grayscale artwork and appearance */
+.ach-badge[data-state="locked"] { filter: grayscale(1) brightness(.72) contrast(.9); opacity: .78; }
+/* locked, hidden: muted gray question mark, nothing else */
+.ach-badge-hidden { background: #3a3a38; border-color: #1b1b1a; box-shadow: inset 0 0 0 2px rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; }
+.ach-q { font: 800 clamp(26px, 5vw, 40px)/1 Arial, Helvetica, sans-serif; color: #8d8d88; }
+/* Roman numeral (chains) */
+.ach-num { position: absolute; right: 4%; bottom: 4%; min-width: 1.6em; padding: 0 .3em; text-align: center; font: 800 12px/1.5 Georgia, "Times New Roman", serif; letter-spacing: .02em; color: #fff8d7; background: rgba(12,10,6,.88); border: 1px solid rgba(255,248,215,.55); border-radius: 4px; }
+/* rarity pips: a count of small diamonds, so rarity is never colour-only */
+.ach-pips { position: absolute; left: 6%; top: 6%; display: flex; gap: 2px; }
+.ach-pips i { width: 5px; height: 5px; background: #fff; border: 1px solid #1c1810; transform: rotate(45deg); }
+/* state mark: check = unlocked, padlock = locked */
+.ach-mark { position: absolute; right: 5%; top: 5%; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 800 12px/1 Arial, sans-serif; background: rgba(12,10,6,.88); color: #8fe3a0; border: 1px solid rgba(255,255,255,.4); }
+.ach-badge[data-state="locked"] .ach-mark { color: #cfcfc8; }
+
+/* ---- controls ---- */
+.ach-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 6px 0 12px; }
+.ach-field { display: flex; flex-direction: column; gap: 5px; color: #9e967b; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.ach-field select, .ach-field input { width: 100%; min-height: 42px; border: 1px solid #5a5442; background: #17140e; color: #f3eacb; padding: 9px 12px; font: 14px/1.2 inherit; outline: none; letter-spacing: 0; text-transform: none; border-radius: 0; }
+.ach-field select:focus, .ach-field input:focus { border-color: #d8c969; box-shadow: 0 0 0 2px rgba(216,201,105,.18); }
+.ach-count { min-height: 18px; margin: 0 0 10px; color: #8e8877; font-size: 12px; }
+.ach-empty { color: #b9b08f; padding: 28px 0; }
+
+/* ---- grid: columns follow the available width ---- */
+.ach-grid { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(84px, 22vw, 118px), 1fr)); gap: 14px 12px; padding: 4px 2px 28px; }
+.ach-cell { min-width: 0; }
+.ach-tile { display: flex; flex-direction: column; align-items: stretch; gap: 7px; width: 100%; padding: 6px; border: 1px solid transparent; background: transparent; color: #e8e0c0; font: inherit; text-align: center; cursor: pointer; border-radius: 6px; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.ach-tile:hover { background: rgba(221,202,112,.08); border-color: #5a5442; }
+.ach-tile:focus-visible { outline: 2px solid #f2e08a; outline-offset: 2px; background: rgba(221,202,112,.1); }
+.ach-tile[data-state="locked"] .ach-name { color: #9a957f; }
+.ach-tile-hidden { cursor: default; }
+.ach-tile-hidden:hover { background: transparent; border-color: transparent; }
+.ach-name { display: block; font-size: 12px; line-height: 1.25; letter-spacing: .02em; overflow-wrap: anywhere; hyphens: auto; min-height: 2.5em; }
+
+/* ---- detail popup (child of the menu overlay, above the pages) ---- */
+.ach-popup { position: absolute; inset: 0; z-index: 12; display: flex; align-items: center; justify-content: center; padding: max(12px, env(safe-area-inset-top, 0px)) 12px max(12px, env(safe-area-inset-bottom, 0px)); background: rgba(6,5,3,.78); overscroll-behavior: contain; }
+.ach-popup[hidden] { display: none; }
+.ach-dialog { width: min(380px, 100%); max-height: 100%; overflow: auto; background: #1d1a12; border: 1px solid #6d654b; box-shadow: 0 18px 60px rgba(0,0,0,.7); padding: 22px 22px 18px; text-align: center; color: #f3eacb; outline: none; overscroll-behavior: contain; }
+.ach-dialog-title { margin: 0 0 14px; font-size: 20px; letter-spacing: .08em; overflow-wrap: anywhere; }
+.ach-dialog-art { width: min(160px, 46vw); margin: 0 auto 14px; }
+.ach-badge-big .ach-num { font-size: 18px; }
+.ach-badge-big .ach-pips i { width: 7px; height: 7px; }
+.ach-badge-big .ach-mark { width: 26px; height: 26px; font-size: 16px; }
+.ach-badge-big .ach-mark svg { width: 16px; height: 16px; }
+.ach-dialog-desc { margin: 0 0 14px; line-height: 1.5; color: #e0d8b8; overflow-wrap: anywhere; }
+.ach-req-label { display: block; margin-bottom: 4px; color: #9e967b; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
+.ach-dialog-meta { margin: 0 0 16px; border-top: 1px solid #403b2d; text-align: left; }
+.ach-meta-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 9px 2px; border-bottom: 1px solid #403b2d; font-size: 13px; }
+.ach-meta-row dt { color: #9e967b; letter-spacing: .1em; text-transform: uppercase; font-size: 11px; }
+.ach-meta-row dd { margin: 0; text-align: right; min-width: 0; }
+.ach-progress { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; min-width: 130px; }
+.ach-progress-note { color: #8e8877; font-size: 11px; }
+.ach-bar { display: block; width: 100%; height: 7px; background: rgba(255,255,255,.1); border: 1px solid #4a4433; overflow: hidden; }
+.ach-bar i { display: block; height: 100%; background: #d8c969; }
+.ach-close { min-width: 140px; min-height: 44px; border: 1px solid #6d654b; background: #2a2519; color: #f2e9c6; padding: 10px 22px; font-weight: 700; letter-spacing: .12em; cursor: pointer; touch-action: manipulation; }
+.ach-close:hover { background: #3a3322; }
+.ach-close:focus-visible { outline: 2px solid #f2e08a; outline-offset: 2px; }
+
+/* ---- profile ---- */
+#profile-root { display: grid; gap: 12px; max-width: 720px; }
+.pf-head { padding: 4px 0 6px; }
+.pf-name { font-size: 26px; letter-spacing: .08em; overflow-wrap: anywhere; }
+.pf-sub { color: #9e967b; font-size: 12px; margin-top: 4px; }
+.pf-card { border: 1px solid #403b2d; background: rgba(255,255,255,.025); padding: 16px 18px; }
+.pf-card h3 { margin: 0 0 10px; font-size: 12px; letter-spacing: .18em; color: #b9b08f; }
+.pf-big { font-size: 22px; margin-bottom: 8px; }
+.pf-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 18px; margin: 0; }
+.pf-stat { min-width: 0; }
+.pf-stat dt { color: #9e967b; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.pf-stat dd { margin: 3px 0 0; font-size: 17px; overflow-wrap: anywhere; }
+
+/* ---- narrow screens ---- */
+@media (max-width: 560px) {
+  .ach-controls { grid-template-columns: 1fr; }
+  .ach-page .menu-back { position: static; margin: 0 0 12px; }
+  .ach-page.menu-page { padding: 58px 4vw 4vh; }
+  .menu-page h2 { font-size: 26px; }
+  .ach-dialog { padding: 18px 16px 14px; }
+}
+/* short screens (Chromebooks, landscape phones): the main menu now has eight entries, so tighten its rows */
+@media (max-height: 860px) {
+  .menu-main { padding: 18px 0; }
+  .menu-logo { font-size: clamp(34px, 6vw, 60px); }
+  .menu-subtitle { margin-bottom: 18px; }
+  .menu-option { padding-top: 9px; padding-bottom: 9px; font-size: 18px; }
+  .menu-footer { margin-top: 18px; }
+}
+@media (max-height: 560px) {
+  .menu-option { padding-top: 6px; padding-bottom: 6px; font-size: 16px; }
+  .menu-options { gap: 3px; }
+  .menu-subtitle { margin-bottom: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .ach-tile, .ach-close { transition: none; } }
