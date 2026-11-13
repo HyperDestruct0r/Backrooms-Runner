@@ -653,7 +653,7 @@ const Level9 = {
     if (scene.background) scene.background.setHex(lk.fog);
     if (CameraRig.camera) { CameraRig.camera.far = 46; CameraRig.camera.updateProjectionMatrix(); }
     if (typeof renderer !== "undefined" && renderer) renderer.toneMappingExposure = 1.28 * lk.exposure;
-    GameState.level = 9; if (typeof AudioSystem !== 'undefined') AudioSystem.setLevel(GameState.level);
+    if (typeof Progression !== 'undefined') Progression.levelEntered(9); GameState.level = 9; if (typeof AudioSystem !== 'undefined') AudioSystem.setLevel(GameState.level);
     GameState.seed = this.seed;
     GameState.phase = "playing";
     GameState.cutscene = false;
