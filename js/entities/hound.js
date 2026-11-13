@@ -417,6 +417,7 @@ const HoundSystem = {
     this._contact(h, dt, d);
     this._separate(h);
     this._pose(h, dt);
+    if (h.state !== h._ps) { const p = h._ps; h._ps = h.state; if (typeof Progression !== "undefined") Progression.entityTransition("hound", h, p, h.state); }
   },
 
   _wander(h, dt) {
