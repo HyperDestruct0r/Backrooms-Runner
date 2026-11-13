@@ -67,6 +67,8 @@ const DevMap = {
 };
 
 const DevCommands = {
+  // Commands that only show information. Every other command voids the current run for progression (see Progression.markDevelopment).
+  READ_ONLY: new Set(["help", "pos", "showmap", "hidemap", "ents", "locate", "exit"]),
   open: false,
   last: null,
   undo: null,
@@ -150,6 +152,10 @@ const DevCommands = {
     const parts = text.split(/\s+/);
     const cmd = parts[0].toLowerCase();
     const args = parts.slice(1);
+    // Anything that can change the game (teleport, spawn, give, god, level jumps, kill...) takes the run out of progression.
+    // Read-only commands do not. An unknown command changes nothing either, but is treated as development to stay on the safe side.
+    const readOnly = DevCommands.READ_ONLY.has(cmd) && !(cmd === "locate" && (args[1] || "").toLowerCase() === "tp") && !(cmd === "ents" && (args[0] || "").toLowerCase() === "clear");
+    if (typeof Progression !== "undefined" && !readOnly) Progression.markDevelopment("dev:" + cmd);
     try {
       if (cmd === "help") return this.help();
       if (cmd === "level") return this.level(args);
