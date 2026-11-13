@@ -677,6 +677,7 @@ const BeastSystem = {
     }
     this._contact(h, dt, d, inBall);
     this._pose(h, dt);
+    if (h.state !== h._ps) { const p = h._ps; h._ps = h.state; if (typeof Progression !== "undefined") Progression.entityTransition("beast", h, p, h.state); }
   },
 
   // Keep a distance. Slow. Never attack.
