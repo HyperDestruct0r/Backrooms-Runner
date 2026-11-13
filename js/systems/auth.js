@@ -44,6 +44,8 @@ const AuthSystem = {
       else console.warn("AuthSystem: could not load profile", error.message);
     }
     this.updateUI();
+    // Pass 7C: tell progression synchronization who is signed in (or that nobody is). Never throws, never waits for the network.
+    try { if (typeof ProgressionSync !== "undefined") ProgressionSync.setUser(this.user ? this.user.id : null); } catch (err) { console.warn("AuthSystem: progression sync notification failed", err); }
     const chatPage = document.getElementById("menu-page-chat");
     if (chatPage && chatPage.classList.contains("is-open") && typeof ChatSystem !== "undefined") ChatSystem.open();
   },
