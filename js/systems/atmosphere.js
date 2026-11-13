@@ -800,6 +800,7 @@ const EntitySystem = {
     if (this.state === next) return;
     const prev = this.state;
     this.state = next;
+    if (typeof Progression !== "undefined") Progression.entityTransition("entity", this.mesh, prev, next);
     if (next === "PURSUING" && prev !== "PURSUING") ChaseFx.onPursuitStart();
     if (next === "SEARCHING") this.searchT = CONFIG.entity.searchTime;
     if (next === "WANDERING") this.pauseT = 0.4 + Math.random() * 0.6;
