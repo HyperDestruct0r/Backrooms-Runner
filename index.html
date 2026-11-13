@@ -8,7 +8,7 @@
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
-  <title>Backrooms Runner — Infinite Level 1</title>
+  <title>Backrooms Runner</title>
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/systems/transitions.css">
   <link rel="stylesheet" href="css/levels/level0.css">
@@ -19,6 +19,8 @@
   <link rel="stylesheet" href="css/systems/menu.css">
   <link rel="stylesheet" href="css/systems/tutorial.css">
   <link rel="stylesheet" href="css/systems/activity.css">
+  <link rel="stylesheet" href="css/systems/achievements.css">
+  <link rel="stylesheet" href="css/systems/achievement-ui.css">
 </head>
 <body>
 
@@ -201,10 +203,12 @@
         <div class="menu-options">
           <button class="menu-option selected" type="button" data-menu-index="0" data-menu-action="play">PLAY</button>
           <button class="menu-option" type="button" data-menu-index="1" data-menu-action="tutorial">TUTORIAL</button>
-          <button class="menu-option" type="button" data-menu-index="2" data-menu-action="settings">SETTINGS</button>
-          <button class="menu-option" type="button" data-menu-index="3" data-menu-action="controls">CONTROLS</button>
-          <button class="menu-option" type="button" data-menu-index="4" data-menu-action="chat">COMMUNITY CHAT</button>
-          <button class="menu-option" type="button" data-menu-index="5" data-menu-action="credits">CREDITS</button>
+          <button class="menu-option" type="button" data-menu-index="2" data-menu-action="achievements">ACHIEVEMENTS</button>
+          <button class="menu-option" type="button" data-menu-index="3" data-menu-action="profile">PROFILE</button>
+          <button class="menu-option" type="button" data-menu-index="4" data-menu-action="settings">SETTINGS</button>
+          <button class="menu-option" type="button" data-menu-index="5" data-menu-action="controls">CONTROLS</button>
+          <button class="menu-option" type="button" data-menu-index="6" data-menu-action="chat">COMMUNITY CHAT</button>
+          <button class="menu-option" type="button" data-menu-index="7" data-menu-action="credits">CREDITS</button>
         </div>
         <button id="install-app-button" class="app-install-button" type="button" hidden>INSTALL BACKROOMS RUNNER</button>
         <a class="menu-discord" href="https://discord.gg/a5EMAUuc46" target="_blank" rel="noopener noreferrer">
@@ -410,6 +414,24 @@
         </div>
       </section>
 
+      <section id="menu-page-achievements" class="menu-page ach-page" aria-label="Achievements">
+        <div class="menu-page-inner">
+          <button id="menu-back-achievements" class="menu-back" type="button">← BACK</button>
+          <h2>ACHIEVEMENTS</h2>
+          <p class="page-desc" id="ach-summary"></p>
+          <div id="ach-browser-root"></div>
+        </div>
+      </section>
+
+      <section id="menu-page-profile" class="menu-page ach-page" aria-label="Profile">
+        <div class="menu-page-inner">
+          <button id="menu-back-profile" class="menu-back" type="button">← BACK</button>
+          <h2>PROFILE</h2>
+          <p class="page-desc">YOUR PROGRESS ON THIS DEVICE</p>
+          <div id="profile-root"></div>
+        </div>
+      </section>
+
       <section id="menu-page-credits" class="menu-page" aria-label="Credits">
         <div class="menu-page-inner">
           <button id="menu-back-credits" class="menu-back" type="button">← BACK</button>
@@ -534,6 +556,17 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/core.js"></script>
 <script src="js/systems/quality.js"></script>
+<script src="js/systems/progression-events.js"></script>
+<script src="js/systems/progression-store.js"></script>
+<script src="js/systems/stats.js"></script>
+<script src="js/systems/achievement-catalog.js"></script>
+<script src="js/systems/achievements.js"></script>
+<script src="js/systems/achievement-art.js"></script>
+<script src="js/systems/achievement-notifications.js"></script>
+<script src="js/systems/progression-merge.js"></script>
+<script src="js/systems/progression-remote.js"></script>
+<script src="js/systems/progression-sync.js"></script>
+<script src="js/systems/progression.js"></script>
 <script src="js/world/assets.js"></script>
 <script src="js/systems/activity-system.js"></script>
 <script src="js/systems/activity-ui.js"></script>
@@ -570,6 +603,7 @@
 <script src="js/systems/noise-architectural.js"></script>
 <script src="js/systems/keyboard-guide.js"></script>
 <script src="js/systems/tutorial.js"></script>
+<script src="js/systems/achievement-ui.js"></script>
 <script src="js/systems/menu.js"></script>
 <script src="js/systems/dev-commands.js"></script>
 <script src="js/game.js"></script>
