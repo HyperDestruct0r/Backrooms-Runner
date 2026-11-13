@@ -141,8 +141,20 @@ const Level9Entities = {
     this._pv.x = s > 0.01 ? v.x / s : 0; this._pv.z = s > 0.01 ? v.z / s : 0; this._pv.s = s;
     this._popT -= dt;
     if (this._popT <= 0) { this._popT = 0.5; this._population(); this._smilerCap(); }
-    for (let i = this.mangled.length - 1; i >= 0; i--) this._thinkMangled(this.mangled[i], dt, i);
+    for (let i = this.mangled.length - 1; i >= 0; i--) { const m = this.mangled[i]; this._thinkMangled(m, dt, i); if (m.state !== m._ps) this._progress("mangled", m); }
     this._thinkWatch(dt);
+    if (this.watch) this._progress("watch", this.watch);
+  },
+
+  // Progression: an encounter is the moment the entity actively goes for the player (Mangled: "stalk"; Watch: "strike"), never a spawn.
+  // Identity is stable across re-spawns of the same Mangled spawn point, and per appearance for the Watch, so state churn never recounts.
+  _progress(kind, e) {
+    const prev = e._ps; e._ps = e.state;
+    if (typeof Progression === "undefined") return;
+    let token = e;
+    if (kind === "mangled") { const rec = this.pop && this.pop.get(e.id); if (rec) token = rec; }
+    else { if (e.state === "absent") { e._tok = null; return; } if (!e._tok) e._tok = {}; token = e._tok; }
+    if (prev !== e.state) Progression.entityTransition(kind, token, prev, e.state);
   },
 
   _smilerCap() {
