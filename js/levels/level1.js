@@ -756,7 +756,7 @@ const Level1 = {
     this.levelTime=0;
     Level.cols=Infinity; Level.rows=Infinity; Level.tiles=[]; Level.group=this.group;
     Level.worldMin.set(-Infinity,this.baseY-2,-Infinity); Level.worldMax.set(Infinity,this.baseY+8,Infinity);
-    Level.startPos.set(origin.x,this.baseY,origin.z); GameState.level=1; if (typeof AudioSystem !== 'undefined') AudioSystem.setLevel(GameState.level);
+    Level.startPos.set(origin.x,this.baseY,origin.z); if (typeof Progression !== 'undefined') Progression.levelEntered(1); GameState.level=1; if (typeof AudioSystem !== 'undefined') AudioSystem.setLevel(GameState.level);
     const obj=document.getElementById('hud-obj');if(obj)obj.textContent='Objective: explore Level 1';
     const lvl=document.getElementById('hud-level-label');if(lvl)lvl.textContent='LEVEL 1';
     const seedEl=document.getElementById('hud-seed-val');if(seedEl)seedEl.textContent=String(this.seed);
