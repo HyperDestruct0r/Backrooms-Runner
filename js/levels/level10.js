@@ -419,6 +419,7 @@ const Level10 = {
     this.time = 0; this.dist = 0;
     this._leaving = false; this._ended = false;
     this.exitPos = null;
+    if (typeof Level11 !== "undefined" && Level11.reset) Level11.reset();      // Level 11 hangs off this reset chain
     if (wasActive) {
       if (typeof CameraRig !== "undefined" && CameraRig.camera && typeof CONFIG !== "undefined") { CameraRig.camera.far = CONFIG.cameraFar; CameraRig.camera.updateProjectionMatrix(); }
       if (typeof renderer !== "undefined" && renderer) renderer.toneMappingExposure = 1.28;
@@ -521,11 +522,16 @@ const Level10 = {
     this._look(1);
     this._removeRing();                    // the ring is gone and Level 9 is not rebuilt. No toast, no wall, no Void
   },
-  // Level 11 is not built yet: the run ends here for now
+  // The barn's way on: Level 11 when it is built; otherwise the run ends here
   finish() {
     if (this._ended) return;
     this._ended = true;
     this._leaving = true;
+    if (typeof Level11 !== "undefined" && Level11.enter) {
+      const sd = this.seed, go = () => Level11.enter(sd, "level10");
+      if (typeof VoidTransition !== "undefined" && VoidTransition.then) VoidTransition.then(go); else go();
+      return;
+    }
     if (typeof HUD !== "undefined" && HUD.toast) HUD.toast("LEVEL 11 IS NOT BUILT YET");
     GameState.exitReached = true;
     if (typeof Game !== "undefined" && Game.complete) Game.complete();
