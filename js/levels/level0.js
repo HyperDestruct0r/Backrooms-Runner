@@ -852,6 +852,9 @@ const Level = {
   worldMin: new THREE.Vector3(),
   worldMax: new THREE.Vector3(),
   physRadius: 2,          // chunks (each way) whose terrain colliders exist; the 3 x 3 around the player is always meshed too
+  prepMargin: 24,         // metres past the fog that chunks are prepared (Pass 7E); with the cone margin this is what keeps pop-in off the screen
+  _wantedNow: null,
+  _viewTracker: (typeof ChunkView !== "undefined") ? ChunkView.createTracker() : null,
   keepSeconds: 5,         // a chunk that leaves the view stays loaded this long (turning on the spot used to rebuild chunks)
   meshBudgetMs: 6,        // chunk-mesh work per frame outside the near ring (set from Quality)
   _ctx: null,
@@ -1254,26 +1257,38 @@ const Level = {
     this._wantedAt.delete(key);
     this.stats.chunksUnloaded++;
   },
-  // Standing chunk, its neighbours, and whatever the view hits out to the fog.
+  // Standing chunk, its neighbours, and whatever the view can reach out to the fog.
   // A circle shows its edge in an open room. A cone does not.
+  // Pass 7E: the cone comes from the live camera (vertical FOV + aspect, so sprinting and a wide window are followed)
+  // and each chunk is tested as a whole, not by its centre; see js/systems/chunk-view.js.
+  // Returns [dx, dz, inView] offsets. inView is 1 for chunks inside the real view (the margin chunks come after them).
   wantedChunks(cx, cz, px, pz) {
+    const S = this.chunkTiles, T = CONFIG.tile, CS = S * T;
+    const yaw = (Player && Player.yaw != null) ? Player.yaw : 0;
+    if (typeof ChunkView === "undefined") return this._wantedChunksLegacy(cx, cz, px, pz, yaw);
+    const now = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
+    const cam = (typeof CameraRig !== "undefined" && CameraRig) ? CameraRig.camera : null;
+    const view = ChunkView.makeView(cam, yaw, ChunkView.turnRate(this._viewTracker, yaw, now));
+    // fog distance plus a preparation margin: a chunk is wanted once its nearest edge is within fog + margin
+    return ChunkView.wantedOffsets(cx, cz, CS, px, pz, this.fogFar() + this.prepMargin, view, 1);
+  },
+  // The Pass 5 cone, kept only as a fallback if chunk-view.js is somehow missing.
+  _wantedChunksLegacy(cx, cz, px, pz, yaw) {
     const S = this.chunkTiles, T = CONFIG.tile, CS = S * T;
     const reach = this.fogFar() + CS;
     const half = ((CONFIG.fovDeg || 84) * 0.5 + 12) * Math.PI / 180;
     const cosH = Math.cos(half);
-    const yaw = (Player && Player.yaw != null) ? Player.yaw : 0;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const span = Math.ceil(reach / CS);
     const out = [];
     for (let dz = -span; dz <= span; dz++) {
       for (let dx = -span; dx <= span; dx++) {
-        const near = Math.max(Math.abs(dx), Math.abs(dz)) <= 1;
-        if (near) { out.push([dx, dz]); continue; }
+        if (Math.max(Math.abs(dx), Math.abs(dz)) <= 1) { out.push([dx, dz, 1]); continue; }
         const ccx = (cx + dx + 0.5) * CS, ccz = (cz + dz + 0.5) * CS;
         const vx = ccx - px, vz = ccz - pz;
         const dist = Math.hypot(vx, vz);
         if (dist > reach || dist < 0.001) continue;
-        if ((vx / dist) * fx + (vz / dist) * fz >= cosH) out.push([dx, dz]);
+        if ((vx / dist) * fx + (vz / dist) * fz >= cosH) out.push([dx, dz, 1]);
       }
     }
     return out;
@@ -1292,18 +1307,21 @@ const Level = {
       const ck = cx + "," + cz;
       if (force || ck !== this._centerKey) { this._centerKey = ck; this._syncColliders(cx, cz); this._collDirty = false; }
     }
-    const yawKey = Math.round(((Player && Player.yaw) || 0) * 4);
+    // the wanted set is re-evaluated every ~5.7 degrees of turning (it used to be ~14, wider than the old margin)
+    const yawKey = Math.round(((Player && Player.yaw) || 0) * 10);
     const key = cx + "," + cz + "," + yawKey;
     if (force || key !== this.lastChunk) {
       this.lastChunk = key;
       const wanted = this.wantedChunks(cx, cz, px, pz);
       const queue = [];
-      for (const [dx, dz] of wanted) {
+      this._wantedNow = new Set();
+      const penalty = (typeof ChunkView !== "undefined") ? ChunkView.OUT_OF_VIEW_PENALTY : 0;
+      for (const [dx, dz, inView] of wanted) {
         const k = (cx + dx) + "," + (cz + dz);
-        this._wantedAt.set(k, now);
+        this._wantedAt.set(k, now); this._wantedNow.add(k);
         if (this.chunks.has(k)) continue;
         if (Math.max(Math.abs(dx), Math.abs(dz)) <= 1 || force) this.buildChunk(cx + dx, cz + dz);   // the ring around the player is never late
-        else queue.push({ cx: cx + dx, cz: cz + dz, d: dx * dx + dz * dz, k });
+        else queue.push({ cx: cx + dx, cz: cz + dz, d: dx * dx + dz * dz + (inView ? 0 : penalty), k });   // chunks in view first, then the margin
       }
       queue.sort((a, b) => a.d - b.d);
       this._queue = queue;
@@ -1311,13 +1329,17 @@ const Level = {
       if (this.world) this._syncColliders(cx, cz);
     }
     // chunks that have been out of view for a while, and are not next to the player, are dropped
-    if (force || (this._queue.length === 0 && now - (this._sweptAt || 0) >= 0.5)) { this._sweptAt = now; this._sweep(cx, cz, now); }
+    // Pass 7F: the sweep no longer waits for the build queue to be empty. On a slow device the queue can stay non-empty for long
+    // stretches, and chunks that had left the view then piled up (99 loaded vs ~59 normally in the headless walk). Queued chunks are
+    // always in _wantedNow, which _sweep never unloads, so sweeping while the queue is busy cannot drop anything still needed.
+    if (force || now - (this._sweptAt || 0) >= 0.5) { this._sweptAt = now; this._sweep(cx, cz, now); }
     if (this.world && !force) this._work(this.meshBudgetMs, cx, cz);
   },
   _sweep(cx, cz, now) {
     for (const k of Array.from(this.chunks.keys())) {
       const rec = this.chunks.get(k);
       if (Math.max(Math.abs(rec.cx - cx), Math.abs(rec.cz - cz)) <= 2) continue;
+      if (this._wantedNow && this._wantedNow.has(k)) continue;   // Pass 7E: still wanted by the current view (standing still used to expire these after keepSeconds)
       const at = this._wantedAt.get(k);
       if (at !== undefined && now - at < this.keepSeconds) continue;
       this.unloadChunk(k);
