@@ -752,6 +752,7 @@ window.addEventListener("keydown", (e) => {
     if (typeof Level6 !== "undefined" && Level6.tryUse && Level6.tryUse()) return;
     if (typeof Level8 !== "undefined" && Level8.tryUse && Level8.tryUse()) return;
     if (typeof Level9 !== "undefined" && Level9.tryUse && Level9.tryUse()) return;
+    if (typeof Level11 !== "undefined" && Level11.tryUse && Level11.tryUse()) return;
     if (typeof PassC !== "undefined" && PassC.openNearestCrate && PassC.openNearestCrate()) return;
     PickupSystem.tryPickup();
   }
@@ -871,7 +872,9 @@ const AudioSystem = {
     6:  ["level6-dark"],
     8:  ["level8-cave"],
     9:  ["level9-night"],
-    10: ["level10-wind"]
+    10: ["level10-wind"],
+    11: ["level10-wind"],          // Level 11 outdoors: the existing wind bed
+    "11i": ["level0-hum"]          // Level 11 inside a building or the garage: the existing hum bed
   },
   loadBank(map) { /* files are fetched on demand in ensure() */ },
   async ensure(key) {
