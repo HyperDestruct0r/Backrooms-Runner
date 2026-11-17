@@ -719,12 +719,17 @@ const Level9 = {
     Level10.enter(this.seed, "level9", x);
   },
 
-  // Level 11 is not built yet: the run ends here for now
+  // Level 11 when it is built (the far exit); otherwise the run ends here
   finish(which) {
     if (this._ended) return;
     this._ended = true;
     this._leaving = true;
     this._remember();
+    if (which === 11 && typeof Level11 !== "undefined" && Level11.enter) {
+      const sd = this.seed, go = () => Level11.enter(sd, "level9");
+      if (typeof VoidTransition !== "undefined" && VoidTransition.then) VoidTransition.then(go); else go();
+      return;
+    }
     if (typeof HUD !== "undefined" && HUD.toast) HUD.toast("LEVEL " + which + " IS NOT BUILT YET");
     GameState.exitReached = true;
     const done = () => {
