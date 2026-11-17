@@ -26,12 +26,13 @@ function aabbOverlap(amin, amax, bmin, bmax) {
 const STEP_TOLERANCE = 0.05;
 // Level 9 only: boxes whose top is within Level9.stepTol of the feet are stepped onto (house stairs, kerbs).
 // Every other level keeps STEP_TOLERANCE.
-function stepTolerance() { return (typeof Level9 !== "undefined" && Level9.active) ? Level9.stepTol : STEP_TOLERANCE; }
+function stepTolerance() { return (typeof Level11 !== "undefined" && Level11.active) ? Level11.stepTol : (typeof Level9 !== "undefined" && Level9.active) ? Level9.stepTol : STEP_TOLERANCE; }
 
 // The list of boxes the current level collides with. Chosen once per call instead of walking a ladder of
 // typeof checks per axis; the order is the original one.
 function activeColliders() {
-  return (typeof Level10 !== "undefined" && Level10.active) ? Level10.colliders
+  return (typeof Level11 !== "undefined" && Level11.active) ? Level11.colliders
+    : (typeof Level10 !== "undefined" && Level10.active) ? Level10.colliders
     : (typeof Level9 !== "undefined" && Level9.active) ? Level9.colliders
     : (typeof Level8 !== "undefined" && Level8.active) ? Level8.colliders
     : (typeof Level6 !== "undefined" && Level6.active) ? Level6.colliders
@@ -103,7 +104,8 @@ const Physics = {
     }
 
     // Current level's start position. Level 1 uses its own floor height.
-    const levelFloor = (typeof Level10 !== "undefined" && Level10.active) ? Level10.baseY
+    const levelFloor = (typeof Level11 !== "undefined" && Level11.active) ? Level11.baseY
+      : (typeof Level10 !== "undefined" && Level10.active) ? Level10.baseY
       : (typeof Level9 !== "undefined" && Level9.active) ? Level9.baseY
       : (typeof Level8 !== "undefined" && Level8.active) ? Level8.baseY
       : (typeof Level6 !== "undefined" && Level6.active) ? Level6.baseY
@@ -112,7 +114,7 @@ const Physics = {
       : (typeof Level3 !== "undefined" && Level3.active) ? Level3.baseY
       : (typeof Level2 !== "undefined" && Level2.active) ? Level2.baseY
       : (typeof Level1 !== "undefined" && Level1.active) ? Level1.baseY : 0;
-    if (((typeof Level2 !== "undefined" && Level2.active) || (typeof Level3 !== "undefined" && Level3.active) || (typeof Level4 !== "undefined" && Level4.active) || (typeof Level5 !== "undefined" && Level5.active) || (typeof Level6 !== "undefined" && Level6.active) || (typeof Level8 !== "undefined" && Level8.active) || (typeof Level9 !== "undefined" && Level9.active) || (typeof Level10 !== "undefined" && Level10.active)) && pos.y < levelFloor) {
+    if (((typeof Level2 !== "undefined" && Level2.active) || (typeof Level3 !== "undefined" && Level3.active) || (typeof Level4 !== "undefined" && Level4.active) || (typeof Level5 !== "undefined" && Level5.active) || (typeof Level6 !== "undefined" && Level6.active) || (typeof Level8 !== "undefined" && Level8.active) || (typeof Level9 !== "undefined" && Level9.active) || (typeof Level10 !== "undefined" && Level10.active) || (typeof Level11 !== "undefined" && Level11.active)) && pos.y < levelFloor) {
       pos.y = levelFloor;
       if (vel.y < 0) vel.y = 0;
       onGround = true;
@@ -512,7 +514,7 @@ const Player = {
       AudioSystem.lastStep += dt * (spd * cadence);
       if (AudioSystem.lastStep > 1) {
         AudioSystem.lastStep = 0;
-        const mat = (Stairwell.playerInside() || (typeof Level6 !== "undefined" && Level6.active) || (typeof Level8 !== "undefined" && Level8.active) || (typeof Level9 !== "undefined" && Level9.active)) ? "concrete" : "carpet";
+        const mat = (Stairwell.playerInside() || (typeof Level6 !== "undefined" && Level6.active) || (typeof Level8 !== "undefined" && Level8.active) || (typeof Level9 !== "undefined" && Level9.active) || (typeof Level11 !== "undefined" && Level11.active)) ? "concrete" : "carpet";
         if (this.crouching) AudioSystem.footstepOn(mat, "crouch");
         else if (this.wishSprint) AudioSystem.footstepOn(mat, "sprint");
         else AudioSystem.footstepOn(mat, "walk");
@@ -987,6 +989,7 @@ const PickupSystem = {
     let best=null,bestD=CONFIG.items.interactDist;
     for(const p of this.list){
       if(p.taken) continue;
+      if(p.y!==undefined && Math.abs(p.y-Player.position.y)>2.2) continue;   // Level 11: loot on another floor is not within reach
       const d=Math.hypot(p.x-Player.position.x,p.z-Player.position.z);
       if(d<bestD){bestD=d;best=p;}
     }
