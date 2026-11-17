@@ -68,7 +68,7 @@ const DevMap = {
 
 const DevCommands = {
   // Commands that only show information. Every other command voids the current run for progression (see Progression.markDevelopment).
-  READ_ONLY: new Set(["help", "pos", "showmap", "hidemap", "ents", "locate", "exit"]),
+  READ_ONLY: new Set(["help", "pos", "showmap", "hidemap", "ents", "locate", "exit", "achievement"]),
   open: false,
   last: null,
   undo: null,
@@ -167,6 +167,7 @@ const DevCommands = {
       if (cmd === "level8") return this.level(["8"].concat(args));
       if (cmd === "level9") return this.level(["9"].concat(args));
       if (cmd === "level10") return this.level(["10"].concat(args));
+      if (cmd === "level11") return this.level(["11"].concat(args));
       if (cmd === "spawn") return this.spawn(args);
       if (cmd === "despawn") return this.despawn(args);
       if (cmd === "give") return this.give(args);
@@ -192,6 +193,7 @@ const DevCommands = {
       if (cmd === "showmap") return DevMap.show();
       if (cmd === "hidemap") return DevMap.hide();
       if (cmd === "exit") return this.exitInfo();
+      if (cmd === "achievement") return this.achievement(args);
       this.toast("UNKNOWN COMMAND · TYPE HELP");
     } catch (err) {
       console.error(err);
@@ -212,7 +214,7 @@ const DevCommands = {
 
   level(args) {
     const n = parseInt(args[0], 10);
-    if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0, 1, 2, 3, 4, 5, 6, 8, 9, OR 10");
+    if (!Number.isFinite(n)) return this.toast("USAGE: LEVEL 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, OR 11");
     if (n === 0) return this.goLevel0();
     if (n === 1) return this.level1(args.slice(1));
     if (n === 2) return this.level2(args.slice(1));
@@ -223,6 +225,7 @@ const DevCommands = {
     if (n === 8) return this.level8(args.slice(1));
     if (n === 9) return this.level9(args.slice(1));
     if (n === 10) return this.level10(args.slice(1));
+    if (n === 11) return this.level11(args.slice(1));
     this.toast("LEVEL " + n + " IS NOT AVAILABLE");
   },
   level2(args) {
@@ -437,6 +440,12 @@ const DevCommands = {
     if (sub) return this.toast("USAGE: LEVEL 8, RESET, SEED, INFO, EXIT, BACK");
     go((GameState.seed || 1) >>> 0);
     return this.toast("ENTERED LEVEL 8");
+  },
+  level11(args) {
+    if (typeof Level11 === "undefined" || !Level11.enter) return this.toast("LEVEL 11 IS NOT AVAILABLE");
+    const sd = (GameState.seed || 1) >>> 0;
+    if (typeof VoidTransition !== 'undefined') VoidTransition.then(() => Level11.enter(sd, "dev")); else Level11.enter(sd, "dev");
+    return this.toast("ENTERED LEVEL 11");
   },
   level10(args) {
     const sd = (GameState.seed || 1) >>> 0;
@@ -914,6 +923,100 @@ const DevCommands = {
     if (typeof EntitySystem !== "undefined" && EntitySystem.entities) n += EntitySystem.entities.length;
     this.toast(n + " ENTITIES");
   },
+  achievement(args) {
+    if (typeof AuthSystem === "undefined" || !AuthSystem.isOwner || !AuthSystem.isOwner()) {
+      return this.toast("OWNER ONLY");
+    }
+    if (!AuthSystem.client || typeof AuthSystem.client.rpc !== "function") {
+      return this.toast("NOT SIGNED IN");
+    }
+    const sub = (args[0] || "").toLowerCase();
+    if (sub === "list") return this.achList(args.slice(1));
+    if (sub === "give") return this.achGive(args.slice(1));
+    if (sub === "remove") return this.achRemove(args.slice(1));
+    this.toast("USAGE: ACHIEVEMENT GIVE|REMOVE|LIST <id|name|all> @user");
+  },
+
+  async _resolveUser(token) {
+    const name = String(token || "").replace(/^@/, "").trim();
+    if (!name) throw new Error("missing user");
+    const { data, error } = await AuthSystem.client.rpc("owner_resolve_username", { p_username: name });
+    if (error) throw error;
+    if (!data) throw new Error("user not found");
+    return data;
+  },
+
+  _resolveAch(token) {
+    if (token === "all") return "all";
+    const cat = (typeof AchievementCatalog !== "undefined") ? AchievementCatalog.list : null;
+    if (!cat) return token; // fall back to raw id
+    const byId = cat.find(a => a.id === token);
+    if (byId) return byId.id;
+    const matches = cat.filter(a => a.name && a.name.toLowerCase() === token.toLowerCase());
+    if (matches.length === 1) return matches[0].id;
+    if (matches.length > 1) throw new Error("ambiguous name");
+    return token; // let server reject unknown
+  },
+
+  async achGive(args) {
+    if (args.length < 2) return this.toast("USAGE: ACHIEVEMENT GIVE <id|name|all> @user");
+    const which = args[0];
+    const userTok = args[1];
+    try {
+      const uid = await this._resolveUser(userTok);
+      let ids;
+      if (which === "all") {
+        if (!args.includes("confirm")) return this.toast("CONFIRM WITH: ACHIEVEMENT GIVE ALL @user confirm");
+        const cat = (typeof AchievementCatalog !== "undefined") ? AchievementCatalog.list : [];
+        ids = cat.map(a => a.id);
+      } else {
+        ids = [this._resolveAch(which)];
+      }
+      const { data, error } = await AuthSystem.client.rpc("owner_achievement_grant", { p_target: uid, p_ids: ids });
+      if (error) throw error;
+      this.toast("GRANTED " + (data && data.granted ? data.granted.length : ids.length));
+    } catch (e) {
+      this.toast("FAILED · " + String(e.message || e).slice(0, 60).toUpperCase());
+    }
+  },
+
+  async achRemove(args) {
+    if (args.length < 2) return this.toast("USAGE: ACHIEVEMENT REMOVE <id|name|all> @user");
+    const which = args[0];
+    const userTok = args[1];
+    try {
+      const uid = await this._resolveUser(userTok);
+      let ids;
+      if (which === "all") {
+        if (!args.includes("confirm")) return this.toast("CONFIRM WITH: ACHIEVEMENT REMOVE ALL @user confirm");
+        const cat = (typeof AchievementCatalog !== "undefined") ? AchievementCatalog.list : [];
+        ids = cat.map(a => a.id);
+      } else {
+        ids = [this._resolveAch(which)];
+      }
+      const { data, error } = await AuthSystem.client.rpc("owner_achievement_revoke", { p_target: uid, p_ids: ids });
+      if (error) throw error;
+      this.toast("REMOVED " + (data && data.revoked ? data.revoked.length : ids.length));
+    } catch (e) {
+      this.toast("FAILED · " + String(e.message || e).slice(0, 60).toUpperCase());
+    }
+  },
+
+  async achList(args) {
+    if (!args.length) return this.toast("USAGE: ACHIEVEMENT LIST @user");
+    try {
+      const uid = await this._resolveUser(args[0]);
+      const { data, error } = await AuthSystem.client.rpc("owner_achievement_list", { p_target: uid });
+      if (error) throw error;
+      const list = Array.isArray(data) ? data : [];
+      if (!list.length) return this.toast("NONE UNLOCKED");
+      list.slice(0, 8).forEach(a => this.toast((a.id || "?") + " · " + (a.via || "")));
+      if (list.length > 8) this.toast("... AND " + (list.length - 8) + " MORE");
+    } catch (e) {
+      this.toast("FAILED · " + String(e.message || e).slice(0, 60).toUpperCase());
+    }
+  },
+
 };
 
 window.addEventListener("load", () => DevCommands.init());
