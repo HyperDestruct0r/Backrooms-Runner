@@ -271,7 +271,10 @@ const ProgressionSync = (() => {
     try {
       const A = ach.getSyncSnapshot();
       const rU = {}, rR = {};
-      for (const x of data.achievements || []) if (x && typeof x.id === "string") rU[x.id] = { at: isNum(x.at) ? x.at : 0, runId: typeof x.run_id === "string" ? x.run_id : null, via: ["event", "stat", "backfill"].indexOf(x.via) >= 0 ? x.via : "event" };
+      const revoked = new Set((data.revocations || []).filter(x => typeof x === "string"));
+      for (const x of data.achievements || []) if (x && typeof x.id === "string" && !revoked.has(x.id)) rU[x.id] = { at: isNum(x.at) ? x.at : 0, runId: typeof x.run_id === "string" ? x.run_id : null, via: ["event", "stat", "backfill", "admin"].indexOf(x.via) >= 0 ? x.via : "event" };
+      // strip any local unlocks that the server has revoked
+      for (const id of Object.keys(A.unlocked || {})) if (revoked.has(id)) delete A.unlocked[id];
       for (const x of data.rewards || []) if (x && typeof x.id === "string") rR[x.id] = { at: isNum(x.at) ? x.at : 0, by: typeof x.by === "string" ? x.by : "" };
       const u = M().unionEarliest(A.unlocked, rU), r = M().unionEarliest(A.rewards, rR);
       const rc = data.cosmetics || {}, remoteSel = { selected: {}, at: {} };
