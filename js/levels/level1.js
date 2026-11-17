@@ -10,6 +10,27 @@ const Level1 = {
   blackoutCooldown:0, blackoutDuration:0, blackoutCycle:0,
   blackoutFlickerT:0, blackoutFlickerNext:0, blackoutWindowStart:0,
   shared:{}, macroCache:new Map(), exitMacro:null, exitPosition:null,
+  // Pass 7E chunk preparation state (see stream()). keepSeconds: a chunk that leaves the view stays built this long, so
+  // turning back does not rebuild it; maxRetained caps how many out-of-view chunks are kept; prepMargin is metres past the fog.
+  _queue:[], _wantedAt:new Map(), _wantedKeys:new Set(), _sweptAt:0, keepSeconds:6, maxRetained:24, prepMargin:30,
+  _viewTracker:(typeof ChunkView!=='undefined')?ChunkView.createTracker():null,
+  stats:{ chunksBuilt:0, chunksUnloaded:0, queueMax:0 },
+  // Level 1's own fog: cold grey concrete, 14..64 m. Applied at build, after DarknessSystem.reset() in enter() (which
+  // restores LEVEL 0's yellow fog), after every blackout, and re-asserted by update() if anything else drifts it.
+  CONCRETE_FOG:{ color:0x2a2c2e, near:14, far:64 },
+  applyConcreteFog(){
+    if(typeof scene==='undefined' || !scene) return;
+    const F=this.CONCRETE_FOG;
+    if(!scene.fog) scene.fog=new THREE.Fog(F.color,F.near,F.far);
+    else { scene.fog.near=F.near; scene.fog.far=F.far; if(scene.fog.color&&scene.fog.color.setHex) scene.fog.color.setHex(F.color); }
+    if(scene.background&&scene.background.setHex) scene.background.setHex(F.color);
+  },
+  concreteFogDrifted(){
+    const f=(typeof scene!=='undefined'&&scene)?scene.fog:null, F=this.CONCRETE_FOG;
+    if(!f) return true;
+    if(f.near!==F.near||f.far!==F.far) return true;
+    return !!(f.color&&f.color.getHex&&f.color.getHex()!==F.color);
+  },
   resetVisuals(){
     if(this.group && scene) scene.remove(this.group);
     for(const L of this.lights){ if(L.parent) L.parent.remove(L); else if(scene) scene.remove(L); }
@@ -22,7 +43,7 @@ const Level1 = {
     this.active=false; this.exitMacro=null; this.exitPosition=null;
     this.lights.length=0; this.ambientLights.length=0; this.puddles.length=0;
     if(typeof PickupSystem!=='undefined' && PickupSystem.group){ PickupSystem.reset(); }
-    this.group=null; this.active=false; this.lastMCX=999999; this.lastMCZ=999999; this.resourceRegions=Object.create(null);
+    this.group=null; this.active=false; this.lastMCX=999999; this.lastMCZ=999999; this._queue=[]; this._wantedAt=new Map(); this._wantedKeys=new Set(); this._sweptAt=0; this.resourceRegions=Object.create(null);
     this.levelTime=0; this.blackoutState='idle'; this.blackoutTimer=0; this.blackoutNext=60;
     this.blackoutCooldown=0; this.blackoutDuration=0; this.blackoutCycle=0;
     this.blackoutFlickerT=0; this.blackoutFlickerNext=0; this.blackoutWindowStart=0; this.macroCache.clear(); this.exitMacro=null; this.exitPosition=null;
@@ -490,50 +511,119 @@ const Level1 = {
     this.colliders.length=0;
     for(const rec of this.chunks.values()) for(const c of rec.colliders) this.colliders.push(c);
   },
-  // Standing chunk, neighbours, and the view out to this level's fog.
+  // Standing chunk, neighbours, and the view out to this level's fog (Pass 7E: live camera FOV, whole-chunk test; see
+  // js/systems/chunk-view.js). Returns [dx, dz, inView] offsets.
   wantedChunks(mcx, mcz, px, pz) {
     const CS = this.microSize;
-    const reach = 90 + CS; // past the concrete fog, not the whole cone
+    const yaw = (typeof Player !== 'undefined' && Player.yaw != null) ? Player.yaw : 0;
+    if (typeof ChunkView === 'undefined') return this._wantedChunksLegacy(mcx, mcz, px, pz, yaw);
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    const cam = (typeof CameraRig !== 'undefined' && CameraRig) ? CameraRig.camera : null;
+    const view = ChunkView.makeView(cam, yaw, ChunkView.turnRate(this._viewTracker, yaw, now));
+    return ChunkView.wantedOffsets(mcx, mcz, CS, px, pz, this.CONCRETE_FOG.far + this.prepMargin, view, 1);
+  },
+  // The Pass 5 cone, kept only as a fallback if chunk-view.js is somehow missing.
+  _wantedChunksLegacy(mcx, mcz, px, pz, yaw) {
+    const CS = this.microSize;
+    const reach = 90 + CS;
     const half = ((CONFIG.fovDeg || 84) * 0.5 + 12) * Math.PI / 180;
     const cosH = Math.cos(half);
-    const yaw = (typeof Player !== 'undefined' && Player.yaw != null) ? Player.yaw : 0;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
     const span = Math.ceil(reach / CS);
     const out = [];
     for (let dz = -span; dz <= span; dz++) {
       for (let dx = -span; dx <= span; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dz)) <= 1) { out.push([dx, dz]); continue; }
+        if (Math.max(Math.abs(dx), Math.abs(dz)) <= 1) { out.push([dx, dz, 1]); continue; }
         const ccx = (mcx + dx + 0.5) * CS, ccz = (mcz + dz + 0.5) * CS;
         const vx = ccx - px, vz = ccz - pz;
         const dist = Math.hypot(vx, vz);
         if (dist > reach || dist < 0.001) continue;
-        if ((vx / dist) * fx + (vz / dist) * fz >= cosH) out.push([dx, dz]);
+        if ((vx / dist) * fx + (vz / dist) * fz >= cosH) out.push([dx, dz, 1]);
       }
     }
     return out;
   },
+  // Returns how many chunks were unloaded.
   unloadFar(cx,cz,keep){
+    let n=0;
     for(const [key,rec] of this.chunks){
       if(keep && !keep.has(key)){
         if(rec.group.parent) rec.group.parent.remove(rec.group);
         this.disposeChunkResources(rec);
-        this.chunks.delete(key);
+        this.chunks.delete(key); this._wantedAt.delete(key); n++;
       }
     }
     this.puddles=this.puddles.filter(p=>keep && keep.has(Math.floor(p.x/this.microSize)+","+Math.floor(p.z/this.microSize)));
+    this.stats.chunksUnloaded+=n;
+    return n;
+  },
+  // Chunks to keep: everything wanted now, the ring around the player, and chunks that were wanted a moment ago (turning
+  // back must not rebuild them), at most maxRetained of the latter, most recently wanted first.
+  _keepSet(mcx,mcz,now){
+    const keep=new Set(this._wantedKeys);
+    const extra=[];
+    for(const [key,rec] of this.chunks){
+      if(keep.has(key)) continue;
+      if(Math.max(Math.abs(rec.cx-mcx),Math.abs(rec.cz-mcz))<=1){ keep.add(key); continue; }
+      const at=this._wantedAt.get(key);
+      if(at!==undefined && now-at<this.keepSeconds) extra.push([key,at]);
+    }
+    if(extra.length>this.maxRetained) extra.sort((a,b)=>b[1]-a[1]);
+    for(let i=0;i<extra.length&&i<this.maxRetained;i++) keep.add(extra[i][0]);
+    return keep;
+  },
+  _sweep(mcx,mcz,now){
+    this._sweptAt=now;
+    if(this.unloadFar(mcx,mcz,this._keepSet(mcx,mcz,now))) this.rebuildColliders();
+  },
+  // Build queued chunks nearest-first for at most `ms` (always at least one). The ring around the player never waits here.
+  _work(ms){
+    if(!this._queue.length) return 0;
+    const t0=performance.now(); let built=0;
+    while(this._queue.length){
+      const j=this._queue.shift();
+      if(!this.chunks.has(j.key)){ this.buildChunk(j.cx,j.cz); built++; this.stats.chunksBuilt++; }
+      if(performance.now()-t0>=ms) break;
+    }
+    if(built) this.rebuildColliders();
+    return built;
   },
   stream(force=false){
     if(!this.active) return;
     const source=(typeof Player!=='undefined'&&Player.position)?Player.position:this.center;
     const mcx=Math.floor(source.x/this.microSize), mcz=Math.floor(source.z/this.microSize);
-    const yawKey=Math.round(((typeof Player!=='undefined'?Player.yaw:0)||0)*4);
-    if(!force&&mcx===this.lastMCX&&mcz===this.lastMCZ&&yawKey===this.lastYaw) return;
+    // re-evaluated every ~5.7 degrees of turning (it was ~14), cheap: a few dozen chunk tests
+    const yawKey=Math.round(((typeof Player!=='undefined'?Player.yaw:0)||0)*10);
+    const now=performance.now()/1000;
+    if(!force&&mcx===this.lastMCX&&mcz===this.lastMCZ&&yawKey===this.lastYaw){
+      // nothing new is wanted: finish queued builds within the per-frame budget, and let expired chunks go
+      const budget=(typeof Quality!=='undefined'&&Quality.profile)?Quality.profile.meshBudgetMs:6;
+      this._work(budget);
+      if(!this._queue.length && now-this._sweptAt>=1) this._sweep(mcx,mcz,now);
+      return;
+    }
     this.lastMCX=mcx; this.lastMCZ=mcz; this.lastYaw=yawKey;
-    const keep=new Set();
     const wanted=this.wantedChunks(mcx,mcz,source.x,source.z);
-    wanted.sort((a,b)=>a[0]*a[0]+a[1]*a[1]-b[0]*b[0]-b[1]*b[1]);
-    for(const [dx,dz] of wanted){ this.buildChunk(mcx+dx,mcz+dz); keep.add((mcx+dx)+","+(mcz+dz)); }
-    this.unloadFar(mcx,mcz,keep); this.rebuildColliders();
+    const penalty=(typeof ChunkView!=='undefined')?ChunkView.OUT_OF_VIEW_PENALTY:0;
+    wanted.sort((a,b)=>(a[0]*a[0]+a[1]*a[1]+(a[2]?0:penalty))-(b[0]*b[0]+b[1]*b[1]+(b[2]?0:penalty)));
+    const keys=new Set(), queue=[]; let built=0;
+    for(const [dx,dz] of wanted){
+      const cx=mcx+dx, cz=mcz+dz, key=cx+","+cz;
+      keys.add(key); this._wantedAt.set(key,now);
+      if(this.chunks.has(key)) continue;
+      if(force||Math.max(Math.abs(dx),Math.abs(dz))<=1){ this.buildChunk(cx,cz); built++; this.stats.chunksBuilt++; }   // the ring around the player is never late
+      else queue.push({cx,cz,key});
+    }
+    this._wantedKeys=keys; this._queue=queue;
+    if(queue.length>this.stats.queueMax) this.stats.queueMax=queue.length;
+    this._sweep(mcx,mcz,now);
+    const budget=(typeof Quality!=='undefined'&&Quality.profile)?Quality.profile.meshBudgetMs:6;
+    if(!force) built+=this._work(budget);
+    else { // a forced stream (level build) completes the whole wanted set, as before
+      for(const j of queue) if(!this.chunks.has(j.key)){ this.buildChunk(j.cx,j.cz); built++; this.stats.chunksBuilt++; }
+      this._queue=[];
+    }
+    if(built) this.rebuildColliders();
     this.center.copy(source); this.center.y=this.baseY;
   },
   setFixtureState(on,dim=1){
@@ -566,7 +656,7 @@ const Level1 = {
   endBlackout(){
     this.blackoutState='cooldown'; this.blackoutCooldown=60+this.rngFor(this.blackoutCycle,7,334)()*30;
     this.setFixtureState(true,1);
-    if(scene){ scene.fog=new THREE.Fog(0x2a2c2e,14,64); scene.background && scene.background.setHex(0x2a2c2e); }
+    this.applyConcreteFog();
   },
   updateBlackout(dt){
     this.levelTime+=dt;
@@ -741,9 +831,9 @@ const Level1 = {
     PickupSystem.group=new THREE.Group(); PickupSystem.group.name='Level1_Pickups'; scene.add(PickupSystem.group);
     const hemi=new THREE.HemisphereLight(0xc5ccd2,0x1a1c1e,0.22);
     const amb=new THREE.AmbientLight(0x9aa0a6,0.08); scene.add(hemi,amb); this.ambientLights.push(hemi,amb);
-    scene.fog=new THREE.Fog(0x2a2c2e,14,64); if(scene.background) scene.background.setHex(0x2a2c2e);
+    this.applyConcreteFog();
     if(CameraRig.camera){ CameraRig.camera.far=160; CameraRig.camera.updateProjectionMatrix(); }
-    this.lastMCX=999999; this.lastMCZ=999999; this.lastYaw=999999; this.stream(true); this.placeExit();
+    this.lastMCX=999999; this.lastMCZ=999999; this.lastYaw=999999; this._queue=[]; this._wantedAt=new Map(); this._wantedKeys=new Set(); this._sweptAt=0; this.stream(true); this.placeExit();
   },
   enter(seed,elevatorState){
     if(Level.group&&scene)scene.remove(Level.group); LightingSystem.clear(scene);
@@ -763,6 +853,8 @@ const Level1 = {
     const title=document.getElementById('start-seed');if(title)title.textContent='LEVEL 1 · SEED '+this.seed;
     Player.position.set(origin.x,this.baseY,origin.z); Player.velocity.set(0,0,0); Player.onGround=true;
     EntitySystem.despawn(); EncounterManager.reset(); DebugPath.hide(); DarknessSystem.reset(); AtmosphereSystem.reset(); EnvEventSystem.reset(); Flashlight.reset();
+    // DarknessSystem.reset() above restores LEVEL 0's fog (yellow); Level 1 puts its own back.
+    this.applyConcreteFog();
     if(typeof SmilerSystem!=="undefined") SmilerSystem.reset();
     if(typeof SmilerCorruption!=="undefined") SmilerCorruption.reset();
     if(typeof SmilerSystem!=="undefined"){
@@ -783,11 +875,11 @@ const Level1 = {
   update(dt){
     if(!this.active) return;
     if(this.blackoutState!=='flicker' && this.blackoutState!=='outage'){
-      if(scene && !scene.fog) scene.fog=new THREE.Fog(0x2a2c2e,14,64);
+      if(scene && (!scene.fog || this.concreteFogDrifted())) this.applyConcreteFog();
       const darkFog=document.getElementById('dark-fog');
       if(darkFog) darkFog.style.opacity='0';
     }
-    this.streamTimer+=dt; if(this.streamTimer>0.18){this.streamTimer=0;this.stream(false);}
+    this.streamTimer+=dt; if(this.streamTimer>0.18||this._queue.length){this.streamTimer=0;this.stream(false);}
     this.updateBlackout(dt); this.updatePuddleVisibility(); if(typeof SmilerSystem!=="undefined") SmilerSystem.update(dt); if(typeof ExitLocator!=="undefined") ExitLocator.update();
     Level.worldMin.set(-Infinity,this.baseY-2,-Infinity); Level.worldMax.set(Infinity,this.baseY+8,Infinity);
   }
