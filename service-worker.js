@@ -1,5 +1,5 @@
 /* Backrooms Runner PWA cache. Bump CACHE_VERSION when publishing future updates. */
-const CACHE_VERSION = 'backrooms-runner-v48';
+const CACHE_VERSION = 'backrooms-runner-v51';
 const APP_CACHE = `${CACHE_VERSION}-app`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const APP_SHELL = [
@@ -90,6 +90,7 @@ const APP_SHELL = [
   "./js/levels/level0.js",
   "./js/levels/level0-sites.js",
   "./js/levels/level0-world.js",
+  "./js/systems/chunk-view.js",
   "./js/systems/quality.js",
   "./js/systems/progression-events.js",
   "./js/systems/progression-store.js",
@@ -121,6 +122,9 @@ const APP_SHELL = [
   "./js/levels/level9-houses.js",
   "./js/levels/level10-gen.js",
   "./js/levels/level10.js",
+  "./js/levels/level11-gen.js",
+  "./js/levels/level11-floors.js",
+  "./js/levels/level11.js",
   "./js/entities/level9-entities.js",
   "./js/systems/atmosphere.js",
   "./js/systems/void.js",
