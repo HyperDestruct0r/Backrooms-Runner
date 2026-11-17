@@ -110,9 +110,13 @@ const DarknessSystem = {
     const el = document.getElementById("dark-fog");
     if (el) el.style.opacity = "0";
     if (scene) {
-      if (!scene.fog) scene.fog = new THREE.Fog(CONFIG.fogColor, CONFIG.fogNear, CONFIG.fogFar);
-      scene.fog.near = CONFIG.fogNear;
-      scene.fog.far = CONFIG.fogFar;
+      // This restores LEVEL 0's fog. At the High profile that is exactly CONFIG (58..175 m); at Medium and Low the
+      // profile's own distances apply (Pass 7E: the reset used to put High's 175 m back on top of a Medium/Low build,
+      // so fog ended past the camera's far plane and the chunk reach). Level 1 re-applies its own fog after calling this.
+      const f0 = (typeof Quality !== "undefined" && Quality.level0Fog) ? Quality.level0Fog() : { near: CONFIG.fogNear, far: CONFIG.fogFar };
+      if (!scene.fog) scene.fog = new THREE.Fog(CONFIG.fogColor, f0.near, f0.far);
+      scene.fog.near = f0.near;
+      scene.fog.far = f0.far;
       scene.fog.color.setHex(CONFIG.fogColor);
     }
     if (scene && scene.background) scene.background.setHex(CONFIG.fogColor);
